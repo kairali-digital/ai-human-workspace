@@ -1,0 +1,35 @@
+{
+  "approval_status": "APPROVED_BY_OWNER",
+  "components": [
+    {
+      "description": "Complete Kairali people, homework and governed-skill reference kit",
+      "file_count": 85,
+      "id": "kairali-company-rollout",
+      "install_policy": "COMPANY_PROFILE",
+      "source": "packages/kairali",
+      "tree_sha256": "4cb2b091829fd29cb48996aa51126c0c52f605dff59ae01125a485712847f296",
+      "type": "reference-pack"
+    },
+    {
+      "description": "Governed Kairali adaptation of Akshar Yadav's marketing principles",
+      "file_count": 5,
+      "id": "kairali-akshar-marketing-science",
+      "install_policy": "EXPLICIT_ROLE_OPT_IN",
+      "source": "packages/kairali/skills/kairali-akshar-marketing-science",
+      "tree_sha256": "3a06ff3f621d7637daca29f6cde34ce5e64924c56f01d7ecb8cef148c733193e",
+      "type": "skill"
+    },
+    {
+      "description": "Governed Kairali adaptation of Rahul Jain's sales operating-system principles",
+      "file_count": 5,
+      "id": "kairali-rahul-sales-system",
+      "install_policy": "EXPLICIT_ROLE_OPT_IN",
+      "source": "packages/kairali/skills/kairali-rahul-sales-system",
+      "tree_sha256": "0800ecf09f2576628f0cc31d6a72f0884053d5e55053339692d032f3fe31314e",
+      "type": "skill"
+    }
+  ],
+  "repository": "kairali-digital/ai-human-workspace",
+  "schema": "ai-human.component-release/v1",
+  "version": "1.1.0"
+}

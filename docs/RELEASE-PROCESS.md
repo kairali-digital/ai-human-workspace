@@ -11,9 +11,11 @@ Use semantic versioning:
 
 Before release:
 
-1. Update `core/VERSION` and `CHANGELOG.md`.
-2. Run the release builder to refresh managed-file hashes and proof.
-3. Run release validation, lifecycle tests, beginner regression and a Git-history secret
+1. Update `core/VERSION`, `CHANGELOG.md`, `release-manifest.json` and
+   `component-manifest.json` together.
+2. Run the release builder to refresh managed-file hashes, component-tree hashes and
+   proof.
+3. Run release validation, lifecycle/component tests, beginner regression and a Git-history secret
    scan.
 4. Review the complete diff and public repository contents.
 5. Tag exactly the validated commit and create release notes from the changelog.

@@ -82,7 +82,7 @@ class LifecycleTests(unittest.TestCase):
         worker = self.base / "Company Folder" / "Employee Workspace"
         result = self.install(worker)
         self.assertIn("AI-HUMAN INSTALL: PASS", result.stdout)
-        self.assertEqual((worker / ".ai-human/VERSION").read_text().strip(), "1.0.0")
+        self.assertEqual((worker / ".ai-human/VERSION").read_text().strip(), "1.1.0")
         self.assertIn("Example Holdings", (worker / "COMPANY.md").read_text())
         self.assertNotIn("{{", (worker / "PARAMETERS.md").read_text())
         self.assertEqual(self.run_cli("validate", worker).returncode, 0)
@@ -118,11 +118,11 @@ class LifecycleTests(unittest.TestCase):
         worker = self.base / "worker"
         self.install(worker)
 
-        new_release = self.base / "release-1.1.0"
+        new_release = self.base / "release-1.2.0"
         shutil.copytree(ROOT, new_release, ignore=shutil.ignore_patterns(".git", "__pycache__", "release-proof.json"))
         agent_rules = new_release / "core/AGENT-RULES.md"
-        agent_rules.write_text(agent_rules.read_text() + "\nRelease-test marker 1.1.0.\n", encoding="utf-8")
-        refresh_release(new_release, "1.1.0")
+        agent_rules.write_text(agent_rules.read_text() + "\nRelease-test marker 1.2.0.\n", encoding="utf-8")
+        refresh_release(new_release, "1.2.0")
 
         cursor = worker / "MASTER_CURSOR.md"
         cursor.write_text("# Master Cursor\n\n## LIVE TASK\n`TEST-1` — test checkpoint\n", encoding="utf-8")
@@ -144,27 +144,97 @@ class LifecycleTests(unittest.TestCase):
         deferred = self.run_cli("update", worker, "--source", new_release)
         self.assertIn("AI-HUMAN UPDATE: DEFERRED", deferred.stdout)
         self.assertEqual((worker / ".ai-human/VERSION").read_text(), before_defer_version)
-        self.assertIn("CORE-UPDATE-1.1.0", register.read_text())
+        self.assertIn("CORE-UPDATE-1.2.0", register.read_text())
 
         before_update_state = state_hashes(worker)
         updated = self.run_cli("update", worker, "--source", new_release, "--at-checkpoint")
         self.assertIn("AI-HUMAN UPDATE: PASS", updated.stdout)
-        self.assertEqual((worker / ".ai-human/VERSION").read_text().strip(), "1.1.0")
+        self.assertEqual((worker / ".ai-human/VERSION").read_text().strip(), "1.2.0")
         self.assertEqual(state_hashes(worker), before_update_state)
         self.assertIn("Release-test marker", (worker / ".ai-human/system/AGENT-RULES.md").read_text())
 
         before_rollback_state = state_hashes(worker)
-        rolled_back = self.run_cli("rollback", worker, "--version", "1.0.0")
+        rolled_back = self.run_cli("rollback", worker, "--version", "1.1.0")
         self.assertIn("AI-HUMAN ROLLBACK: PASS", rolled_back.stdout)
-        self.assertEqual((worker / ".ai-human/VERSION").read_text().strip(), "1.0.0")
+        self.assertEqual((worker / ".ai-human/VERSION").read_text().strip(), "1.1.0")
         self.assertEqual(state_hashes(worker), before_rollback_state)
         self.assertNotIn("Release-test marker", (worker / ".ai-human/system/AGENT-RULES.md").read_text())
 
         repeated = self.run_cli("update", worker, "--source", new_release, "--at-checkpoint")
         self.assertIn("AI-HUMAN UPDATE: PASS", repeated.stdout)
-        self.assertEqual((worker / ".ai-human/VERSION").read_text().strip(), "1.1.0")
-        matching_backups = list((worker / ".ai-human/backups").glob("1.0.0-before-1.1.0-*"))
+        self.assertEqual((worker / ".ai-human/VERSION").read_text().strip(), "1.2.0")
+        matching_backups = list((worker / ".ai-human/backups").glob("1.1.0-before-1.2.0-*"))
         self.assertEqual(len(matching_backups), 2)
+
+    def test_component_catalog_skill_install_upgrade_and_remove(self):
+        catalog = self.run_cli("components", "--source", ROOT)
+        self.assertIn("kairali-akshar-marketing-science", catalog.stdout)
+        self.assertIn("kairali-rahul-sales-system", catalog.stdout)
+        skills_root = self.base / "codex-skills"
+        component = "kairali-akshar-marketing-science"
+        self.run_cli(
+            "install-skill", component, "--runtime", "codex",
+            "--skills-root", skills_root, "--source", ROOT,
+        )
+        target = skills_root / component
+        self.assertTrue((target / "SKILL.md").is_file())
+        self.assertTrue((target / ".ai-human-component.json").is_file())
+        self.run_cli(
+            "install-skill", component, "--runtime", "codex",
+            "--skills-root", skills_root, "--source", ROOT,
+            expect=1,
+        )
+        self.run_cli(
+            "install-skill", component, "--runtime", "codex",
+            "--skills-root", skills_root, "--source", ROOT, "--upgrade",
+            expect=1,
+        )
+        self.run_cli(
+            "install-skill", component, "--runtime", "codex",
+            "--skills-root", skills_root, "--source", ROOT, "--upgrade",
+            "--at-checkpoint",
+        )
+        backups = list((skills_root / ".ai-human-component-archive").glob(component + "-before-*"))
+        self.assertEqual(len(backups), 1)
+        self.run_cli(
+            "remove-skill", component, "--runtime", "codex",
+            "--skills-root", skills_root, "--at-checkpoint",
+        )
+        self.assertFalse(target.exists())
+        removed = list((skills_root / ".ai-human-component-archive").glob(component + "-removed-*"))
+        self.assertEqual(len(removed), 1)
+
+    def test_reference_packs_install_and_remove_reversibly(self):
+        kit = self.base / "Kairali Company Kit"
+        self.run_cli("install-pack", "kairali-company-rollout", kit, "--source", ROOT)
+        self.assertEqual(len(list((kit / "people").glob("*.md"))), 12)
+        self.assertTrue((kit / ".ai-human-component.json").is_file())
+        self.assertTrue((kit / "homework/EVERYONE-ELSE-AI-HUMAN-HOMEWORK-VIDEO.mp4").is_file())
+        self.assertTrue((kit / "skills/kairali-akshar-marketing-science/SKILL.md").is_file())
+        starters = kit / "homework/AI-HUMAN-STARTERS"
+        self.assertEqual(len([path for path in starters.iterdir() if path.is_dir()]), 3)
+        self.run_cli("remove-pack", kit, expect=1)
+        self.run_cli("remove-pack", kit, "--at-checkpoint")
+        self.assertFalse(kit.exists())
+        removed = list(self.base.glob(".ai-human-component-archive/kairali-company-rollout-removed-*"))
+        self.assertEqual(len(removed), 1)
+
+    def test_tampered_component_release_is_rejected(self):
+        corrupt = self.base / "corrupt-components"
+        shutil.copytree(ROOT, corrupt, ignore=shutil.ignore_patterns(".git", "__pycache__", "release-proof.json"))
+        skill = corrupt / "packages/kairali/skills/kairali-rahul-sales-system/SKILL.md"
+        skill.write_text(skill.read_text(encoding="utf-8") + "\ntampered\n", encoding="utf-8")
+        result = self.run_cli("components", "--source", corrupt, expect=1)
+        self.assertIn("component tree hash mismatch", result.stderr)
+
+    def test_component_id_cannot_escape_skills_root(self):
+        skills_root = self.base / "skills"
+        skills_root.mkdir()
+        result = self.run_cli(
+            "remove-skill", "../outside", "--runtime", "codex",
+            "--skills-root", skills_root, "--at-checkpoint", expect=1,
+        )
+        self.assertIn("invalid component id", result.stderr)
 
     def test_uninstall_is_reversible_and_reinstall_adopts_state(self):
         worker = self.base / "worker"

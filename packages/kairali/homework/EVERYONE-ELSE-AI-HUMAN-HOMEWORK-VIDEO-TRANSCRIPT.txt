@@ -1,0 +1,68 @@
+EVERYONE ELSE AI-HUMAN HOMEWORK - VIDEO TRANSCRIPT
+GENERAL-AI-HUMAN-HOMEWORK-001
+
+This transcript matches the narrated title-card video. No private employee data appears.
+
+SCENE 1: No named homework page? Start here.
+This is the homework for anyone from the meeting who did not receive a named start or homework page. You will build two tiny A I humans. Email Triage is first. Drive Inventory is second. LinkedIn Draft is optional after both are complete.
+DONE WHEN: You know which two projects are required.
+
+SCENE 2: See the whole loop first
+Here is the whole loop before we begin. Find the pack. Copy one starter folder. Open that folder as its own local project. Connect only the app it needs. Paste the exact prompt. Stop when the report and validator pass are visible.
+DONE WHEN: A visible report and validator pass are the finish line.
+
+SCENE 3: Keep the homework safe
+You do not use Terminal or type commands. Keep Ask for approval. Never choose Full access. Login happens on the provider screen. Never paste a password or one-time code into chat. The homework does not change Gmail or Drive and does not open LinkedIn.
+DONE WHEN: Ask for approval remains selected.
+
+SCENE 4: If any screen looks different, stop
+If any button, app or folder is missing, stop. Open a normal Chat G P T chat. Open the prompt file in the pack. Copy Prompt Zero, the complete Setup Helper rescue. The helper gives you one action, waits, and verifies it before continuing.
+DONE WHEN: The helper gives one action, waits, then verifies it.
+
+SCENE 5: Open the homework pack
+On a Mac, open Finder, click Downloads and double-click the zip. On Windows, open File Explorer, click Downloads, right-click the zip and choose Extract All. Done when the normal folder shows the guide and A I Human Starters.
+DONE WHEN: The normal folder shows the guide and AI-HUMAN-STARTERS.
+
+SCENE 6: Copy two separate starter folders
+Inside Documents, make one folder named A I Humans. Copy starter zero one, Email Triage, into it. Then copy starter zero two, Drive Inventory, beside it. Keep the downloaded pack untouched. Done when the two copied folders are separate.
+DONE WHEN: The two copied folders sit beside each other.
+
+SCENE 7: Open Email Triage in ChatGPT
+Check whether the Chat G P T desktop app is already installed. If it is, open it. Do not install it again. Choose Codex, open a folder, and select the Email Triage folder. Keep Ask for approval. Done when the Email project can see A G E N T S dot M D.
+DONE WHEN: The Email project can see AGENTS.md.
+
+SCENE 8: Connect only Gmail
+Open Plugins and search for Gmail. If it is installed, return to the Email project. If it is missing, install it and start a new chat in the Email project. Choose only the approved company account. Done when Codex verifies the connection.
+DONE WHEN: Codex verifies the Gmail connection.
+
+SCENE 9: Run Email homework
+Open the prompt file. Copy all of Prompt One. Replace the name box with your name. Paste it into the Email project. Do not shorten it. Done when Codex names Email H W zero zero one and reads no more than twenty-five inbox messages.
+DONE WHEN: EMAIL-HW-001 reads no more than 25 inbox messages.
+
+SCENE 10: Check Email proof
+Stop when the Email Triage Report is visible. It shows how the messages were selected, uses the five buckets, protects sensitive messages, and states that no mailbox action occurred. The workspace validator must pass. Connected is not done. The visible report is done.
+DONE WHEN: The visible local report is the proof.
+
+SCENE 11: Open Drive as a separate project
+Now add the Drive Inventory folder as a second local project. Do not add it to the Email project. Start a new chat inside the Drive project. Done when Email and Drive appear as separate projects.
+DONE WHEN: Email and Drive appear as separate projects.
+
+SCENE 12: Connect Drive and run Prompt 2
+In Plugins, find Google Drive. Install it only if missing, then connect the approved company account. Copy all of Prompt Two, replace the name box, and paste it into the Drive project. Done when Codex names Drive H W zero zero one and reads metadata for no more than twenty-five items.
+DONE WHEN: DRIVE-HW-001 reads metadata for no more than 25 items.
+
+SCENE 13: Check Drive proof
+Stop when Drive Inventory is visible. It must say First bounded batch, never complete inventory. Missing facts say Unknown. Sensitive titles say Human Review. The file states that Drive was not changed, and the validator passes.
+DONE WHEN: The report never claims to cover the whole Drive.
+
+SCENE 14: Optional: make a LinkedIn draft
+The LinkedIn project is optional. Do it only after Email and Drive pass. Copy starter zero three, open it separately, and paste Prompt Three. Answer one safe question at a time. Done when the local draft says Draft, Not Published. Do not open LinkedIn.
+DONE WHEN: The local file says DRAFT - NOT PUBLISHED.
+
+SCENE 15: Bring only safe proof
+Bring the laptop or safe screenshots showing the Email report, Drive inventory, evidence rows and validator passes. Do not expose email bodies, private Drive content, passwords, codes, H R information or banking information. Your two visible reports are the homework.
+DONE WHEN: Two visible required reports are ready for review.
+
+SCENE 16: Mission + judgment = you
+You provide the mission and judgment. Codex performs the approved work inside the boundaries. Start with Email. Finish with visible proof. Then build Drive.
+DONE WHEN: Bounded work + evidence turns a folder into an AI human.

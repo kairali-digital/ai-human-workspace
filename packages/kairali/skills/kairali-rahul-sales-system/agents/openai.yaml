@@ -1,0 +1,4 @@
+interface:
+  display_name: "Kairali Rahul Sales System"
+  short_description: "Design measurable ethical sales workflows and reviews"
+  default_prompt: "Apply the Kairali Rahul Sales System skill to this sales use case, separate roles and handoffs, define evidence and review checks, and stop before unapproved claims, access, spend, or policy changes."

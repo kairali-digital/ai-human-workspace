@@ -43,6 +43,12 @@ creates one worker folder, personalizes it with the approved company/owner/role/
 opens that exact folder in Codex and validates it. It does not place employee state in
 the public repository.
 
+For Kairali, the helper also opens the approved role prompt. If the attendee has no
+named plan, it installs the universal homework reference kit and creates separate Email
+Triage and Drive Inventory worker folders; LinkedIn Draft stays optional. It installs
+an Akshar or Rahul governed skill only when the employee's approved role or the owner
+explicitly names that skill. No employee chooses from the machine's full skill list.
+
 ## DONE WHEN
 
 Codex is open inside the employee's worker folder and answers this from the project

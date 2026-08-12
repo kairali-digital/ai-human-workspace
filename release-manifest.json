@@ -37,12 +37,12 @@
       "target": ".ai-human/system/TOOLBOX-TEMPLATE.md"
     },
     {
-      "sha256": "59854984853104df5c353e2f681a15fc7924742f9a2e468c29af248dce45ce03",
+      "sha256": "1575e1af4a95f12f70b4ee6a6adce8160953d93ea17dc2611b90883ccc3ad3b8",
       "source": "core/VERSION",
       "target": ".ai-human/VERSION"
     },
     {
-      "sha256": "9f189b2ada1df9c441ecb8e58296cb19f2714058dcce827ccb9c8ac46fe99fcf",
+      "sha256": "8520c78a56cc60fb392807417cc1aef7bcd54d6d6b46b3d6fa3650cac376e64c",
       "source": "scripts/ai_human.py",
       "target": ".ai-human/bin/ai_human.py"
     }
@@ -72,5 +72,5 @@
   ],
   "repository": "kairali-digital/ai-human-workspace",
   "schema": "ai-human.workspace-release/v1",
-  "version": "1.0.0"
+  "version": "1.1.0"
 }

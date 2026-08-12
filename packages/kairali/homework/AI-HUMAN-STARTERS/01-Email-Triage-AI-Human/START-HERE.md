@@ -1,0 +1,89 @@
+# Start here - Email Triage AI Human
+
+> You are learning to wear Codex like an Iron Man suit. You provide the mission and
+> judgment. Codex performs approved work through a controlled autonomous loop.
+
+This project reads a small batch of company email and makes a local review list. It
+does not change Gmail. You do not need Terminal, PowerShell, Command Prompt, Python,
+Git, GitHub, or VS Code.
+
+## If anything on the screen does not match
+
+Start a new normal ChatGPT chat. Paste the complete message below. Do not shorten it.
+
+```text
+I am stuck setting up my Kairali AI workspace. I do not know Terminal, Python, Git, GitHub, folders, projects or Codex.
+
+Be my Setup Helper.
+
+1. Work out whether I am on Mac or Windows and check what is already installed before changing anything.
+2. Do every approved safe setup step you can yourself.
+3. If a click, login, account choice or permission must be done by me, show me only that one action in plain Mac or Windows words. Wait for me, then verify it worked.
+4. Never ask me to use Terminal, PowerShell, Command Prompt, Python, a CLI or type a command.
+5. Never ask for, read or repeat my password or one-time code.
+6. Use only my approved company account and company folder.
+7. Keep permissions on Ask for approval. Never choose Full access.
+8. For the shared Kairali workspace, use GitHub Desktop buttons. For a standalone local project, do not install GitHub unless it is actually needed.
+9. Continue until ChatGPT is installed, Codex is open, the correct project is connected, AGENTS.md is visible, approved apps are connected when required, and the startup test passes.
+10. If you cannot continue safely, write one OPEN_REGISTER.md row with the failed step, exact error, what you checked, and the one human access or decision needed. Then tell me whether Ambuj or Abilash must help.
+
+Do not teach me how the machinery works unless I ask. Start now by checking what I already have.
+```
+
+## The whole job
+
+1. Open this folder as a local project in the ChatGPT desktop app.
+2. Choose Codex and start a new chat.
+3. Paste the first-run prompt below after replacing `[TYPE YOUR NAME]`.
+4. Complete only a provider login or account-choice screen yourself. Never paste a
+   password or one-time code into chat.
+5. Stop when Codex shows the finished report and proof.
+
+## Paste this exact first-run prompt
+
+```text
+My name is [TYPE YOUR NAME]. This is task EMAIL-HW-001.
+
+Read AGENTS.md, AI-HUMAN.md, PARAMETERS.md, MASTER_CURSOR.md, OPEN_REGISTER.md,
+TODAY.md, TOOLBOX.md, GATES.md and DECISIONS.md.
+
+First, replace “Kairali employee using this copy” with my name in this project's
+owner fields only. Do not change the worker's name, purpose, task, limits or gates.
+
+Then check whether the Gmail plugin is installed and connected to my approved company
+account. If it is missing or disconnected, do not troubleshoot with Terminal and do
+not ask for my password. Show me only the next click or login I must do, wait for me,
+and verify the connection before continuing.
+
+When the approved company inbox is connected, read no more than the 25 most recent
+messages currently in the inbox. Do not open attachments. Put each message into one of
+these buckets: REPLY, DECISION, READ, LOW PRIORITY, HUMAN REVIEW.
+
+Create EMAIL-TRIAGE-REPORT.md with:
+- the account label without exposing secrets;
+- the exact selection rule and number reviewed;
+- one short row per message: date, sender, subject, bucket, why it is there, and the
+  next human action;
+- a short “Start here” list of the items that need attention first; and
+- the sentence “No email was sent, drafted, archived, labelled, deleted, moved, marked
+  read or unread, and no attachment was opened.”
+
+Do not copy full private message text into the report. If a message contains medical,
+dosage, certification, legal, spend, credentials, banking, personal HR or other highly
+sensitive content, use HUMAN REVIEW and show sender, subject and date only. Do not
+advise, rewrite or quote it.
+
+Read the finished report back to me. If it passes the task's exit evidence, update the
+ledger, register, cursor, today file and evidence log. Then validate this workspace.
+```
+
+## Done when
+
+- `EMAIL-TRIAGE-REPORT.md` is visible in this project.
+- It contains no more than 25 rows and shows how the messages were selected.
+- Sensitive items say `HUMAN REVIEW` without quoted private text.
+- The report says the mailbox was not changed.
+- Codex says the workspace validator passed.
+
+An installation or a connected account by itself is not homework proof. The visible
+report and the evidence row are the proof.

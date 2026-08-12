@@ -8,7 +8,10 @@ Drive content or private evidence.
 
 - `people/` — the approved common, named-role, intern and Setup Helper start prompts;
 - `homework/` — the complete fallback homework for any attendee without a named plan;
-- the Email Triage and Drive Inventory workers as required, separate read-only projects;
+- the Email Triage and Drive Index workers as required, separate read-only projects;
+- a `TEST 25` or resumable `FULL DRIVE INDEX` choice; full mode enumerates all
+  connector-visible metadata in checkpointed batches of at most 25 and creates a local
+  future-searchable CSV, summary and cursor without opening or changing Drive files;
 - the optional local LinkedIn Draft worker;
 - exact copy-paste prompts, Mac/Windows guide, transcript, captions and narrated video.
 

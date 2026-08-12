@@ -10,8 +10,17 @@
 - `AGENTS.md` - zero-knowledge rollout gate, Mac/Windows recovery, exact Setup Helper
   requirement, no command line, batch cap, Gate 0 and proof rules.
 - `people/SETUP-HELPER.md` - exact rescue prompt copied without shortening.
-- Installed `ai-human-workspace` skill - separate bounded project
-  folders, durable state, tool boundaries, no unattended work, validation.
+- Installed `ai-human-workspace` skill - separate bounded project folders, durable
+  state, tool boundaries, no unattended work and validation.
+- Owner instruction H-35, 12 Aug 2026: employees may choose `TEST 25` or a full
+  connector-visible Drive metadata index; full mode continues in batches of at most 25
+  with a durable checkpoint after each batch and never opens or changes Drive files.
+- Protected public `kairali-digital/ai-human-workspace` release v1.2.0 - complete
+  integrity-checked Kairali reference kit, public distribution boundary, three homework
+  starters, all approved people/setup prompts and two explicit role-opt-in skills.
+- `work/MULTI-COMPANY-AI-HUMAN-CORE-001/repo/packages/kairali/README.md` - the public
+  kit is a setup/reference layer; employee live state stays in a separate private or
+  local work project; component removal archives and deletes no employee work.
 
 ## Owner-shared Outskill reference
 
@@ -35,8 +44,11 @@
 
 ## Locked scope choices
 
-- “Drive scraper” is presented to beginners as “Drive Inventory” and reads metadata
-  only. The first run stops at 25 and never claims whole-Drive coverage.
+- “Drive scraper” is presented to beginners as “Drive Index” and reads metadata only.
+  The employee chooses a one-batch `TEST 25` or a `FULL DRIVE INDEX` that processes
+  every connector-visible page in checkpointed batches of at most 25. Unsupported
+  scopes are reported as coverage gaps; the index never implies access the connector
+  did not provide.
 - Email first run reads no more than 25 inbox messages and makes a local report only.
 - LinkedIn uses only employee-supplied facts and creates a local draft; no browser or
   account access is granted.

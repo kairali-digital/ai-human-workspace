@@ -21,13 +21,13 @@ export const downloadGroups: DownloadGroup[] = [
       {
         label: "Download the complete pack",
         description: "Presentations, guides, homework, prompts, core release and role skills.",
-        file: "KAIRALI-AI-METHOD-ROLLOUT-v11-PUBLIC-KIT.zip",
+        file: "KAIRALI-AI-METHOD-ROLLOUT-v12-PUBLIC-KIT.zip",
         format: "ZIP",
       },
       {
         label: "Checksum",
         description: "Use this only when IT or a technical facilitator verifies the download.",
-        file: "KAIRALI-AI-METHOD-ROLLOUT-v11-PUBLIC-KIT.sha256",
+        file: "KAIRALI-AI-METHOD-ROLLOUT-v12-PUBLIC-KIT.sha256",
         format: "SHA-256",
       },
     ],
@@ -64,11 +64,11 @@ export const downloadGroups: DownloadGroup[] = [
   },
   {
     title: "Homework",
-    description: "Email and Drive are required. LinkedIn is optional after both pass.",
+    description: "Email and the Drive Index are required. Choose the full index for the real homework; LinkedIn is optional after both pass.",
     items: [
       {
         label: "Homework pack",
-        description: "Guide, prompts, video, captions and three separate starter projects.",
+        description: "Guide, prompts, video, captions and three starters, including TEST 25 or resumable FULL DRIVE INDEX.",
         file: "EVERYONE-ELSE-AI-HUMAN-HOMEWORK-PACK.zip",
         format: "ZIP",
       },
@@ -129,13 +129,13 @@ export const downloadGroups: DownloadGroup[] = [
       {
         label: "Main presentation",
         description: "The 26-slide company rollout presentation.",
-        file: "KAIRALI-AI-METHOD-DECK-v11-PUBLIC-KIT.pptx",
+        file: "KAIRALI-AI-METHOD-DECK-v12-PUBLIC-KIT.pptx",
         format: "PPTX",
       },
       {
         label: "Main presentation PDF",
         description: "A read-only copy for review and printing.",
-        file: "KAIRALI-AI-METHOD-DECK-v11-PUBLIC-KIT.pdf",
+        file: "KAIRALI-AI-METHOD-DECK-v12-PUBLIC-KIT.pdf",
         format: "PDF",
       },
       {
@@ -159,13 +159,13 @@ export const downloadGroups: DownloadGroup[] = [
       {
         label: "Advanced presentation",
         description: "Git, CLI, evidence review and governed role skills.",
-        file: "KAIRALI-AI-METHOD-ADVANCED-CLI-BONUS-v3-PUBLIC-KIT.pptx",
+        file: "KAIRALI-AI-METHOD-ADVANCED-CLI-BONUS-v4-PUBLIC-KIT.pptx",
         format: "PPTX",
       },
       {
         label: "Advanced presentation PDF",
         description: "A read-only copy of the technical clinic.",
-        file: "KAIRALI-AI-METHOD-ADVANCED-CLI-BONUS-v3-PUBLIC-KIT.pdf",
+        file: "KAIRALI-AI-METHOD-ADVANCED-CLI-BONUS-v4-PUBLIC-KIT.pdf",
         format: "PDF",
       },
       {

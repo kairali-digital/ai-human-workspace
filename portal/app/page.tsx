@@ -15,7 +15,7 @@ type GithubRelease = {
 };
 
 const fallbackRelease: GithubRelease = {
-  tag_name: "v1.1.0",
+  tag_name: "v1.2.0",
   html_url: "https://github.com/kairali-digital/ai-human-workspace/releases/latest",
   published_at: "2026-08-12T00:00:00Z",
   assets: [],
@@ -43,18 +43,13 @@ function assetLink(release: GithubRelease, prefix: string) {
 
 export default async function Home() {
   const { release, live } = await getLatestRelease();
-  const releaseDate = new Intl.DateTimeFormat("en-IN", {
-    day: "numeric",
-    month: "long",
-    year: "numeric",
-  }).format(new Date(release.published_at));
 
   return (
     <main>
       <header className="site-header">
-        <a className="brand" href="#start" aria-label="Kairali AI Method home">
+        <a className="brand" href="#start">
           <span className="brand-mark" aria-hidden="true">K</span>
-          <span>Kairali AI Method</span>
+          <span className="brand-name">Kairali AI Method</span>
         </a>
         <nav aria-label="Portal navigation">
           <a href="#start">Start</a>
@@ -69,7 +64,7 @@ export default async function Home() {
           <h1>One link for the complete Kairali AI Method.</h1>
           <p className="hero-summary">Open the guide, get the approved files and begin without an account.</p>
           <div className="hero-actions">
-            <a className="button button-primary" href="/downloads/KAIRALI-AI-METHOD-ROLLOUT-v11-PUBLIC-KIT.zip" download>
+            <a className="button button-primary" href="/downloads/KAIRALI-AI-METHOD-ROLLOUT-v12-PUBLIC-KIT.zip" download>
               Download everything
             </a>
             <a className="button button-secondary" href="/downloads/EMPLOYEE-SETUP-AND-PROOF-GUIDE-v3-PUBLIC-KIT.pdf">
@@ -90,12 +85,12 @@ export default async function Home() {
 
       <section className="release-strip" aria-label="Current source status">
         <div>
-          <span>Current approved GitHub release</span>
-          <strong>{release.tag_name}</strong>
+          <span>Portal review package</span>
+          <strong>v1.2.0</strong>
         </div>
         <div>
-          <span>Published</span>
-          <strong>{releaseDate}</strong>
+          <span>Latest approved GitHub release</span>
+          <strong>{release.tag_name}</strong>
         </div>
         <div>
           <span>Access</span>
@@ -114,7 +109,7 @@ export default async function Home() {
           <article className="path path-employee">
             <span>For employees</span>
             <h3>Use the Setup Helper.</h3>
-            <p>No Terminal, Git or command line. Complete Email and Drive homework first.</p>
+            <p>No Terminal, Git or command line. Complete Email and the full Drive Index homework first.</p>
             <a href="/downloads/EMPLOYEE-SETUP-AND-PROOF-GUIDE-v3-PUBLIC-KIT.pdf">Open employee guide</a>
           </article>
           <article className="path path-facilitator">

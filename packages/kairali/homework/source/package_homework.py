@@ -3,7 +3,7 @@
 
 from hashlib import sha256
 from pathlib import Path
-from zipfile import ZIP_DEFLATED, ZipFile
+from zipfile import ZIP_DEFLATED, ZipFile, ZipInfo
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -27,7 +27,10 @@ TOP_FILES = [
 
 def add_file(archive: ZipFile, path: Path) -> None:
     relative = path.relative_to(ROOT)
-    archive.write(path, f"{PACK_NAME}/{relative.as_posix()}")
+    info = ZipInfo(f"{PACK_NAME}/{relative.as_posix()}", date_time=(1980, 1, 1, 0, 0, 0))
+    info.compress_type = ZIP_DEFLATED
+    info.external_attr = 0o100644 << 16
+    archive.writestr(info, path.read_bytes())
 
 
 def build() -> None:

@@ -48,19 +48,19 @@ Now add the Drive Inventory folder as a second local project. Do not add it to t
 DONE WHEN: Email and Drive appear as separate projects.
 
 SCENE 12: Connect Drive and run Prompt 2
-In Plugins, find Google Drive. Install it only if missing, then connect the approved company account. Copy all of Prompt Two, replace the name box, and paste it into the Drive project. Done when Codex names Drive H W zero zero one and reads metadata for no more than twenty-five items.
-DONE WHEN: DRIVE-HW-001 reads metadata for no more than 25 items.
+In Plugins, find Google Drive. Install it only if missing, then connect the approved company account. Copy all of Prompt Two, replace the name box, and paste it into the Drive project. Choose Test Twenty Five or Full Drive Index. Every batch is no more than twenty-five items and ends with a saved checkpoint.
+DONE WHEN: Choose TEST 25 or FULL DRIVE INDEX; each batch is at most 25.
 
 SCENE 13: Check Drive proof
-Stop when Drive Inventory is visible. It must say First bounded batch, never complete inventory. Missing facts say Unknown. Sensitive titles say Human Review. The file states that Drive was not changed, and the validator passes.
-DONE WHEN: The report never claims to cover the whole Drive.
+The Drive project creates a CSV index, a summary and a saved cursor. Test Twenty Five stops after one batch and says the full Drive was not indexed. Full Drive Index continues in checkpointed batches until every connector-visible scope has no next page. Missing facts say Unknown. Sensitive titles say Human Review. No file content is opened and Drive is not changed.
+DONE WHEN: Full mode ends only when every supported scope has no next page.
 
 SCENE 14: Optional: make a LinkedIn draft
 The LinkedIn project is optional. Do it only after Email and Drive pass. Copy starter zero three, open it separately, and paste Prompt Three. Answer one safe question at a time. Done when the local draft says Draft, Not Published. Do not open LinkedIn.
 DONE WHEN: The local file says DRAFT - NOT PUBLISHED.
 
 SCENE 15: Bring only safe proof
-Bring the laptop or safe screenshots showing the Email report, Drive inventory, evidence rows and validator passes. Do not expose email bodies, private Drive content, passwords, codes, H R information or banking information. Your two visible reports are the homework.
+Bring the laptop or safe screenshots showing the Email report, Drive index summary, saved cursor, evidence rows and validator passes. Do not expose email bodies, private Drive content, passwords, codes, H R information or banking information. Your two visible results are the homework.
 DONE WHEN: Two visible required reports are ready for review.
 
 SCENE 16: Mission + judgment = you

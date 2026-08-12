@@ -14,7 +14,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 
 ROOT = Path(__file__).resolve().parents[1]
-TMP = ROOT.parents[1] / "tmp" / "GENERAL-AI-HUMAN-HOMEWORK-001" / "video-build"
+TMP = ROOT.parents[1] / "tmp" / "H-35-DRIVE-INDEX" / "video-build"
 OUTPUT = ROOT / "EVERYONE-ELSE-AI-HUMAN-HOMEWORK-VIDEO.mp4"
 TRANSCRIPT = ROOT / "EVERYONE-ELSE-AI-HUMAN-HOMEWORK-VIDEO-TRANSCRIPT.txt"
 SRT = ROOT / "EVERYONE-ELSE-AI-HUMAN-HOMEWORK-VIDEO-CAPTIONS.srt"
@@ -117,15 +117,15 @@ SCENES = [
         "title": "Connect Drive and run Prompt 2",
         "label": "CHECK  →  INSTALL IF MISSING",
         "actions": ["Plugins  →  Google Drive  →  approved company account", "Open COPY-PASTE-PROMPTS.txt  →  copy PROMPT 2", "Replace the name box  →  paste in the Drive project"],
-        "done": "DRIVE-HW-001 reads metadata for no more than 25 items.",
-        "narration": "In Plugins, find Google Drive. Install it only if missing, then connect the approved company account. Copy all of Prompt Two, replace the name box, and paste it into the Drive project. Done when Codex names Drive H W zero zero one and reads metadata for no more than twenty-five items.",
+        "done": "Choose TEST 25 or FULL DRIVE INDEX; each batch is at most 25.",
+        "narration": "In Plugins, find Google Drive. Install it only if missing, then connect the approved company account. Copy all of Prompt Two, replace the name box, and paste it into the Drive project. Choose Test Twenty Five or Full Drive Index. Every batch is no more than twenty-five items and ends with a saved checkpoint.",
     },
     {
         "title": "Check Drive proof",
-        "label": "FIRST BOUNDED BATCH",
-        "actions": ["DRIVE-INVENTORY.md is visible", "Missing facts say UNKNOWN  ·  sensitive titles say HUMAN REVIEW", "Drive unchanged  ·  workspace validator passes"],
-        "done": "The report never claims to cover the whole Drive.",
-        "narration": "Stop when Drive Inventory is visible. It must say First bounded batch, never complete inventory. Missing facts say Unknown. Sensitive titles say Human Review. The file states that Drive was not changed, and the validator passes.",
+        "label": "RESUMABLE METADATA INDEX",
+        "actions": ["DRIVE-INDEX.csv + summary + cursor are visible", "Every batch ≤ 25  ·  IDs prevent duplicates", "Drive unchanged  ·  scope coverage recorded"],
+        "done": "Full mode ends only when every supported scope has no next page.",
+        "narration": "The Drive project creates a CSV index, a summary and a saved cursor. Test Twenty Five stops after one batch and says the full Drive was not indexed. Full Drive Index continues in checkpointed batches until every connector-visible scope has no next page. Missing facts say Unknown. Sensitive titles say Human Review. No file content is opened and Drive is not changed.",
     },
     {
         "title": "Optional: make a LinkedIn draft",
@@ -137,9 +137,9 @@ SCENES = [
     {
         "title": "Bring only safe proof",
         "label": "HOMEWORK COMPLETE",
-        "actions": ["Email report  +  Drive inventory", "Evidence rows  +  validator passes", "Optional local LinkedIn draft"],
+        "actions": ["Email report  +  Drive index", "Evidence rows  +  validator passes", "Optional local LinkedIn draft"],
         "done": "Two visible required reports are ready for review.",
-        "narration": "Bring the laptop or safe screenshots showing the Email report, Drive inventory, evidence rows and validator passes. Do not expose email bodies, private Drive content, passwords, codes, H R information or banking information. Your two visible reports are the homework.",
+        "narration": "Bring the laptop or safe screenshots showing the Email report, Drive index summary, saved cursor, evidence rows and validator passes. Do not expose email bodies, private Drive content, passwords, codes, H R information or banking information. Your two visible results are the homework.",
     },
     {
         "title": "Mission + judgment = you",

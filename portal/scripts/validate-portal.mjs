@@ -6,9 +6,9 @@ const root = path.resolve(import.meta.dirname, "..");
 const manifest = JSON.parse(await readFile(path.join(root, "content", "download-manifest.json"), "utf8"));
 const issues = [];
 const required = new Set([
-  "KAIRALI-AI-METHOD-ROLLOUT-v11-PUBLIC-KIT.zip",
-  "KAIRALI-AI-METHOD-DECK-v11-PUBLIC-KIT.pptx",
-  "KAIRALI-AI-METHOD-ADVANCED-CLI-BONUS-v3-PUBLIC-KIT.pptx",
+  "KAIRALI-AI-METHOD-ROLLOUT-v12-PUBLIC-KIT.zip",
+  "KAIRALI-AI-METHOD-DECK-v12-PUBLIC-KIT.pptx",
+  "KAIRALI-AI-METHOD-ADVANCED-CLI-BONUS-v4-PUBLIC-KIT.pptx",
   "EMPLOYEE-SETUP-AND-PROOF-GUIDE-v3-PUBLIC-KIT.pdf",
   "FACILITATOR-RUNBOOK-v5-PUBLIC-KIT.pdf",
   "EVERYONE-ELSE-AI-HUMAN-HOMEWORK-PACK.zip",
@@ -45,7 +45,7 @@ const nextConfig = await readFile(path.join(root, "next.config.ts"), "utf8");
 const robots = await readFile(path.join(root, "app", "robots.ts"), "utf8");
 const visible = `${page}\n${await readFile(path.join(root, "content", "site-data.ts"), "utf8")}`;
 
-for (const phrase of ["Download everything", "Use the Setup Helper", "Email and Drive are required", "GitHub stays the approved source of truth", "No login required"]) {
+for (const phrase of ["Download everything", "Use the Setup Helper", "Email and the Drive Index are required", "FULL DRIVE INDEX", "GitHub stays the approved source of truth", "No login required"]) {
   if (!visible.includes(phrase)) issues.push(`visible portal copy lacks: ${phrase}`);
 }
 if (!layout.includes("index: false") || !layout.includes("follow: false")) issues.push("metadata robots are not noindex and nofollow");

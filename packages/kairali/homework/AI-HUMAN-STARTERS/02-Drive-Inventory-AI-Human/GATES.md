@@ -21,16 +21,23 @@ Do not invent approval or rewrite the issue to make the gate disappear.
 
 ### Drive homework lock
 
-- Read metadata only from the approved company Drive and stop after 25 items.
+- Read metadata only from the approved company Drive. Never process more than 25 items
+  in one batch. Save a durable checkpoint before starting the next batch.
 - Do not read document contents, download, create, edit, rename, move, share, unshare,
   delete, deduplicate, organize, or schedule anything in Drive.
-- Never describe the report as a complete Drive inventory. It is the first bounded batch.
+- `TEST 25` must say the full Drive was not indexed. `FULL DRIVE INDEX` may be called
+  complete only after every connector-supported source scope has no next page. Every
+  unsupported scope must be recorded as `UNKNOWN — CONNECTOR COVERAGE GAP`.
+- Use stable item IDs to prevent duplicate index rows. If a connector cursor expires,
+  restart that source scope and skip IDs already recorded locally.
 - Use `UNKNOWN` when owner, relationship, parent, date, or another field is unavailable.
   Do not infer it from a title.
 - If a title or metadata points to medical, dosage, certification, legal, spend,
   credentials, banking, personal HR, or other highly sensitive material, record
   `HUMAN REVIEW` and metadata only. Do not open the file.
 - If the connected account is not the employee's approved company account, stop.
+- Never store a password, one-time code, access token or secret connector value in the
+  cursor or index.
 
 ## Gate 3 — verification
 

@@ -343,7 +343,15 @@ footer a { flex: 0 0 auto; font-weight: 750; }
 
 @media (max-width: 767px) {
   .site-header { height: auto; padding: 18px 20px; }
-  .brand span:last-child { display: none; }
+  .brand-name {
+    clip: rect(0, 0, 0, 0);
+    clip-path: inset(50%);
+    height: 1px;
+    overflow: hidden;
+    position: absolute;
+    white-space: nowrap;
+    width: 1px;
+  }
   nav { gap: 16px; }
   nav a { font-size: 0.82rem; }
   .hero { gap: 34px; padding: 24px 20px 60px; }

@@ -3,8 +3,8 @@
 > You are learning to wear Codex like an Iron Man suit. You provide the mission and
 > judgment. Codex performs approved work through a controlled autonomous loop.
 
-This project reads the labels around a small batch of company Drive files and makes a
-local list. It does not open the files or change Drive. You do not need Terminal,
+This project reads the labels around company Drive files and makes a future-searchable
+local index. It does not open file contents or change Drive. You do not need Terminal,
 PowerShell, Command Prompt, Python, Git, GitHub, or VS Code.
 
 ## If anything on the screen does not match
@@ -37,7 +37,9 @@ Do not teach me how the machinery works unless I ask. Start now by checking what
 3. Paste the first-run prompt below after replacing `[TYPE YOUR NAME]`.
 4. Complete only a provider login or account-choice screen yourself. Never paste a
    password or one-time code into chat.
-5. Stop when Codex shows the finished inventory and proof.
+5. Choose `TEST 25` for one practice batch or `FULL DRIVE INDEX` to index everything
+   the connected company account can see. Full mode is recommended.
+6. Stop when Codex shows the index, coverage report and proof.
 
 Do not add this folder to the Email Triage project. Each AI human keeps separate memory
 and state.
@@ -58,36 +60,62 @@ company account. If it is missing or disconnected, do not troubleshoot with Term
 and do not ask for my password. Show me only the next click or login I must do, wait
 for me, and verify the connection before continuing.
 
-When the approved company Drive is connected, read metadata only for no more than the
-25 most recently modified or recently viewed items the connector can list reliably.
-Do not read file contents and do not download files.
+When the approved company Drive is connected, ask me one question: Choose TEST 25 or
+FULL DRIVE INDEX (recommended). Wait for my answer. Do not ask another setup question.
 
-Create DRIVE-INVENTORY.md with:
-- the account label without exposing secrets;
-- the exact selection rule and number reviewed;
-- one row per item: file name, file type, owner or relationship if available, last
-  modified date if available, parent or location if available, link, and review note;
-- UNKNOWN for every unavailable value instead of a guess;
-- HUMAN REVIEW for titles or metadata that point to medical, dosage, certification,
-  legal, spend, credentials, banking, personal HR or other highly sensitive material;
-  do not open those files; and
-- the sentence “No Drive file was opened beyond metadata, downloaded, created, edited,
-  renamed, moved, shared, unshared, deleted or organized.”
+For either choice, read metadata only. Never open or download file contents. Use batches
+of no more than 25 items and checkpoint after every batch.
 
-Call this “First bounded batch”, never “complete Drive inventory”.
+Create or update these local files:
+- DRIVE-INDEX.csv, with one row per unique Drive item and these columns: item_id, name,
+  file_type, owner_or_relationship, modified_time, parent_or_location, sharing_status,
+  web_link, source_scope, indexed_at_utc, review_note;
+- DRIVE-INDEX.md, with the account label without secrets, chosen mode, coverage by
+  source scope, batch count, unique item count, duplicate count, unavailable fields,
+  and a plain-language guide for asking Codex to find a file later; and
+- DRIVE-INDEX-CURSOR.md, with chosen mode, current source scope, last completed batch,
+  the connector's next-page state when safely available, unique item count, and the
+  exact next action. Never store a password, one-time code or access token.
 
-Read the finished inventory back to me. If it passes the task's exit evidence, update
-the ledger, register, cursor, today file and evidence log. Then validate this workspace.
+Use the connector's stable item ID to prevent duplicates. If a saved page cursor expires,
+restart that source scope and skip every item ID already present in DRIVE-INDEX.csv.
+Use UNKNOWN for every unavailable value instead of a guess. Use HUMAN REVIEW for titles
+or metadata that point to medical, dosage, certification, legal, spend,
+credentials, banking, personal HR or other highly sensitive material; do not open them.
+
+If I choose TEST 25, index up to 25 recently modified or recently viewed items, label
+the result TEST 25 COMPLETE — FULL DRIVE NOT INDEXED, then stop.
+
+If I choose FULL DRIVE INDEX, enumerate every page the connector exposes for all
+visible scopes it supports: owned or created by me, shared with me, shared by me when
+that relationship is available, and visible shared drives. Work in batches of no more
+than 25. After each batch, save the CSV, summary, cursor, state files and evidence, then
+continue automatically inside this approved task. If the session must end, validate the
+workspace and leave the cursor ready so a new session resumes without starting over.
+Call the result complete only when every supported scope has no next page. Record any
+scope the connector cannot expose as UNKNOWN — CONNECTOR COVERAGE GAP; never claim it
+was scanned.
+
+Put this exact sentence in DRIVE-INDEX.md: “No Drive file content was opened or
+downloaded, and no Drive item was created, edited, renamed, moved, shared, unshared,
+deleted or organized.”
+
+Read the finished index summary back to me. If it passes the task's exit evidence,
+update the ledger, register, cursor, today file and evidence log. Then validate this
+workspace.
 ```
 
 ## Done when
 
-- `DRIVE-INVENTORY.md` is visible in this project.
-- It contains no more than 25 rows and shows how the items were selected.
+- `DRIVE-INDEX.csv`, `DRIVE-INDEX.md` and `DRIVE-INDEX-CURSOR.md` are visible.
+- Every processing batch contains no more than 25 items and has a checkpoint.
 - Missing facts say `UNKNOWN`; sensitive titles say `HUMAN REVIEW`.
-- It says `First bounded batch` and does not claim to cover the whole Drive.
-- The inventory says Drive was not changed.
+- `TEST 25` clearly says the full Drive was not indexed; `FULL DRIVE INDEX` ends only
+  after every supported connector scope has no next page and lists coverage gaps.
+- The index says file contents were not opened and Drive was not changed.
 - Codex says the workspace validator passed.
 
 An installation or a connected account by itself is not homework proof. The visible
-inventory and the evidence row are the proof.
+index files and the evidence rows are the proof. The local index helps Codex find names,
+links and metadata later. Opening a file's contents later still requires current Drive
+permission and a new approved task.

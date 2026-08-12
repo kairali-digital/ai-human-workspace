@@ -111,17 +111,19 @@ PROMPT 2 -> replace name -> paste.
 
 **Narration:** In Plugins, find Google Drive. Install it only if missing, then connect
 the approved company account. Copy all of Prompt Two, replace the name box, and paste
-it into the Drive project. Done when Codex names DRIVE-HW-001 and reads metadata for
-no more than twenty-five items.
+it into the Drive project. Choose Test Twenty Five or Full Drive Index. Every batch is
+no more than twenty-five items and ends with a saved checkpoint.
 
 ## Scene 13 - Check Drive proof
 
-**Screen:** `DRIVE-INVENTORY.md` + First bounded batch + UNKNOWN + Drive unchanged +
-validator pass.
+**Screen:** `DRIVE-INDEX.csv` + summary + cursor + batch ≤25 + scope coverage + Drive
+unchanged.
 
-**Narration:** Stop when Drive Inventory is visible. It must say First bounded batch,
-never complete inventory. Missing facts say Unknown. Sensitive titles say Human Review.
-The file states that Drive was not changed, and the validator passes.
+**Narration:** The Drive project creates a CSV index, a summary and a saved cursor. Test
+Twenty Five stops after one batch and says the full Drive was not indexed. Full Drive
+Index continues in checkpointed batches until every connector-visible scope has no
+next page. Missing facts say Unknown. Sensitive titles say Human Review. No file
+content is opened and Drive is not changed.
 
 ## Scene 14 - Optional LinkedIn draft
 
@@ -135,10 +137,11 @@ LinkedIn.
 
 ## Scene 15 - Bring proof
 
-**Screen:** Email report + Drive inventory + validator passes + optional draft.
+**Screen:** Email report + Drive index summary + saved cursor + validator passes +
+optional draft.
 
 **Narration:** Bring the laptop or safe screenshots showing the Email report, Drive
-inventory, evidence rows and validator passes. Do not expose email bodies, private
+index summary, saved cursor, evidence rows and validator passes. Do not expose email bodies, private
 Drive content, passwords, codes, HR information or banking information. Your two
 visible reports are the homework.
 

@@ -5,6 +5,13 @@
 Use this guide only if you attended the meeting and do not already have a named start
 or homework page.
 
+This homework is part of the protected public
+`kairali-digital/ai-human-workspace` v1.2.0 company kit. The public kit is the clean
+setup and update source; it contains no live company work or secrets, so no GitHub
+invitation or collaborator seat is needed. Ask the Setup Helper to obtain and verify
+the kit. Then copy the Email and Drive starters into separate local work folders. Do
+not use the public distribution repository as a work project.
+
 > You are learning to wear Codex like an Iron Man suit. You provide the mission and
 > judgment. Codex performs approved work through a controlled autonomous loop.
 
@@ -12,8 +19,8 @@ You will make two small workers:
 
 1. **Email Triage AI Human** - reads up to 25 inbox messages and makes a local review
    list. It does not change your mailbox.
-2. **Drive Inventory AI Human** - reads metadata for up to 25 Drive items and makes a
-   local inventory. It does not open or change the files.
+2. **Drive Index AI Human** - choose a 25-item test or index every connector-visible
+   Drive item in checkpointed batches of 25. It does not open file contents or change Drive.
 3. **Optional LinkedIn Draft AI Human** - makes a local draft from facts you supply. It
    does not open LinkedIn or publish anything.
 
@@ -22,7 +29,7 @@ instructions, state and proof never mix.
 
 ## The whole loop at a glance
 
-1. Find the homework pack on your screen.
+1. Ask the Setup Helper to find the verified public v1.2.0 company kit on your screen.
 2. Make an `AI Humans` folder inside Documents.
 3. Copy the Email and Drive starter folders into it.
 4. Open one starter folder as a local project in the ChatGPT desktop app.
@@ -59,9 +66,12 @@ Do not teach me how the machinery works unless I ask. Start now by checking what
 **DONE WHEN:** The helper shows only one next action, waits, and verifies it before
 showing another.
 
-# Step 1 - find and open the homework pack
+# Step 1 - find and open the verified company kit
 
-The file is named `EVERYONE-ELSE-AI-HUMAN-HOMEWORK-PACK.zip`.
+The preferred file is named `kairali-company-rollout-1.2.0.zip`. If your facilitator
+gave you the smaller homework-only file, it is named
+`EVERYONE-ELSE-AI-HUMAN-HOMEWORK-PACK.zip`. Both routes open this same homework. You
+do not need a GitHub invitation.
 
 ## On a Mac
 
@@ -69,7 +79,7 @@ The file is named `EVERYONE-ELSE-AI-HUMAN-HOMEWORK-PACK.zip`.
 
    **DONE WHEN:** A Finder window is open.
 
-2. Click **Downloads** in the left side.
+2. Click **Downloads** in the left side. Use the exact file the Setup Helper verified.
 
    **DONE WHEN:** You can see the ZIP file.
 
@@ -87,7 +97,7 @@ The file is named `EVERYONE-ELSE-AI-HUMAN-HOMEWORK-PACK.zip`.
 
    **DONE WHEN:** A File Explorer window is open.
 
-2. Click **Downloads** on the left.
+2. Click **Downloads** on the left. Use the exact file the Setup Helper verified.
 
    **DONE WHEN:** You can see the ZIP file.
 
@@ -100,7 +110,8 @@ The file is named `EVERYONE-ELSE-AI-HUMAN-HOMEWORK-PACK.zip`.
    **DONE WHEN:** You can see `AI-HUMAN-STARTERS` and this guide.
 
 If the ZIP is not visible, do not search the whole computer. Paste the Setup Helper
-rescue. The helper should check Downloads and ask Ambuj only if the pack was not given.
+rescue. The helper checks Downloads, obtains the protected public v1.2.0 kit when safe,
+and asks Ambuj only if the approved source or access decision is missing.
 
 # Step 2 - make one home for your AI humans
 
@@ -316,23 +327,26 @@ AI humans from mixing memory or state.
 Open `COPY-PASTE-PROMPTS.txt`. Copy everything under **PROMPT 2**. Replace
 `[TYPE YOUR NAME]` with your name. Paste it into the Drive project chat and send it.
 
-**DONE WHEN:** Codex says the live task is `DRIVE-HW-001` and reads metadata for no
-more than 25 items.
+**DONE WHEN:** Codex says the live task is `DRIVE-HW-001`, asks you to choose `TEST 25`
+or `FULL DRIVE INDEX`, and never processes more than 25 items before a checkpoint.
 
 ## Drive proof
 
 Stop when all of these are visible:
 
-- `DRIVE-INVENTORY.md` exists.
-- It says `First bounded batch`, not complete inventory.
-- It shows the selection rule and no more than 25 items.
+- `DRIVE-INDEX.csv`, `DRIVE-INDEX.md` and `DRIVE-INDEX-CURSOR.md` exist.
+- Every batch is no more than 25 items and has a durable checkpoint.
+- `TEST 25` says the full Drive was not indexed. `FULL DRIVE INDEX` shows each
+  connector-visible source scope has no next page, or names the coverage gap.
+- Stable item IDs prevent duplicate rows and let a new session resume.
 - Missing fields say UNKNOWN; sensitive titles say HUMAN REVIEW.
-- It says no Drive file was opened beyond metadata, downloaded, created, edited,
-  renamed, moved, shared, unshared, deleted or organized.
+- It says no Drive file content was opened or downloaded and no Drive item was created,
+  edited, renamed, moved, shared, unshared, deleted or organized.
 - The workspace validator passed.
 
-**DONE WHEN:** You can show the inventory on your screen. A connected Drive account
-alone is not completion.
+**DONE WHEN:** You can show the index summary and cursor on your screen. A connected
+Drive account alone is not completion. The index helps Codex find files later, but
+opening a file later still needs current Drive permission and a new approved task.
 
 # Optional bonus - LinkedIn Draft AI Human
 
@@ -363,7 +377,7 @@ Do this only after both required projects pass.
 Bring the laptop or screenshots that show:
 
 - Email project open with `EMAIL-TRIAGE-REPORT.md`.
-- Drive project open with `DRIVE-INVENTORY.md`.
+- Drive project open with `DRIVE-INDEX.md` and its saved cursor.
 - The final evidence row and validator pass in each project.
 - Optional: `LINKEDIN-DRAFTS.md` marked `DRAFT - NOT PUBLISHED`.
 
@@ -394,7 +408,3 @@ problem. Abilash receives owner decisions and every Gate 0 issue.
 - Projects and chats: https://learn.chatgpt.com/docs/projects
 - Plugins: https://learn.chatgpt.com/docs/plugins
 - Email inbox use case: https://learn.chatgpt.com/use-cases/manage-your-inbox
-
-Teaching pattern adapted from the owner-shared Outskill document, “Build Your Own
-Prompts Using Meta Prompts - For Videos”: show the whole loop, give an exact prompt,
-show what a good result looks like, then repeat the loop.

@@ -225,7 +225,7 @@ def style_paragraph(paragraph, after=6, line=1.25):
         set_font(run, size=11, color=INK)
 
 
-def add_rich_text(paragraph, text, base_size=11, color=INK):
+def add_rich_text(paragraph, text, base_size=10.6, color=INK):
     # Minimal Markdown emphasis parser for bold spans and inline code.
     parts = re.split(r"(`[^`]+`|\*\*[^*]+\*\*)", text)
     for part in parts:
@@ -267,11 +267,11 @@ def configure_styles(doc):
     normal.font.name = "Calibri"
     normal._element.rPr.rFonts.set(qn("w:ascii"), "Calibri")
     normal._element.rPr.rFonts.set(qn("w:hAnsi"), "Calibri")
-    normal.font.size = Pt(11)
+    normal.font.size = Pt(10.6)
     normal.font.color.rgb = INK
     normal.paragraph_format.space_before = Pt(0)
     normal.paragraph_format.space_after = Pt(6)
-    normal.paragraph_format.line_spacing = 1.25
+    normal.paragraph_format.line_spacing = 1.20
 
     tokens = {
         "Heading 1": (16, BLUE, 18, 10),
@@ -464,7 +464,7 @@ def build():
             apply_numbering(p, list_num_id)
             p.paragraph_format.space_before = Pt(0)
             p.paragraph_format.space_after = Pt(4)
-            p.paragraph_format.line_spacing = 1.25
+            p.paragraph_format.line_spacing = 1.20
             following = next((candidate for candidate in lines[position + 1:] if candidate), "")
             if number and following.startswith("**DONE WHEN:**"):
                 p.paragraph_format.keep_with_next = True
@@ -476,7 +476,7 @@ def build():
         p = doc.add_paragraph()
         p.paragraph_format.space_before = Pt(0)
         p.paragraph_format.space_after = Pt(6)
-        p.paragraph_format.line_spacing = 1.25
+        p.paragraph_format.line_spacing = 1.20
         if line.startswith("> "):
             p.paragraph_format.left_indent = Inches(0.18)
             p.paragraph_format.right_indent = Inches(0.18)

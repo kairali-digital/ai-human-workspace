@@ -333,7 +333,7 @@ def validate(root):
     all_employees_path = root / "packages/kairali/people/ALL-EMPLOYEES.md"
     if all_employees_path.is_file():
         all_employees = all_employees_path.read_text(encoding="utf-8")
-        for required in ("Email Triage", "Drive Inventory", "LinkedIn Draft", "homework/START-HERE.md"):
+        for required in ("Email Triage", "Drive Index", "LinkedIn Draft", "homework/START-HERE.md"):
             if required.casefold() not in all_employees.casefold():
                 failures.append("all-employee prompt lacks fallback route: " + required)
     homework_prompts_path = root / "packages/kairali/homework/COPY-PASTE-PROMPTS.txt"
@@ -342,9 +342,30 @@ def validate(root):
         for required in (
             "EMAIL-HW-001", "DRIVE-HW-001", "LINKEDIN-BONUS-001",
             "No email was sent", "metadata only", "DRAFT - NOT PUBLISHED",
+            "TEST 25", "FULL DRIVE INDEX", "DRIVE-INDEX.csv",
+            "UNKNOWN — CONNECTOR COVERAGE GAP",
         ):
             if required.casefold() not in homework_prompts.casefold():
                 failures.append("homework prompts lack: " + required)
+    drive_root = homework_root / "02-Drive-Inventory-AI-Human"
+    if drive_root.is_dir():
+        drive_text = "\n".join(
+            path.read_text(encoding="utf-8", errors="replace")
+            for path in sorted(drive_root.iterdir()) if path.is_file()
+        )
+        for required in (
+            "TEST 25", "FULL DRIVE INDEX", "DRIVE-INDEX.csv",
+            "DRIVE-INDEX-CURSOR.md", "no more than 25", "checkpoint",
+            "connector coverage gap", "item ID", "never store a password",
+        ):
+            if required.casefold() not in drive_text.casefold():
+                failures.append("Drive Index starter lacks: " + required)
+        for forbidden in (
+            "stop after 25 items", "never complete Drive inventory",
+            "Call this “First bounded batch”",
+        ):
+            if forbidden.casefold() in drive_text.casefold():
+                failures.append("Drive Index starter retains obsolete limit: " + forbidden)
     for skill_id in sorted(APPROVED_SKILLS):
         skill_path = root / "packages/kairali/skills" / skill_id / "SKILL.md"
         if skill_path.is_file():

@@ -1,63 +1,63 @@
 1
-00:00:00,000 --> 00:00:18,000
+00:00:00,000 --> 00:00:17,930
 This is the homework for anyone from the meeting who did not receive a named start or homework page. You will build two tiny A I humans. Email Triage is first. Drive Inventory is second. LinkedIn Draft is optional after both are complete.
 
 2
-00:00:18,000 --> 00:00:35,000
-Here is the whole loop before we begin. Find the pack. Copy one starter folder. Open that folder as its own local project. Connect only the app it needs. Paste the exact prompt. Stop when the report and validator pass are visible.
+00:00:17,930 --> 00:00:40,960
+Here is the whole loop before we begin. Find the pack. Copy one starter folder. Open that folder as its own local project. Connect only the app it needs. Paste the exact prompt. For Email, choose your daily time, prove the pilot and verify the daily automation. Stop when the result and validator pass are visible.
 
 3
-00:00:35,000 --> 00:00:53,000
-You do not use Terminal or type commands. Keep Ask for approval. Never choose Full access. Login happens on the provider screen. Never paste a password or one-time code into chat. The homework does not change Gmail or Drive and does not open LinkedIn.
+00:00:40,960 --> 00:01:08,960
+You do not use Terminal or type commands. Keep Ask for approval. Never choose Full access. Login happens on the provider screen. Never paste a password or one-time code into chat. Email begins with a read-only pilot. Later safe filing needs your approval and never sends, deletes or changes a permanent Gmail filter. Drive stays unchanged and LinkedIn is not opened.
 
 4
-00:00:53,000 --> 00:01:11,000
+00:01:08,960 --> 00:01:26,960
 If any button, app or folder is missing, stop. Open a normal Chat G P T chat. Open the prompt file in the pack. Copy Prompt Zero, the complete Setup Helper rescue. The helper gives you one action, waits, and verifies it before continuing.
 
 5
-00:01:11,000 --> 00:01:26,400
+00:01:26,960 --> 00:01:43,960
 On a Mac, open Finder, click Downloads and double-click the zip. On Windows, open File Explorer, click Downloads, right-click the zip and choose Extract All. Done when the normal folder shows the guide and A I Human Starters.
 
 6
-00:01:26,400 --> 00:01:44,400
+00:01:43,960 --> 00:02:02,560
 Inside Documents, make one folder named A I Humans. Copy starter zero one, Email Triage, into it. Then copy starter zero two, Drive Inventory, beside it. Keep the downloaded pack untouched. Done when the two copied folders are separate.
 
 7
-00:01:44,400 --> 00:02:04,400
+00:02:02,560 --> 00:02:22,560
 Check whether the Chat G P T desktop app is already installed. If it is, open it. Do not install it again. Choose Codex, open a folder, and select the Email Triage folder. Keep Ask for approval. Done when the Email project can see A G E N T S dot M D.
 
 8
-00:02:04,400 --> 00:02:22,400
-Open Plugins and search for Gmail. If it is installed, return to the Email project. If it is missing, install it and start a new chat in the Email project. Choose only the approved company account. Done when Codex verifies the connection.
+00:02:22,560 --> 00:02:42,560
+Open Settings, then Apps, and select Gmail. If it is already connected, return to the Email project. If it is not connected, choose Connect and complete the provider screen, then start a new chat in the Email project. Choose only the approved company account. Done when Codex verifies the connection.
 
 9
-00:02:22,400 --> 00:02:40,400
-Open the prompt file. Copy all of Prompt One. Replace the name box with your name. Paste it into the Email project. Do not shorten it. Done when Codex names Email H W zero zero one and reads no more than twenty-five inbox messages.
+00:02:42,560 --> 00:03:05,560
+Open the prompt file. Copy all of Prompt One, replace the name box and paste it into the Email project. Do not shorten it. Codex asks what local time you want the daily brief and confirms the computer's time zone. It then runs a read-only pilot of no more than twenty-five Inbox messages. Done when the Email Triage Report is visible.
 
 10
-00:02:40,400 --> 00:02:59,870
-Stop when the Email Triage Report is visible. It shows how the messages were selected, uses the five buckets, protects sensitive messages, and states that no mailbox action occurred. The workspace validator must pass. Connected is not done. The visible report is done.
+00:03:05,560 --> 00:03:36,560
+Read the pilot report and the safe filing rules. Choose Brief Only or Brief plus Safe Filing. Safe filing uses approved A I labels only; it never deletes, sends, unsubscribes or changes permanent Gmail filters. Codex then creates one daily Email Importance Brief at your chosen local time. Verify the automation card, time zone, Email project and prompt. The computer must be awake with Chat G P T running when the job is due.
 
 11
-00:02:59,870 --> 00:03:14,870
+00:03:36,560 --> 00:03:50,560
 Now add the Drive Inventory folder as a second local project. Do not add it to the Email project. Start a new chat inside the Drive project. Done when Email and Drive appear as separate projects.
 
 12
-00:03:14,870 --> 00:03:35,470
-In Plugins, find Google Drive. Install it only if missing, then connect the approved company account. Copy all of Prompt Two, replace the name box, and paste it into the Drive project. Choose Test Twenty Five or Full Drive Index. Every batch is no more than twenty-five items and ends with a saved checkpoint.
+00:03:50,560 --> 00:04:15,230
+Open Settings, then Apps, and select Google Drive. If it is not connected, choose Connect and use the approved company account. Copy all of Prompt Two, replace the name box, and paste it into the Drive project. Choose Test Twenty Five or Full Drive Index. Every batch is no more than twenty-five items and ends with a saved checkpoint.
 
 13
-00:03:35,470 --> 00:04:02,340
+00:04:15,230 --> 00:04:42,230
 The Drive project creates a CSV index, a summary and a saved cursor. Test Twenty Five stops after one batch and says the full Drive was not indexed. Full Drive Index continues in checkpointed batches until every connector-visible scope has no next page. Missing facts say Unknown. Sensitive titles say Human Review. No file content is opened and Drive is not changed.
 
 14
-00:04:02,340 --> 00:04:20,340
+00:04:42,230 --> 00:04:59,540
 The LinkedIn project is optional. Do it only after Email and Drive pass. Copy starter zero three, open it separately, and paste Prompt Three. Answer one safe question at a time. Done when the local draft says Draft, Not Published. Do not open LinkedIn.
 
 15
-00:04:20,340 --> 00:04:41,340
-Bring the laptop or safe screenshots showing the Email report, Drive index summary, saved cursor, evidence rows and validator passes. Do not expose email bodies, private Drive content, passwords, codes, H R information or banking information. Your two visible results are the homework.
+00:04:59,540 --> 00:05:23,140
+Bring the laptop or safe screenshots showing the Email report and active daily automation, plus the Drive index summary, saved cursor, evidence rows and validator passes. Do not expose email bodies, private Drive content, passwords, codes, H R information or banking information. Your two durable workers are the homework.
 
 16
-00:04:41,340 --> 00:04:52,070
-You provide the mission and judgment. Codex performs the approved work inside the boundaries. Start with Email. Finish with visible proof. Then build Drive.
+00:05:23,140 --> 00:05:34,280
+You provide the mission and judgment. Codex performs the approved work inside the boundaries. Start with Email. Prove the pilot and daily automation. Then build Drive.

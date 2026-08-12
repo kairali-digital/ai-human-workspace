@@ -6,8 +6,8 @@ homework page.
 ## Where this pack comes from
 
 The preferred source is the protected public
-`kairali-digital/ai-human-workspace` release v1.2.0. The complete
-`kairali-company-rollout-1.2.0.zip` contains this homework, all approved people/setup
+`kairali-digital/ai-human-workspace` release v1.3.0. The complete
+`kairali-company-rollout-1.3.0.zip` contains this homework, all approved people/setup
 prompts and the two governed role skills. Public access needs no invitation or
 collaborator seat, and the kit contains no live company work or secrets.
 
@@ -47,7 +47,9 @@ account choice or permission. Never ask for a password or one-time code.
 
 ## Acceptance proof
 
-- Email: `EMAIL-TRIAGE-REPORT.md`, at most 25 messages, Gmail unchanged.
+- Email: the read-only 25-message pilot report, employee-approved daily time and time
+  zone, ruled `BRIEF ONLY` or `BRIEF + SAFE FILING` mode, active daily automation and
+  unchanged permanent Gmail filters.
 - Drive: choose `TEST 25` or `FULL DRIVE INDEX`; every batch is at most 25 and
   checkpointed; index CSV, summary, cursor and scope coverage are visible; Drive unchanged.
 - Optional LinkedIn: `LINKEDIN-DRAFTS.md`, marked `DRAFT - NOT PUBLISHED`.

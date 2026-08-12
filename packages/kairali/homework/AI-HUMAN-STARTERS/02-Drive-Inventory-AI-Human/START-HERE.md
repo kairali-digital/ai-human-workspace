@@ -55,8 +55,8 @@ TODAY.md, TOOLBOX.md, GATES.md and DECISIONS.md.
 First, replace “Kairali employee using this copy” with my name in this project's
 owner fields only. Do not change the worker's name, purpose, task, limits or gates.
 
-Then check whether the Google Drive plugin is installed and connected to my approved
-company account. If it is missing or disconnected, do not troubleshoot with Terminal
+Then check whether the Google Drive app is available under Apps and connected to my
+approved company account. If it is missing or disconnected, do not troubleshoot with Terminal
 and do not ask for my password. Show me only the next click or login I must do, wait
 for me, and verify the connection before continuing.
 

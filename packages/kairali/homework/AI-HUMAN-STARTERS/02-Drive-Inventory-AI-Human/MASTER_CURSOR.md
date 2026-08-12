@@ -6,7 +6,7 @@
 
 ## NEXT ACTION
 
-Personalize the human owner, confirm the Google Drive plugin is connected to the
+Personalize the human owner, confirm the Google Drive app is connected to the
 approved company account, then ask the owner to choose `TEST 25` or `FULL DRIVE INDEX`.
 
 ## EXIT EVIDENCE

@@ -30,4 +30,4 @@ Official screen references:
 https://learn.chatgpt.com/docs/quickstart
 https://learn.chatgpt.com/docs/app
 https://learn.chatgpt.com/docs/projects
-https://learn.chatgpt.com/docs/plugins
+https://help.openai.com/en/articles/11487775-connectors-in-chatgpt

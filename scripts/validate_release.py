@@ -341,12 +341,45 @@ def validate(root):
         homework_prompts = homework_prompts_path.read_text(encoding="utf-8")
         for required in (
             "EMAIL-HW-001", "DRIVE-HW-001", "LINKEDIN-BONUS-001",
-            "No email was sent", "metadata only", "DRAFT - NOT PUBLISHED",
+            "What local time should your daily email brief",
+            "BRIEF + SAFE FILING", "Daily Email Importance Brief",
+            "no Gmail filter was changed", "metadata only", "DRAFT - NOT PUBLISHED",
             "TEST 25", "FULL DRIVE INDEX", "DRIVE-INDEX.csv",
             "UNKNOWN — CONNECTOR COVERAGE GAP",
         ):
             if required.casefold() not in homework_prompts.casefold():
                 failures.append("homework prompts lack: " + required)
+    email_root = homework_root / "01-Email-Triage-AI-Human"
+    if email_root.is_dir():
+        email_required_files = {
+            "DAILY-TRIAGE-PROMPT.md", "EMAIL-RULE-REVIEW.md",
+            "EMAIL-TRIAGE-CURSOR.md", "EMAIL-TRIAGE-RULES.md",
+        }
+        for name in sorted(email_required_files):
+            if not (email_root / name).is_file():
+                failures.append("Email Triage starter missing " + name)
+        email_text = "\n".join(
+            path.read_text(encoding="utf-8", errors="replace")
+            for path in sorted(email_root.iterdir()) if path.is_file()
+        )
+        for required in (
+            "What local time should your daily email brief",
+            "BRIEF ONLY", "BRIEF + SAFE FILING",
+            "Daily Email Importance Brief", "DAILY-TRIAGE-PROMPT.md",
+            "no more than 25", "every connector-visible result", "checkpoint",
+            "first successful daily run in a new calendar month",
+            "AI Triage/Reviewed", "AI Filed/Promotions",
+            "permanent Gmail filter", "computer is awake",
+            "ChatGPT is running", "this exact project remains available",
+        ):
+            if required.casefold() not in email_text.casefold():
+                failures.append("Email Triage starter lacks: " + required)
+        for forbidden in (
+            "send without approval", "delete low-risk mail",
+            "change permanent Gmail filters automatically",
+        ):
+            if forbidden.casefold() in email_text.casefold():
+                failures.append("Email Triage starter contains unsafe instruction: " + forbidden)
     drive_root = homework_root / "02-Drive-Inventory-AI-Human"
     if drive_root.is_dir():
         drive_text = "\n".join(

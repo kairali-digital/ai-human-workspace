@@ -15,7 +15,12 @@
 - Owner instruction H-35, 12 Aug 2026: employees may choose `TEST 25` or a full
   connector-visible Drive metadata index; full mode continues in batches of at most 25
   with a durable checkpoint after each batch and never opens or changes Drive files.
-- Protected public `kairali-digital/ai-human-workspace` release v1.2.0 - complete
+- Owner instruction H-36, 13 Aug 2026: Email Triage asks each employee for a preferred
+  daily local time, produces a concise importance brief through the Gmail connector,
+  and follows Abilash's proven separation of briefing, conservative reversible filing
+  and false-positive audit. The employee explicitly rules brief-only or safe-filing
+  mode; permanent Gmail filters remain human-reviewed and are not silently changed.
+- Protected public `kairali-digital/ai-human-workspace` release v1.3.0 - complete
   integrity-checked Kairali reference kit, public distribution boundary, three homework
   starters, all approved people/setup prompts and two explicit role-opt-in skills.
 - `work/MULTI-COMPANY-AI-HUMAN-CORE-001/repo/packages/kairali/README.md` - the public
@@ -29,7 +34,7 @@
   copy-ready prompt, show what good looks like, repeat for each scene or project.
 - Source URL: https://docs.google.com/document/d/1w8U94ovHXObhuuw52rhQQ2eSJSuM_UAv5S-H7VUcpf0/edit
 
-## Official OpenAI screen references - fetched 12 Aug 2026
+## Official OpenAI screen references - fetched 13 Aug 2026
 
 - https://learn.chatgpt.com/docs/quickstart - desktop app exists for Mac and Windows;
   install, sign in, select a chat/project/folder, choose ChatGPT or Codex.
@@ -37,8 +42,9 @@
   work, send first message.
 - https://learn.chatgpt.com/docs/projects - local projects connect to computer folders;
   separate chats for distinct outcomes; durable instructions live in project files.
-- https://learn.chatgpt.com/docs/plugins - open Plugins tab, install from the directory,
-  connect external service if prompted, and use it from a new chat.
+- https://help.openai.com/en/articles/11487775-connectors-in-chatgpt - connectors are now
+  called apps; employees open Settings > Apps, select the approved app, click Connect
+  when available and complete the provider authorization flow.
 - https://learn.chatgpt.com/use-cases/manage-your-inbox - Gmail and Outlook can support
   inbox triage; external mailbox changes require explicit approval.
 
@@ -49,7 +55,12 @@
   every connector-visible page in checkpointed batches of at most 25. Unsupported
   scopes are reported as coverage gaps; the index never implies access the connector
   did not provide.
-- Email first run reads no more than 25 inbox messages and makes a local report only.
+- Email first records the employee's daily local time and time zone, then reads no more
+  than 25 Inbox messages and changes nothing. After the pilot passes, the employee
+  chooses `BRIEF ONLY` or `BRIEF + SAFE FILING`; every later batch remains no larger than 25, and the first
+  successful run in each new calendar month audits filed mail for false positives.
+- Permanent Gmail filters are never changed by the connector. New sender or query rules
+  remain in `EMAIL-RULE-REVIEW.md` until a human rules them.
 - LinkedIn uses only employee-supplied facts and creates a local draft; no browser or
   account access is granted.
 - The roster and attendee headcount are not supplied; no names or print quantities are

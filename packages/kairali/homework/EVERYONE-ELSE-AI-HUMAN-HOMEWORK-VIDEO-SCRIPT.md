@@ -19,22 +19,24 @@ Drive Inventory is second. LinkedIn Draft is optional after both are complete.
 
 ## Scene 2 - The whole loop
 
-**Screen:** Find pack -> copy one folder -> open as local project -> connect one plugin
--> paste exact prompt -> show report.
+**Screen:** Find pack -> copy one folder -> open as local project -> connect one app
+-> paste exact prompt -> show report -> verify daily job.
 
 **Narration:** Here is the whole loop before we begin. Find the pack. Copy one starter
 folder. Open that folder as its own local project. Connect only the app it needs. Paste
-the exact prompt. Stop when the report and validator pass are visible.
+the exact prompt. For Email, choose the daily time, prove the pilot and verify the
+daily automation. Stop when the result and validator pass are visible.
 
 ## Scene 3 - The safety promise
 
-**Screen:** No Terminal. No Full access. No password. No mailbox or Drive changes. No
-LinkedIn action.
+**Screen:** No Terminal. No Full access. No password. No send/delete/attachment. No
+silent permanent Gmail-filter change.
 
 **Narration:** You do not use Terminal or type commands. Keep Ask for approval. Never
 choose Full access. Login happens on the provider screen; never paste a password or
-one-time code into chat. The homework does not change Gmail or Drive and does not open
-LinkedIn.
+one-time code into chat. Email begins with a read-only pilot. Later safe filing needs
+your approval and never sends, deletes or changes a permanent Gmail filter. Drive is
+unchanged and LinkedIn is not opened.
 
 ## Scene 4 - If the screen differs
 
@@ -72,29 +74,34 @@ Triage folder. Keep Ask for approval. Done when the Email project can see AGENTS
 
 ## Scene 8 - Connect Gmail
 
-**Screen:** Plugins -> search Gmail -> install only if missing -> new chat -> approved
+**Screen:** Settings -> Apps -> Gmail -> connect only if needed -> new chat -> approved
 company login.
 
-**Narration:** Open Plugins and search for Gmail. If it is installed, return to the
-Email project. If it is missing, install it and start a new chat in the Email project.
+**Narration:** Open Settings, then Apps, and select Gmail. If it is already connected,
+return to the Email project. If it is not connected, choose Connect and complete the
+provider screen, then start a new chat in the Email project.
 Choose only the approved company account. Done when Codex verifies the connection.
 
-## Scene 9 - Run Email homework
+## Scene 9 - Choose the time and run the Email pilot
 
-**Screen:** `COPY-PASTE-PROMPTS.txt` -> PROMPT 1 -> replace name -> paste.
+**Screen:** PROMPT 1 -> replace name -> paste -> choose local time -> confirm time zone
+-> read-only 25-message pilot.
 
-**Narration:** Open the prompt file. Copy all of Prompt One. Replace the name box with
-your name. Paste it into the Email project. Do not shorten it. Done when Codex names
-EMAIL-HW-001 and reads no more than twenty-five inbox messages.
+**Narration:** Open the prompt file. Copy all of Prompt One, replace the name box and
+paste it into the Email project. Do not shorten it. Codex asks what local time you want
+the daily brief and confirms the computer time zone. It then runs a read-only pilot of
+no more than twenty-five Inbox messages. Done when the Email Triage Report is visible.
 
-## Scene 10 - Check Email proof
+## Scene 10 - Approve and activate the daily brief
 
-**Screen:** `EMAIL-TRIAGE-REPORT.md` + buckets + Gmail unchanged + validator pass.
+**Screen:** Report + safe-filing rules -> choose BRIEF ONLY or BRIEF + SAFE FILING ->
+verify automation time, time zone, project and prompt.
 
-**Narration:** Stop when the Email Triage Report is visible. It shows how the messages
-were selected, uses the five buckets, protects sensitive messages, and states that no
-mailbox action occurred. The workspace validator must pass. Connected is not done.
-The visible report is done.
+**Narration:** Read the pilot report and safe-filing rules. Choose Brief Only or Brief
+plus Safe Filing. Safe filing uses approved AI labels only; it never deletes, sends,
+unsubscribes or changes permanent Gmail filters. Codex creates one daily Email
+Importance Brief at your chosen local time. Verify the automation card, time zone,
+Email project and prompt. The computer must be awake with ChatGPT running when due.
 
 ## Scene 11 - Open Drive separately
 
@@ -106,11 +113,11 @@ Drive appear as separate projects.
 
 ## Scene 12 - Connect Drive and run Prompt 2
 
-**Screen:** Plugins -> Google Drive -> install only if missing -> approved account ->
+**Screen:** Settings -> Apps -> Google Drive -> connect only if needed -> approved account ->
 PROMPT 2 -> replace name -> paste.
 
-**Narration:** In Plugins, find Google Drive. Install it only if missing, then connect
-the approved company account. Copy all of Prompt Two, replace the name box, and paste
+**Narration:** Open Settings, then Apps, and select Google Drive. If it is not connected,
+choose Connect and use the approved company account. Copy all of Prompt Two, replace the name box, and paste
 it into the Drive project. Choose Test Twenty Five or Full Drive Index. Every batch is
 no more than twenty-five items and ends with a saved checkpoint.
 
@@ -137,17 +144,18 @@ LinkedIn.
 
 ## Scene 15 - Bring proof
 
-**Screen:** Email report + Drive index summary + saved cursor + validator passes +
-optional draft.
+**Screen:** Email report + active daily automation + Drive index summary + saved cursor
++ validator passes + optional draft.
 
-**Narration:** Bring the laptop or safe screenshots showing the Email report, Drive
-index summary, saved cursor, evidence rows and validator passes. Do not expose email bodies, private
-Drive content, passwords, codes, HR information or banking information. Your two
-visible reports are the homework.
+**Narration:** Bring the laptop or safe screenshots showing the Email report and active
+daily automation, plus the Drive index summary, saved cursor, evidence rows and
+validator passes. Do not expose email bodies, private Drive content, passwords, codes,
+HR information or banking information. Your two durable workers are the homework.
 
 ## End card
 
 **Screen:** “Mission + judgment = you. Bounded work + proof = your AI human.”
 
 **Narration:** You provide the mission and judgment. Codex performs the approved work
-inside the boundaries. Start with Email. Finish with visible proof. Then build Drive.
+inside the boundaries. Start with Email. Prove the pilot and daily automation. Then
+build Drive.

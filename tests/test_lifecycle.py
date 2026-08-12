@@ -226,7 +226,7 @@ class LifecycleTests(unittest.TestCase):
         self.assertTrue((kit / "skills/kairali-akshar-marketing-science/SKILL.md").is_file())
         starters = kit / "homework/AI-HUMAN-STARTERS"
         self.assertEqual(len([path for path in starters.iterdir() if path.is_dir()]), 3)
-        drive_start = (starters / "02-Drive-Inventory-AI-Human/START-HERE.md").read_text()
+        drive_start = (starters / "02-Drive-Inventory-AI-Human/START-HERE.md").read_text(encoding="utf-8")
         self.assertIn("TEST 25", drive_start)
         self.assertIn("FULL DRIVE INDEX", drive_start)
         self.assertIn("DRIVE-INDEX-CURSOR.md", drive_start)

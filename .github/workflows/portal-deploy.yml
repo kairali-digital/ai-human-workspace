@@ -21,6 +21,7 @@ concurrency:
 jobs:
   deploy:
     name: Validate and deploy production
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     defaults:
       run:

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Kairali Akshar Marketing Science"
+  short_description: "Ethical buyer insight and GO-informed marketing review"
+  default_prompt: "Apply the Kairali Akshar Marketing Science skill to this marketing task, surface missing evidence, and return a safe draft plus a ship-gate verdict."

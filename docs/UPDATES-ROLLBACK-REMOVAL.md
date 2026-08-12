@@ -32,3 +32,14 @@ employee files remain where they were. Reinstall can restore the managed system 
 
 Deleting an entire worker folder is a separate destructive owner action and is not part
 of the lifecycle tool.
+
+## Optional components
+
+Company role packs, homework reference kits and governed skills are listed in
+`component-manifest.json`. They are never silently installed with a core update.
+
+- fresh component install verifies the complete source tree;
+- component upgrade requires a declared checkpoint and preserves the previous copy;
+- component removal requires a checkpoint and moves the full copy to
+  `.ai-human-component-archive`;
+- employee workers created from a homework template are outside component management.

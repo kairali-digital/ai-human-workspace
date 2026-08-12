@@ -17,6 +17,9 @@ from pathlib import Path
 
 
 SEMVER = re.compile(r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$")
+COMPONENT_ID = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+DEFAULT_REPOSITORY = "kairali-digital/ai-human-workspace"
+COMPONENT_RECEIPT = ".ai-human-component.json"
 STATE_FILES = (
     "AGENTS.md", "CLAUDE.md", "AI-HUMAN.md", "COMPANY.md", "PARAMETERS.md",
     "ROLE.md", "MASTER_CURSOR.md", "OPEN_REGISTER.md", "TODAY.md",
@@ -76,6 +79,25 @@ def sha256(path):
         for chunk in iter(lambda: stream.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def tree_sha256(root, ignore_receipt=False):
+    root = Path(root)
+    digest = hashlib.sha256()
+    count = 0
+    paths = sorted(root.rglob("*"), key=lambda item: item.relative_to(root).as_posix())
+    for path in paths:
+        if path.is_symlink():
+            raise ValueError("component trees may not contain symbolic links: " + str(path))
+        if not path.is_file():
+            continue
+        relative = path.relative_to(root).as_posix()
+        if ignore_receipt and relative == COMPONENT_RECEIPT:
+            continue
+        digest.update(relative.encode("utf-8") + b"\0")
+        digest.update(bytes.fromhex(sha256(path)) + b"\n")
+        count += 1
+    return digest.hexdigest(), count
 
 
 def atomic_text(path, content):
@@ -142,6 +164,62 @@ def load_release(root):
     if targets.intersection(set(manifest.get("never_managed") or [])):
         raise ValueError("release tries to manage protected local state")
     return root, manifest
+
+
+def load_components(root, release_manifest):
+    path = root / "component-manifest.json"
+    if not path.is_file():
+        raise ValueError("component manifest missing: " + str(path))
+    manifest = read_json(path)
+    if manifest.get("schema") != "ai-human.component-release/v1":
+        raise ValueError("unsupported component manifest schema")
+    if manifest.get("approval_status") != "APPROVED_BY_OWNER":
+        raise ValueError("component release is not owner-approved")
+    if manifest.get("version") != release_manifest.get("version"):
+        raise ValueError("component and release versions differ")
+    if manifest.get("repository") != release_manifest.get("repository"):
+        raise ValueError("component and release repositories differ")
+    records = manifest.get("components") or []
+    identifiers = set()
+    for record in records:
+        identifier = str(record.get("id", ""))
+        if not COMPONENT_ID.fullmatch(identifier):
+            raise ValueError("invalid component id: " + repr(identifier))
+        if identifier in identifiers:
+            raise ValueError("duplicate component id: " + identifier)
+        identifiers.add(identifier)
+        if record.get("type") not in {"skill", "reference-pack"}:
+            raise ValueError("unsupported component type: " + repr(record.get("type")))
+        source_rel = safe_relative(str(record.get("source", "")), "component source")
+        source_key = portable_key(source_rel)
+        if not source_key.startswith("packages/"):
+            raise ValueError("component source is outside packages/: " + source_key)
+        source = root / source_rel
+        if source.is_symlink():
+            raise ValueError("component source may not be a symbolic link: " + source_key)
+        if not source.is_dir():
+            raise ValueError("component source missing: " + source_key)
+        digest, count = tree_sha256(source)
+        if digest != record.get("tree_sha256"):
+            raise ValueError("component tree hash mismatch: " + identifier)
+        if count != record.get("file_count"):
+            raise ValueError("component file count mismatch: " + identifier)
+        if record.get("type") == "skill":
+            validate_skill_source(source, identifier)
+    return manifest
+
+
+def validate_skill_source(source, identifier):
+    skill = source / "SKILL.md"
+    if not skill.is_file():
+        raise ValueError("skill component lacks SKILL.md: " + identifier)
+    text = skill.read_text(encoding="utf-8")
+    frontmatter = re.match(r"^---\s*\n(.*?)\n---\s*\n", text, flags=re.S)
+    if not frontmatter:
+        raise ValueError("skill frontmatter missing: " + identifier)
+    match = re.search(r"^name:\s*['\"]?([^'\"\n]+)", frontmatter.group(1), flags=re.M)
+    if not match or match.group(1).strip() != identifier:
+        raise ValueError("skill frontmatter name differs from component id: " + identifier)
 
 
 def live_task(worker):
@@ -635,6 +713,210 @@ def status(args):
             print("  - " + failure)
 
 
+def component_release(args):
+    if getattr(args, "latest", False):
+        temp, release, release_manifest = download_release(args.repository)
+        try:
+            component_manifest = load_components(release, release_manifest)
+        except Exception:
+            temp.cleanup()
+            raise
+        return temp, release, release_manifest, component_manifest
+    source = getattr(args, "source", None)
+    release, release_manifest = load_release(source or release_root_from_script())
+    component_manifest = load_components(release, release_manifest)
+    return None, release, release_manifest, component_manifest
+
+
+def component_by_id(component_manifest, identifier):
+    if not COMPONENT_ID.fullmatch(identifier):
+        raise ValueError("invalid component id: " + repr(identifier))
+    for record in component_manifest["components"]:
+        if record["id"] == identifier:
+            return record
+    raise ValueError("unknown component: " + identifier)
+
+
+def safe_component_parent(raw):
+    path = Path(raw).expanduser().resolve()
+    if path == Path(path.anchor).resolve() or path == Path.home().resolve():
+        raise ValueError("refusing a filesystem or home root for components")
+    if path.exists() and not path.is_dir():
+        raise ValueError("component parent exists and is not a directory: " + str(path))
+    return path
+
+
+def default_skills_root(runtime):
+    folder = ".codex" if runtime == "codex" else ".claude"
+    return Path.home() / folder / "skills"
+
+
+def component_receipt(target):
+    path = target / COMPONENT_RECEIPT
+    if not path.is_file():
+        raise ValueError("component install receipt missing: " + str(path))
+    receipt = read_json(path)
+    if receipt.get("schema") != "ai-human.component-install/v1":
+        raise ValueError("unsupported component install receipt")
+    if not COMPONENT_ID.fullmatch(str(receipt.get("component_id", ""))):
+        raise ValueError("invalid component id in install receipt")
+    if receipt.get("component_type") not in {"skill", "reference-pack"}:
+        raise ValueError("invalid component type in install receipt")
+    return receipt
+
+
+def unique_component_archive(parent, prefix):
+    archive_root = parent / ".ai-human-component-archive"
+    archive_root.mkdir(parents=True, exist_ok=True)
+    stem = prefix + "-" + now_utc()
+    target = archive_root / stem
+    counter = 2
+    while target.exists():
+        target = archive_root / (stem + "-" + str(counter))
+        counter += 1
+    return target
+
+
+def install_component_tree(release, release_manifest, record, target, upgrade=False, at_checkpoint=False):
+    source = release / safe_relative(record["source"], "component source")
+    expected_digest = record["tree_sha256"]
+    expected_count = record["file_count"]
+    digest, count = tree_sha256(source)
+    if digest != expected_digest or count != expected_count:
+        raise ValueError("component source changed after validation: " + record["id"])
+    if target.exists() and not upgrade:
+        raise ValueError("component target already exists; use --upgrade at a checkpoint")
+    if target.exists() and not at_checkpoint:
+        raise ValueError("component upgrade requires --at-checkpoint")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    temporary = target.parent / ("." + target.name + ".install-" + now_utc())
+    if temporary.exists():
+        raise ValueError("component temporary target already exists: " + str(temporary))
+    backup = None
+    try:
+        shutil.copytree(source, temporary)
+        copied_digest, copied_count = tree_sha256(temporary)
+        if copied_digest != expected_digest or copied_count != expected_count:
+            raise ValueError("copied component integrity mismatch: " + record["id"])
+        if record["type"] == "skill":
+            validate_skill_source(temporary, record["id"])
+        atomic_json(
+            temporary / COMPONENT_RECEIPT,
+            {
+                "component_id": record["id"],
+                "component_type": record["type"],
+                "installed_version": release_manifest["version"],
+                "repository": release_manifest["repository"],
+                "schema": "ai-human.component-install/v1",
+                "source_tree_sha256": expected_digest,
+            },
+        )
+        if target.exists():
+            backup = unique_component_archive(
+                target.parent, record["id"] + "-before-" + release_manifest["version"]
+            )
+            shutil.move(str(target), str(backup))
+        os.replace(temporary, target)
+    except Exception:
+        if temporary.exists():
+            shutil.rmtree(temporary)
+        if backup and backup.exists() and not target.exists():
+            shutil.move(str(backup), str(target))
+        raise
+    print("AI-HUMAN COMPONENT INSTALL: PASS")
+    print("- component: " + record["id"])
+    print("- type: " + record["type"])
+    print("- release version: " + release_manifest["version"])
+    print("- target: " + str(target))
+    print("- previous copy: " + (str(backup) if backup else "none"))
+
+
+def remove_component_target(target, expected_id, expected_type, at_checkpoint=False):
+    if not COMPONENT_ID.fullmatch(expected_id):
+        raise ValueError("invalid component id: " + repr(expected_id))
+    if not at_checkpoint:
+        raise ValueError("component removal requires --at-checkpoint")
+    if not target.is_dir():
+        raise ValueError("installed component missing: " + str(target))
+    receipt = component_receipt(target)
+    if receipt.get("component_id") != expected_id or receipt.get("component_type") != expected_type:
+        raise ValueError("component receipt does not match the requested removal")
+    destination = unique_component_archive(target.parent, expected_id + "-removed")
+    shutil.move(str(target), str(destination))
+    print("AI-HUMAN COMPONENT REMOVE: PASS")
+    print("- component: " + expected_id)
+    print("- preserved at: " + str(destination))
+    print("- deleted files: 0")
+
+
+def list_components(args):
+    temp, _release, release_manifest, component_manifest = component_release(args)
+    try:
+        print("AI-HUMAN COMPONENT CATALOG: PASS")
+        print("- release version: " + release_manifest["version"])
+        for record in component_manifest["components"]:
+            print(
+                "- " + record["id"] + " | " + record["type"] + " | " +
+                record["install_policy"] + " | " + str(record["file_count"]) + " files"
+            )
+    finally:
+        if temp:
+            temp.cleanup()
+
+
+def install_skill(args):
+    temp, release, release_manifest, component_manifest = component_release(args)
+    try:
+        record = component_by_id(component_manifest, args.component)
+        if record["type"] != "skill":
+            raise ValueError("component is not a skill: " + args.component)
+        skills_root = safe_component_parent(args.skills_root or default_skills_root(args.runtime))
+        target = skills_root / record["id"]
+        install_component_tree(
+            release, release_manifest, record, target, args.upgrade, args.at_checkpoint
+        )
+    finally:
+        if temp:
+            temp.cleanup()
+
+
+def remove_skill(args):
+    if not COMPONENT_ID.fullmatch(args.component):
+        raise ValueError("invalid component id: " + repr(args.component))
+    skills_root = safe_component_parent(args.skills_root or default_skills_root(args.runtime))
+    target = skills_root / args.component
+    remove_component_target(target, args.component, "skill", args.at_checkpoint)
+
+
+def install_pack(args):
+    temp, release, release_manifest, component_manifest = component_release(args)
+    try:
+        record = component_by_id(component_manifest, args.component)
+        if record["type"] != "reference-pack":
+            raise ValueError("component is not a reference pack: " + args.component)
+        target = safe_worker(args.target, must_exist=False)
+        install_component_tree(
+            release, release_manifest, record, target, args.upgrade, args.at_checkpoint
+        )
+    finally:
+        if temp:
+            temp.cleanup()
+
+
+def remove_pack(args):
+    target = safe_worker(args.target)
+    receipt = component_receipt(target)
+    identifier = str(receipt.get("component_id", ""))
+    remove_component_target(target, identifier, "reference-pack", args.at_checkpoint)
+
+
+def add_component_source_options(command):
+    source = command.add_mutually_exclusive_group()
+    source.add_argument("--source")
+    source.add_argument("--latest", action="store_true")
+    command.add_argument("--repository", default=DEFAULT_REPOSITORY)
+
+
 def parser():
     root = argparse.ArgumentParser(description="AI-Human workspace lifecycle")
     sub = root.add_subparsers(dest="command", required=True)
@@ -671,6 +953,39 @@ def parser():
     uninstall_p.add_argument("worker")
     uninstall_p.add_argument("--at-checkpoint", action="store_true")
     uninstall_p.set_defaults(handler=uninstall)
+
+    components_p = sub.add_parser("components")
+    add_component_source_options(components_p)
+    components_p.set_defaults(handler=list_components)
+
+    install_skill_p = sub.add_parser("install-skill")
+    install_skill_p.add_argument("component")
+    install_skill_p.add_argument("--runtime", choices=("codex", "claude"), required=True)
+    install_skill_p.add_argument("--skills-root")
+    install_skill_p.add_argument("--upgrade", action="store_true")
+    install_skill_p.add_argument("--at-checkpoint", action="store_true")
+    add_component_source_options(install_skill_p)
+    install_skill_p.set_defaults(handler=install_skill)
+
+    remove_skill_p = sub.add_parser("remove-skill")
+    remove_skill_p.add_argument("component")
+    remove_skill_p.add_argument("--runtime", choices=("codex", "claude"), required=True)
+    remove_skill_p.add_argument("--skills-root")
+    remove_skill_p.add_argument("--at-checkpoint", action="store_true")
+    remove_skill_p.set_defaults(handler=remove_skill)
+
+    install_pack_p = sub.add_parser("install-pack")
+    install_pack_p.add_argument("component")
+    install_pack_p.add_argument("target")
+    install_pack_p.add_argument("--upgrade", action="store_true")
+    install_pack_p.add_argument("--at-checkpoint", action="store_true")
+    add_component_source_options(install_pack_p)
+    install_pack_p.set_defaults(handler=install_pack)
+
+    remove_pack_p = sub.add_parser("remove-pack")
+    remove_pack_p.add_argument("target")
+    remove_pack_p.add_argument("--at-checkpoint", action="store_true")
+    remove_pack_p.set_defaults(handler=remove_pack)
     return root
 
 

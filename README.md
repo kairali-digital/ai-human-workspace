@@ -14,6 +14,8 @@ approved work through a controlled loop and records durable state in the worker 
 - versioned update, checkpoint, rollback, validation, status and reversible removal;
 - a zero-command beginner path and an optional Git/CLI path for technical teams;
 - release validation, secret checks and lifecycle tests on every pull request.
+- an optional, hashed Kairali company bundle with approved role prompts, two governed
+  skills and the complete universal homework pack.
 
 ## The architecture
 
@@ -39,6 +41,11 @@ personal files.
 - Technical employee: [`docs/TECHNICAL-SETUP.md`](docs/TECHNICAL-SETUP.md)
 - Rollout owner: [`docs/MULTI-COMPANY-ROLLOUT.md`](docs/MULTI-COMPANY-ROLLOUT.md)
 - Updates and removal: [`docs/UPDATES-ROLLBACK-REMOVAL.md`](docs/UPDATES-ROLLBACK-REMOVAL.md)
+- Kairali complete bundle: [`packages/kairali/README.md`](packages/kairali/README.md)
+
+Skills are not installed indiscriminately. The Kairali Akshar marketing skill and Rahul
+sales-system skill are explicit, role-based options. Platform/system and third-party
+skills from a maintainer's computer are not part of this repository.
 
 The public repository is a distribution channel, not a company work repository. Never
 commit live employee state, customer data, credentials or private evidence here.

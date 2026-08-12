@@ -21,11 +21,16 @@ the same cursor, register, ledger or evidence log.
 1. Copy `company-profiles/template` into a private company-controlled location and
    fill only verified facts.
 2. Choose one real role and one bounded purpose for a pilot worker.
-3. Let the Setup Helper install and validate that worker.
-4. Run one harmless read-only task and the session-end ritual.
-5. Expand in batches of no more than 25 people.
-6. At each checkpoint, record install version, validation result and blocker count.
-7. Release shared upgrades centrally; workers check at session start and update only at
+3. Select only the company components approved for that role. Do not install every
+   available skill.
+4. Let the Setup Helper install and validate that worker.
+5. Give an unmapped employee the universal homework fallback instead of inventing a
+   role plan.
+6. Run one harmless read-only task and the session-end ritual.
+7. Expand in batches of no more than 25 people.
+8. At each checkpoint, record core version, component list, validation result and
+   blocker count.
+9. Release shared upgrades centrally; workers check at session start and update only at
    a safe checkpoint.
 
 ## Access model

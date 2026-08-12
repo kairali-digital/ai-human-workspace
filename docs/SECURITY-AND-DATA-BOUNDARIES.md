@@ -7,6 +7,8 @@
 - lifecycle tooling and tests;
 - public documentation; and
 - release manifests, hashes and validation evidence.
+- owner-approved company role templates, governed skills and blank homework workers
+  that contain no live employee or customer data.
 
 ## Public repository must not contain
 

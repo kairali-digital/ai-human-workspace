@@ -29,6 +29,22 @@ python3 scripts/ai_human.py rollback "/absolute/worker/folder" --version 1.0.0
 python3 scripts/ai_human.py uninstall "/absolute/worker/folder" --at-checkpoint
 ```
 
+## Optional company components
+
+```bash
+python3 scripts/ai_human.py components --source .
+python3 scripts/ai_human.py install-skill kairali-akshar-marketing-science \
+  --runtime codex --source .
+python3 scripts/ai_human.py install-pack kairali-company-rollout \
+  "/absolute/reference-kit/folder" --source .
+python3 scripts/ai_human.py remove-pack "/absolute/reference-kit/folder" \
+  --at-checkpoint
+```
+
+Use `--latest` instead of `--source .` when running the managed lifecycle tool from an
+installed worker. A skill upgrade or any component removal requires
+`--at-checkpoint`. Removal moves the component to a recoverable archive.
+
 Do not run an update during a live task. `--at-checkpoint` is an assertion that the
 owner has deliberately reached a safe checkpoint; the tool still checks and preserves
 state. Removal moves the installed system to a timestamped recoverable folder and does

@@ -17,6 +17,8 @@ tooling and release evidence. Company facts and live employee state do not belon
 8. Changed is not done: lifecycle tests, release validation and secret-history checks
    must pass before a release.
 9. Medical, dosage, certification, legal wording and spend remain human gates.
+10. Company components are explicit opt-ins. Never copy every installed local skill or
+    let a component update rewrite an employee worker created from a template.
 
 ## Release
 

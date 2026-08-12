@@ -1,0 +1,40 @@
+name: Validate training portal
+
+on:
+  pull_request:
+    paths:
+      - "portal/**"
+      - ".github/workflows/portal.yml"
+      - "packages/kairali/**"
+      - "component-manifest.json"
+      - "release-manifest.json"
+  push:
+    branches: [main]
+    paths:
+      - "portal/**"
+      - ".github/workflows/portal.yml"
+      - "packages/kairali/**"
+      - "component-manifest.json"
+      - "release-manifest.json"
+
+permissions:
+  contents: read
+
+jobs:
+  portal:
+    name: Portal build and download integrity
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: portal
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: portal/package-lock.json
+      - run: npm ci
+      - run: npm run validate
+      - run: npm run typecheck
+      - run: npm run build

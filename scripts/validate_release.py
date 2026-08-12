@@ -129,7 +129,9 @@ def safe_relative(value):
 
 
 def text_files(root):
-    ignored = {".git", "__pycache__", "dist"}
+    # The portal is a separately validated Vercel application, not part of the
+    # installable AI-Human workspace release.
+    ignored = {".git", "__pycache__", "dist", "portal"}
     for path in root.rglob("*"):
         if not path.is_file() or any(part in ignored for part in path.parts):
             continue

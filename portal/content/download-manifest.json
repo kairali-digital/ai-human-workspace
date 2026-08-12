@@ -1,0 +1,115 @@
+{
+  "schema": "kairali.portal-downloads/v1",
+  "files": [
+    {
+      "name": "ADVANCED-CAPABILITY-AND-TRAINER-SKILLS-GUIDE-v2-PUBLIC-KIT.docx",
+      "sha256": "f4fb048a7bdfc4c9564464b471dcbb46308f692fc15d8c71211657970a29ee8f",
+      "size": 41222
+    },
+    {
+      "name": "ADVANCED-CAPABILITY-AND-TRAINER-SKILLS-GUIDE-v2-PUBLIC-KIT.pdf",
+      "sha256": "875057de2ae8f9f87751efc642d97a650dcb8df83b6c6a84d6588ef6df3c4229",
+      "size": 144978
+    },
+    {
+      "name": "EMPLOYEE-SETUP-AND-PROOF-GUIDE-v3-PUBLIC-KIT.docx",
+      "sha256": "d4d40521a4b78d6445cca8416b6c3cf628822b9cd123010ac0610d6a52b899e2",
+      "size": 43470
+    },
+    {
+      "name": "EMPLOYEE-SETUP-AND-PROOF-GUIDE-v3-PUBLIC-KIT.pdf",
+      "sha256": "82f77248e0eb29132c07b903717703a22a439adb1a3a22ffa18331b7b432b4bb",
+      "size": 194077
+    },
+    {
+      "name": "EVERYONE-ELSE-AI-HUMAN-HOMEWORK-GUIDE.docx",
+      "sha256": "617c7a9f53814230204145fce7419c679d9ff78cf439ff474b713b146e69b914",
+      "size": 45876
+    },
+    {
+      "name": "EVERYONE-ELSE-AI-HUMAN-HOMEWORK-GUIDE.pdf",
+      "sha256": "4aae367ce6b9abd3311c4b4dfb307f65986c9b0732ffcd57cf2de88cba80025e",
+      "size": 217738
+    },
+    {
+      "name": "EVERYONE-ELSE-AI-HUMAN-HOMEWORK-PACK.sha256",
+      "sha256": "78585fbf66c15eeebfa418f6ca572758922ff763deb14d0208c161fe7bf15816",
+      "size": 107
+    },
+    {
+      "name": "EVERYONE-ELSE-AI-HUMAN-HOMEWORK-PACK.zip",
+      "sha256": "2b8d4b1cc589d1064fc4e47900818b83115664cf08f291c0d3569b918f941010",
+      "size": 6606210
+    },
+    {
+      "name": "FACILITATOR-RUNBOOK-v5-PUBLIC-KIT.docx",
+      "sha256": "43f516f23a3e6fd954f8d92b2ac51175c28882b2c40f98ca66083c9759bd4c84",
+      "size": 41788
+    },
+    {
+      "name": "FACILITATOR-RUNBOOK-v5-PUBLIC-KIT.pdf",
+      "sha256": "c0a0ad8d9132178011021b6f427f5d12a00a153c45c2f65d13b7ce3cd8ff4534",
+      "size": 154181
+    },
+    {
+      "name": "KAIRALI-AI-METHOD-ADVANCED-CLI-BONUS-v3-PUBLIC-KIT.pdf",
+      "sha256": "93a0b7d57b206ca4acc2604d9c5389480c0bbf892b9266ba37772afd98a3e7dc",
+      "size": 228125
+    },
+    {
+      "name": "KAIRALI-AI-METHOD-ADVANCED-CLI-BONUS-v3-PUBLIC-KIT.pptx",
+      "sha256": "4d8cd96d3cdb32cd6c5dc50c70e4df1dbd22e7dc4a869fd99c740de4ddd6dcb9",
+      "size": 136083
+    },
+    {
+      "name": "KAIRALI-AI-METHOD-DECK-v11-PUBLIC-KIT.pdf",
+      "sha256": "8e3434bf57ebb7b09866c19f7a08c2a4ce080ccf2f29497bf9a620577788adaa",
+      "size": 274608
+    },
+    {
+      "name": "KAIRALI-AI-METHOD-DECK-v11-PUBLIC-KIT.pptx",
+      "sha256": "93f0c56fa9c7706c2463a581484c971e72c75bdfa6e79650713094d01ab75cba",
+      "size": 161938
+    },
+    {
+      "name": "KAIRALI-AI-METHOD-ROLLOUT-v11-PUBLIC-KIT.sha256",
+      "sha256": "a53bc4c3609fb8b25892ea5264f47d32b80638abe77f3a029fe833efce6dbdd5",
+      "size": 111
+    },
+    {
+      "name": "KAIRALI-AI-METHOD-ROLLOUT-v11-PUBLIC-KIT.zip",
+      "sha256": "f03543d75ea443d91c2d15486ef2aa44283f83f5ec2bd743bfce0e84e8d80640",
+      "size": 27929786
+    },
+    {
+      "name": "PRINT-CHECKLIST-v5-PUBLIC-KIT.docx",
+      "sha256": "cfa08c09ff8b9dc005c150950d6408985a4c8d43a94fa82d8f89353adf50fb37",
+      "size": 39711
+    },
+    {
+      "name": "PRINT-CHECKLIST-v5-PUBLIC-KIT.pdf",
+      "sha256": "a02f182c8b4044c1a6747695ccf6263b4bf3f7480de6e68fd3a27f14b9641e4d",
+      "size": 102885
+    },
+    {
+      "name": "ROLE-MISSION-WORKBOOK-v4-PUBLIC-KIT.docx",
+      "sha256": "2307b6a5a4ecbaa08a2866221710ad5798715c20684bb9c6db02e8fc28f616e9",
+      "size": 40383
+    },
+    {
+      "name": "ROLE-MISSION-WORKBOOK-v4-PUBLIC-KIT.pdf",
+      "sha256": "6458ae6522774d5fc2551a833ac5cef2de497a7be26909f0b435aeabcaaa7107",
+      "size": 138390
+    },
+    {
+      "name": "SETUP-HELPER-CARD-v3-PUBLIC-KIT.docx",
+      "sha256": "f0220432d42f0bf723185fd9f8267701cf980f56bcd2aaaa2830d8a487ab7564",
+      "size": 39663
+    },
+    {
+      "name": "SETUP-HELPER-CARD-v3-PUBLIC-KIT.pdf",
+      "sha256": "bda3aa36b612acaaf9460789751ef142badb04e24dbebb9ac9b56bff33115513",
+      "size": 80025
+    }
+  ]
+}

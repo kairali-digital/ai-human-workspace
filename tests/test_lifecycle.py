@@ -132,7 +132,7 @@ class LifecycleTests(unittest.TestCase):
         self.install(worker)
 
         new_release = self.base / "release-1.2.0"
-        shutil.copytree(ROOT, new_release, ignore=shutil.ignore_patterns(".git", "__pycache__", "release-proof.json"))
+        shutil.copytree(ROOT, new_release, ignore=shutil.ignore_patterns(".git", "__pycache__", "release-proof.json", "portal"))
         agent_rules = new_release / "core/AGENT-RULES.md"
         agent_rules.write_text(agent_rules.read_text() + "\nRelease-test marker 1.2.0.\n", encoding="utf-8")
         refresh_release(new_release, "1.2.0")
@@ -234,7 +234,7 @@ class LifecycleTests(unittest.TestCase):
 
     def test_tampered_component_release_is_rejected(self):
         corrupt = self.base / "corrupt-components"
-        shutil.copytree(ROOT, corrupt, ignore=shutil.ignore_patterns(".git", "__pycache__", "release-proof.json"))
+        shutil.copytree(ROOT, corrupt, ignore=shutil.ignore_patterns(".git", "__pycache__", "release-proof.json", "portal"))
         skill = corrupt / "packages/kairali/skills/kairali-rahul-sales-system/SKILL.md"
         skill.write_text(skill.read_text(encoding="utf-8") + "\ntampered\n", encoding="utf-8")
         result = self.run_cli("components", "--source", corrupt, expect=1)
@@ -264,7 +264,7 @@ class LifecycleTests(unittest.TestCase):
 
     def test_corrupt_release_is_rejected_before_worker_changes(self):
         corrupt = self.base / "corrupt-release"
-        shutil.copytree(ROOT, corrupt, ignore=shutil.ignore_patterns(".git", "__pycache__", "release-proof.json"))
+        shutil.copytree(ROOT, corrupt, ignore=shutil.ignore_patterns(".git", "__pycache__", "release-proof.json", "portal"))
         (corrupt / "core/AI-HUMAN.md").write_text("tampered\n", encoding="utf-8")
         worker = self.base / "should-not-exist"
         result = self.run_cli(

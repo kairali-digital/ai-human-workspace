@@ -1,0 +1,185 @@
+export type DownloadItem = {
+  label: string;
+  description: string;
+  file: string;
+  format: string;
+};
+
+export type DownloadGroup = {
+  title: string;
+  description: string;
+  featured?: boolean;
+  items: DownloadItem[];
+};
+
+export const downloadGroups: DownloadGroup[] = [
+  {
+    title: "Everything in one file",
+    description: "The complete approved company pack for an offline copy or facilitator handoff.",
+    featured: true,
+    items: [
+      {
+        label: "Download the complete pack",
+        description: "Presentations, guides, homework, prompts, core release and role skills.",
+        file: "KAIRALI-AI-METHOD-ROLLOUT-v11-PUBLIC-KIT.zip",
+        format: "ZIP",
+      },
+      {
+        label: "Checksum",
+        description: "Use this only when IT or a technical facilitator verifies the download.",
+        file: "KAIRALI-AI-METHOD-ROLLOUT-v11-PUBLIC-KIT.sha256",
+        format: "SHA-256",
+      },
+    ],
+  },
+  {
+    title: "Employee start",
+    description: "Start here if you are setting up your own AI-human worker.",
+    items: [
+      {
+        label: "Setup and proof guide",
+        description: "The simple employee path for Mac and Windows.",
+        file: "EMPLOYEE-SETUP-AND-PROOF-GUIDE-v3-PUBLIC-KIT.pdf",
+        format: "PDF",
+      },
+      {
+        label: "Editable setup guide",
+        description: "The same guide in an editable document.",
+        file: "EMPLOYEE-SETUP-AND-PROOF-GUIDE-v3-PUBLIC-KIT.docx",
+        format: "DOCX",
+      },
+      {
+        label: "Setup Helper card",
+        description: "The exact rescue prompt to use whenever setup gets stuck.",
+        file: "SETUP-HELPER-CARD-v3-PUBLIC-KIT.pdf",
+        format: "PDF",
+      },
+      {
+        label: "Role mission workbook",
+        description: "Choose one approved mission and name its proof.",
+        file: "ROLE-MISSION-WORKBOOK-v4-PUBLIC-KIT.pdf",
+        format: "PDF",
+      },
+    ],
+  },
+  {
+    title: "Homework",
+    description: "Email and Drive are required. LinkedIn is optional after both pass.",
+    items: [
+      {
+        label: "Homework pack",
+        description: "Guide, prompts, video, captions and three separate starter projects.",
+        file: "EVERYONE-ELSE-AI-HUMAN-HOMEWORK-PACK.zip",
+        format: "ZIP",
+      },
+      {
+        label: "Homework guide",
+        description: "The nine-page printable employee guide.",
+        file: "EVERYONE-ELSE-AI-HUMAN-HOMEWORK-GUIDE.pdf",
+        format: "PDF",
+      },
+      {
+        label: "Editable homework guide",
+        description: "The same guide in an editable document.",
+        file: "EVERYONE-ELSE-AI-HUMAN-HOMEWORK-GUIDE.docx",
+        format: "DOCX",
+      },
+      {
+        label: "Homework checksum",
+        description: "For IT or a technical facilitator verifying the homework ZIP.",
+        file: "EVERYONE-ELSE-AI-HUMAN-HOMEWORK-PACK.sha256",
+        format: "SHA-256",
+      },
+    ],
+  },
+  {
+    title: "Editable facilitator files",
+    description: "Use these only when an approved amendment must be made and revalidated.",
+    items: [
+      {
+        label: "Editable facilitator runbook",
+        description: "The room sequence and recovery guide in DOCX format.",
+        file: "FACILITATOR-RUNBOOK-v5-PUBLIC-KIT.docx",
+        format: "DOCX",
+      },
+      {
+        label: "Editable print checklist",
+        description: "The pre-session checklist in DOCX format.",
+        file: "PRINT-CHECKLIST-v5-PUBLIC-KIT.docx",
+        format: "DOCX",
+      },
+      {
+        label: "Editable role workbook",
+        description: "The mission and proof workbook in DOCX format.",
+        file: "ROLE-MISSION-WORKBOOK-v4-PUBLIC-KIT.docx",
+        format: "DOCX",
+      },
+      {
+        label: "Editable Setup Helper card",
+        description: "The exact rescue prompt card in DOCX format.",
+        file: "SETUP-HELPER-CARD-v3-PUBLIC-KIT.docx",
+        format: "DOCX",
+      },
+    ],
+  },
+  {
+    title: "Present and facilitate",
+    description: "Use these in the room. The beginner deck stays command-free.",
+    items: [
+      {
+        label: "Main presentation",
+        description: "The 26-slide company rollout presentation.",
+        file: "KAIRALI-AI-METHOD-DECK-v11-PUBLIC-KIT.pptx",
+        format: "PPTX",
+      },
+      {
+        label: "Main presentation PDF",
+        description: "A read-only copy for review and printing.",
+        file: "KAIRALI-AI-METHOD-DECK-v11-PUBLIC-KIT.pdf",
+        format: "PDF",
+      },
+      {
+        label: "Facilitator runbook",
+        description: "Room sequence, recovery and completion checks.",
+        file: "FACILITATOR-RUNBOOK-v5-PUBLIC-KIT.pdf",
+        format: "PDF",
+      },
+      {
+        label: "Print checklist",
+        description: "A short pre-session and handout check.",
+        file: "PRINT-CHECKLIST-v5-PUBLIC-KIT.pdf",
+        format: "PDF",
+      },
+    ],
+  },
+  {
+    title: "Optional technical clinic",
+    description: "For technical volunteers after the beginner rollout ends.",
+    items: [
+      {
+        label: "Advanced presentation",
+        description: "Git, CLI, evidence review and governed role skills.",
+        file: "KAIRALI-AI-METHOD-ADVANCED-CLI-BONUS-v3-PUBLIC-KIT.pptx",
+        format: "PPTX",
+      },
+      {
+        label: "Advanced presentation PDF",
+        description: "A read-only copy of the technical clinic.",
+        file: "KAIRALI-AI-METHOD-ADVANCED-CLI-BONUS-v3-PUBLIC-KIT.pdf",
+        format: "PDF",
+      },
+      {
+        label: "Capability and skills guide",
+        description: "Apps, skills, MCP, CLI and the Akshar and Rahul opt-in boundary.",
+        file: "ADVANCED-CAPABILITY-AND-TRAINER-SKILLS-GUIDE-v2-PUBLIC-KIT.pdf",
+        format: "PDF",
+      },
+      {
+        label: "Editable capability guide",
+        description: "The same technical guide in an editable document.",
+        file: "ADVANCED-CAPABILITY-AND-TRAINER-SKILLS-GUIDE-v2-PUBLIC-KIT.docx",
+        format: "DOCX",
+      },
+    ],
+  },
+];

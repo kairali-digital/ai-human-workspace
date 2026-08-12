@@ -93,6 +93,19 @@ class LifecycleTests(unittest.TestCase):
             ".ai-human/system/AI-HUMAN.md",
         )
 
+    def test_component_tree_hash_uses_portable_case_sensitive_path_order(self):
+        component = self.base / "mixed-case-component"
+        (component / "homework").mkdir(parents=True)
+        (component / "README.md").write_text("read me\n", encoding="utf-8")
+        (component / "homework/data.txt").write_text("data\n", encoding="utf-8")
+        expected = hashlib.sha256()
+        for relative in ("README.md", "homework/data.txt"):
+            expected.update(relative.encode("utf-8") + b"\0")
+            expected.update(bytes.fromhex(sha256(component / relative)) + b"\n")
+        digest, count = AI_HUMAN.tree_sha256(component)
+        self.assertEqual(count, 2)
+        self.assertEqual(digest, expected.hexdigest())
+
     def test_batch_cap_above_25_is_rejected(self):
         worker = self.base / "overlarge-batch"
         result = self.run_cli(

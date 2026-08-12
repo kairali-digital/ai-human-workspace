@@ -18,7 +18,8 @@ def sha256(path):
 def tree_sha256(root):
     digest = hashlib.sha256()
     count = 0
-    for path in sorted(root.rglob("*")):
+    paths = sorted(root.rglob("*"), key=lambda item: item.relative_to(root).as_posix())
+    for path in paths:
         if not path.is_file():
             continue
         relative = path.relative_to(root).as_posix()

@@ -85,7 +85,8 @@ def tree_sha256(root, ignore_receipt=False):
     root = Path(root)
     digest = hashlib.sha256()
     count = 0
-    for path in sorted(root.rglob("*")):
+    paths = sorted(root.rglob("*"), key=lambda item: item.relative_to(root).as_posix())
+    for path in paths:
         if path.is_symlink():
             raise ValueError("component trees may not contain symbolic links: " + str(path))
         if not path.is_file():

@@ -14,6 +14,7 @@ REQUIRED_FILES = {
     ".github/CODEOWNERS",
     ".github/pull_request_template.md",
     ".github/workflows/validate.yml",
+    ".gitattributes",
     ".gitignore",
     "AGENTS.md",
     "CHANGELOG.md",

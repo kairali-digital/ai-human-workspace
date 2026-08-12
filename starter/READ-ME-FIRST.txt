@@ -1,0 +1,11 @@
+YOUR AI HUMAN — START HERE
+
+You do not need Terminal, Python, PowerShell, Git, GitHub or VS Code.
+
+1. Open the ChatGPT desktop app and sign in with the approved work account.
+2. Choose Codex.
+3. Open this folder as the project.
+4. Ask Codex: Read START-HERE.md and verify this workspace. Change nothing.
+
+If setup fails, open docs/BEGINNER-SETUP.md from the downloaded repository package and
+paste its complete Setup Helper message into a new ChatGPT chat.

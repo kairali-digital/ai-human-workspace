@@ -1,0 +1,76 @@
+{
+  "approval_status": "APPROVED_BY_OWNER",
+  "managed_files": [
+    {
+      "sha256": "ca389cad4e17b1d1c12919f6749ba8e6877e58039d298e17474f45960396d548",
+      "source": "core/AI-HUMAN.md",
+      "target": ".ai-human/system/AI-HUMAN.md"
+    },
+    {
+      "sha256": "13f42649a7435eae25e5cc9951de4d9afe8d282f55f6543214d78b958b7e3e4c",
+      "source": "core/AGENT-RULES.md",
+      "target": ".ai-human/system/AGENT-RULES.md"
+    },
+    {
+      "sha256": "fcee496e777237a5075d3537185d4b6c996e9a53a3224796c05f050ca4780ea9",
+      "source": "core/OPERATING-LOOP.md",
+      "target": ".ai-human/system/OPERATING-LOOP.md"
+    },
+    {
+      "sha256": "d1352074fc8fb74856e4811df8b389fde8e9cf50a12f9b75f2d213b58282c76c",
+      "source": "core/GATES-SHARED.md",
+      "target": ".ai-human/system/GATES-SHARED.md"
+    },
+    {
+      "sha256": "7f24560831a90ae9aba9c35ce3e5972bc1022a7bb7299b84ba956d4d0036f8ac",
+      "source": "core/SESSION-START.md",
+      "target": ".ai-human/system/SESSION-START.md"
+    },
+    {
+      "sha256": "81f7764de029d2ec511f164c45a008bfdcdc802205f510f250a6880ca5f200da",
+      "source": "core/SESSION-END.md",
+      "target": ".ai-human/system/SESSION-END.md"
+    },
+    {
+      "sha256": "b0ead077389da28d0cf50c8949fd7f37fccac3806f37fb0dafdccd1513f29862",
+      "source": "core/TOOLBOX-TEMPLATE.md",
+      "target": ".ai-human/system/TOOLBOX-TEMPLATE.md"
+    },
+    {
+      "sha256": "59854984853104df5c353e2f681a15fc7924742f9a2e468c29af248dce45ce03",
+      "source": "core/VERSION",
+      "target": ".ai-human/VERSION"
+    },
+    {
+      "sha256": "9f189b2ada1df9c441ecb8e58296cb19f2714058dcce827ccb9c8ac46fe99fcf",
+      "source": "scripts/ai_human.py",
+      "target": ".ai-human/bin/ai_human.py"
+    }
+  ],
+  "never_managed": [
+    "AGENTS.md",
+    "CLAUDE.md",
+    "AI-HUMAN.md",
+    "COMPANY.md",
+    "PARAMETERS.md",
+    "ROLE.md",
+    "MASTER_CURSOR.md",
+    "OPEN_REGISTER.md",
+    "TODAY.md",
+    "COMPLETED_LEDGER.md",
+    "EVIDENCE_LOG.md",
+    "FACTS.md",
+    "DECISIONS.md",
+    "TOOLBOX.md",
+    "GATES.md",
+    "AUTOMATIONS.md",
+    "START-HERE.md",
+    "READ-ME-FIRST.txt",
+    "credentials",
+    "browser sessions",
+    "personal files"
+  ],
+  "repository": "kairali-digital/ai-human-workspace",
+  "schema": "ai-human.workspace-release/v1",
+  "version": "1.0.0"
+}

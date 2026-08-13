@@ -27,6 +27,7 @@ silently rewrite another worker's state.
 
 ## Update boundary
 
-The shared system updates only from a validated semantic-version release at session
-start or a declared checkpoint. It never updates during a live task. Company, role and
-employee state are never managed by the release.
+The shared system checks only a validated semantic-version release at session start.
+The check is read-only. Applying an update requires the employee's approval at a safe
+checkpoint and never occurs during a live task. Company, role and employee state are
+never managed by the release.

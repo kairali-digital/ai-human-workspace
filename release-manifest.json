@@ -2,7 +2,7 @@
   "approval_status": "APPROVED_BY_OWNER",
   "managed_files": [
     {
-      "sha256": "ca389cad4e17b1d1c12919f6749ba8e6877e58039d298e17474f45960396d548",
+      "sha256": "5252b6fdcd6ad4a75b00a977f0b43b12a746d65c384dcc7b68ac8fcee2ba95ee",
       "source": "core/AI-HUMAN.md",
       "target": ".ai-human/system/AI-HUMAN.md"
     },
@@ -22,7 +22,7 @@
       "target": ".ai-human/system/GATES-SHARED.md"
     },
     {
-      "sha256": "7f24560831a90ae9aba9c35ce3e5972bc1022a7bb7299b84ba956d4d0036f8ac",
+      "sha256": "9cbf24641bef8a9b646f39f7e1c1db29aeea25fc728690bc8e962dff85d9fd2a",
       "source": "core/SESSION-START.md",
       "target": ".ai-human/system/SESSION-START.md"
     },
@@ -37,7 +37,7 @@
       "target": ".ai-human/system/TOOLBOX-TEMPLATE.md"
     },
     {
-      "sha256": "acb57a7135b2d7d6e665f67f056e21353023b93835f54def1ae523bf76f1bfb3",
+      "sha256": "dfe7d71b3f428eb73ed853f8fded65e2986896e21d69f45ebf06bb623b450e14",
       "source": "core/VERSION",
       "target": ".ai-human/VERSION"
     },
@@ -72,5 +72,5 @@
   ],
   "repository": "kairali-digital/ai-human-workspace",
   "schema": "ai-human.workspace-release/v1",
-  "version": "1.5.0"
+  "version": "1.5.1"
 }

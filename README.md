@@ -42,6 +42,7 @@ personal files.
 - Rollout owner: [`docs/MULTI-COMPANY-ROLLOUT.md`](docs/MULTI-COMPANY-ROLLOUT.md)
 - Updates and removal: [`docs/UPDATES-ROLLBACK-REMOVAL.md`](docs/UPDATES-ROLLBACK-REMOVAL.md)
 - Kairali complete bundle: [`packages/kairali/README.md`](packages/kairali/README.md)
+- Kairali employee update workflow: [`packages/kairali/UPDATE-WORKFLOW.md`](packages/kairali/UPDATE-WORKFLOW.md)
 - Three-worker go-live: [`docs/THREE-WORKER-GO-LIVE.md`](docs/THREE-WORKER-GO-LIVE.md)
 
 Skills are not installed indiscriminately. The Kairali Akshar marketing skill and Rahul
@@ -50,3 +51,8 @@ skills from a maintainer's computer are not part of this repository.
 
 The public repository is a distribution channel, not a company work repository. Never
 commit live employee state, customer data, credentials or private evidence here.
+
+GitHub Desktop `Fetch origin` or `Pull origin` synchronizes only the selected repository
+checkout. It does not install or update the managed system inside an employee worker.
+Beginners ask the Setup Helper to run the checked lifecycle at a safe checkpoint;
+technical employees may run the same lifecycle directly.

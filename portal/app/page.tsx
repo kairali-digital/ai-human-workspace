@@ -15,7 +15,7 @@ type GithubRelease = {
 };
 
 const fallbackRelease: GithubRelease = {
-  tag_name: "v1.1.0",
+  tag_name: "v1.5.1",
   html_url: "https://github.com/kairali-digital/ai-human-workspace/releases/latest",
   published_at: "2026-08-12T00:00:00Z",
   assets: [],
@@ -54,6 +54,7 @@ export default async function Home() {
         <nav aria-label="Portal navigation">
           <a href="#start">Start</a>
           <a href="#workers">Workers</a>
+          <a href="#updates">Updates</a>
           <a href="#access">Access</a>
           <a href="#downloads">Downloads</a>
           <a href="#technical">Technical</a>
@@ -66,10 +67,10 @@ export default async function Home() {
           <h1>One link for the complete Kairali AI Method.</h1>
           <p className="hero-summary">Open the guide, get the approved files and begin without an account.</p>
           <div className="hero-actions">
-            <a className="button button-primary" href="/downloads/KAIRALI-AI-METHOD-ROLLOUT-v15-PUBLIC-KIT.zip" download>
+            <a className="button button-primary" href="/downloads/KAIRALI-AI-METHOD-ROLLOUT-v151-PUBLIC-KIT.zip" download>
               Download everything
             </a>
-            <a className="button button-secondary" href="/downloads/EMPLOYEE-SETUP-AND-PROOF-GUIDE-v6-PUBLIC-KIT.pdf">
+            <a className="button button-secondary" href="/downloads/EMPLOYEE-SETUP-AND-PROOF-GUIDE-v7-PUBLIC-KIT.pdf">
               Read the start guide
             </a>
           </div>
@@ -88,7 +89,7 @@ export default async function Home() {
       <section className="release-strip" aria-label="Current source status">
         <div>
           <span>Current portal package</span>
-          <strong>v1.5.0</strong>
+          <strong>v1.5.1</strong>
         </div>
         <div>
           <span>Latest approved GitHub release</span>
@@ -112,13 +113,13 @@ export default async function Home() {
             <span>For employees</span>
             <h3>Use the Setup Helper.</h3>
             <p>No Terminal, Git or command line. Set your daily Email Importance Brief, complete the Full Drive Index, then optionally add Saturday LinkedIn drafts with right-level local control and human-only LinkedIn access and sending.</p>
-            <a href="/downloads/EMPLOYEE-SETUP-AND-PROOF-GUIDE-v6-PUBLIC-KIT.pdf">Open employee guide</a>
+            <a href="/downloads/EMPLOYEE-SETUP-AND-PROOF-GUIDE-v7-PUBLIC-KIT.pdf">Open employee guide</a>
           </article>
           <article className="path path-facilitator">
             <span>For facilitators</span>
             <h3>Prepare once. Share this portal.</h3>
             <p>Use the runbook, main presentation and print checklist. Keep the advanced clinic separate.</p>
-            <a href="/downloads/FACILITATOR-RUNBOOK-v8-PUBLIC-KIT.pdf">Open facilitator runbook</a>
+            <a href="/downloads/FACILITATOR-RUNBOOK-v9-PUBLIC-KIT.pdf">Open facilitator runbook</a>
           </article>
         </div>
       </section>
@@ -147,6 +148,41 @@ export default async function Home() {
           </article>
         </div>
         <p className="worker-note">Downloaded, installed or connected alone does not mean live. Show the local report, cursor, evidence and validator.</p>
+      </section>
+
+      <section className="update-flow" id="updates" aria-labelledby="updates-heading">
+        <div className="section-intro">
+          <p className="eyebrow">Managed updates</p>
+          <h2 id="updates-heading">A new release starts with a check, not an overwrite.</h2>
+          <p>The company notice names the version and affected files. Open the existing worker and ask the Setup Helper to check. The check is read-only; applying waits for your approval at a safe checkpoint.</p>
+        </div>
+        <div className="update-steps">
+          <article>
+            <span>1</span>
+            <h3>Open the existing worker.</h3>
+            <p>Start a new Codex chat and paste <strong>CHECK FOR KAIRALI UPDATE</strong>. You never type a command.</p>
+          </article>
+          <article>
+            <span>2</span>
+            <h3>Read the check.</h3>
+            <p>The helper shows installed and latest versions, changes, live-task status, managed files and preserved employee state. No file changes yet.</p>
+          </article>
+          <article>
+            <span>3</span>
+            <h3>Approve at a checkpoint.</h3>
+            <p>A live task defers the update. Otherwise, say <strong>UPDATE NOW</strong>. The helper backs up, verifies hashes, applies only managed files and validates.</p>
+          </article>
+          <article>
+            <span>4</span>
+            <h3>Prove every worker.</h3>
+            <p>Employee-owned state stays preserved. The employee keeps the version, validation receipt and preserved-state proof. Monitor reports missing, deferred or mismatched workers without rewriting them.</p>
+          </article>
+        </div>
+        <div className="update-boundary">
+          <p><strong>Automatic:</strong> the stable portal follows the approved release and a session may check for a newer version.</p>
+          <p><strong>Manual:</strong> the employee approves the apply. GitHub Desktop Fetch/Pull synchronizes only the selected repository; it does not install this managed update.</p>
+        </div>
+        <a className="access-link" href="/downloads/KAIRALI-MANAGED-UPDATE-WORKFLOW.md" download>Download the exact check prompt and recovery workflow</a>
       </section>
 
       <section className="access-boundary" id="access" aria-labelledby="access-heading">
@@ -199,7 +235,7 @@ export default async function Home() {
         <div>
           <p className="eyebrow">Technical and owner path</p>
           <h2 id="technical-heading">GitHub stays the approved source of truth.</h2>
-          <p>The portal reads the latest approved public release. Training files update from GitHub only after validation and review.</p>
+          <p>The portal reads the latest approved public release. Training files update from GitHub only after validation and review. Fetch/Pull updates a repository checkout, not an installed worker.</p>
         </div>
         <div className="technical-links">
           <a href={assetLink(release, "ai-human-workspace-")}>
@@ -232,12 +268,16 @@ export default async function Home() {
             <h3>Publish the approved result</h3>
             <p>Vercel updates this stable portal after the reviewed GitHub change reaches the production branch.</p>
           </article>
+          <article>
+            <h3>Announce and prove the batch</h3>
+            <p>The company sends the exact check prompt to no more than 25 employees. Setup Helper receipts and Monitor readback prove completion.</p>
+          </article>
         </div>
       </section>
 
       <footer>
         <p>This portal is intentionally excluded from search engines. Anyone with the link can open it, so it must contain no confidential information.</p>
-        <a href="/downloads/SETUP-HELPER-CARD-v6-PUBLIC-KIT.pdf">Stuck? Open the Setup Helper card.</a>
+        <a href="/downloads/SETUP-HELPER-CARD-v7-PUBLIC-KIT.pdf">Stuck? Open the Setup Helper card.</a>
       </footer>
     </main>
   );

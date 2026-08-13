@@ -38,13 +38,18 @@
   only after validation. The shared kit being available must not be confused with an
   employee worker being activated. Email and Full Drive are required; `TEST 25` is
   Drive setup proof only; Saturday LinkedIn remains optional.
+- Owner instruction H-41, 13 Aug 2026: every announced release uses a read-only
+  `CHECK FOR KAIRALI UPDATE`, live-task deferral, explicit `UPDATE NOW` approval at a
+  safe checkpoint, verified backup and hashes, separately managed layers, an update
+  receipt and Monitor proof. GitHub Desktop Fetch/Pull synchronizes only the selected
+  repository checkout and never stands in for installed-worker lifecycle update.
 - LinkedIn User Agreement and Help Center, checked 13 Aug 2026: unauthorized bots,
   scraping and browser automation are prohibited. The company starter therefore uses
   employee-supplied text and a human-only send gate.
   Sources: https://www.linkedin.com/legal/user-agreement and
   https://www.linkedin.com/help/linkedin/answer/a1341387 and
   https://www.linkedin.com/help/linkedin/answer/a1340567
-- Protected public `kairali-digital/ai-human-workspace` release v1.5.0 - complete
+- Protected public `kairali-digital/ai-human-workspace` release v1.5.1 - complete
   integrity-checked Kairali reference kit, public distribution boundary, three homework
   starters, all approved people/setup prompts and two explicit role-opt-in skills.
 - `work/MULTI-COMPANY-AI-HUMAN-CORE-001/repo/packages/kairali/README.md` - the public

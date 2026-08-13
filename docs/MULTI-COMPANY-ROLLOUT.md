@@ -30,8 +30,22 @@ the same cursor, register, ledger or evidence log.
 7. Expand in batches of no more than 25 people.
 8. At each checkpoint, record core version, component list, validation result and
    blocker count.
-9. Release shared upgrades centrally; workers check at session start and update only at
-   a safe checkpoint.
+9. Release shared upgrades centrally; publish the semantic version and stable portal,
+   then announce the exact read-only check prompt to one named batch of at most 25.
+10. Workers check at session start, wait for employee approval, and update only at a
+    safe checkpoint. The Setup Helper records version, validation, receipt and
+    preserved-state proof; Monitor reports missing/deferred/mismatched workers.
+
+## Employee update announcement contract
+
+Every company announcement contains the approved version, a plain-language change
+summary, affected layers (core, reference pack, named opt-in skills), the stable portal
+and the exact `CHECK FOR [COMPANY] UPDATE` prompt. The announcement is not permission
+to overwrite files; the employee still approves `UPDATE NOW` at a safe checkpoint.
+
+GitHub Desktop repository sync is announced separately when an assigned private
+repository has new commits. It is never described as installing or updating the public
+managed release.
 
 ## Access model
 

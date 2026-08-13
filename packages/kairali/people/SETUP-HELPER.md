@@ -10,9 +10,19 @@ Use this before asking the employee to troubleshoot. It works even when the desk
 
 ## Current distribution model
 
-The protected public `kairali-digital/ai-human-workspace` release v1.5.0 is the clean setup and update source. Public-read access needs no invitation or collaborator seat. Verify the release and obtain the complete Kairali reference kit, then open a separate work project: the named private operations repository only when the employee has been assigned it, otherwise an approved standalone local worker.
+The latest protected public `kairali-digital/ai-human-workspace` semantic-version release is the clean setup and update source. Public-read access needs no invitation or collaborator seat. Verify the tagged release and obtain the complete Kairali reference kit, then open a separate work project: the named private operations repository only when the employee has been assigned it, otherwise an approved standalone local worker.
 
 Never place live company work, employee state or secrets in the public distribution repository. Installing the reference kit does not activate the Akshar or Rahul skills. Install a governed skill only after an explicit role decision. Update or remove managed system/components only at a safe checkpoint; preserve employee state and keep the recovery archive.
+
+For a new release, follow `packages/kairali/UPDATE-WORKFLOW.md`. Ask the employee to
+paste the exact `CHECK FOR KAIRALI UPDATE` prompt, then perform a read-only check
+without changing files. If a live task exists, defer. Otherwise show the employee the installed
+and latest versions, change summary, affected layers and preserved files, then wait for
+the exact approval `UPDATE NOW`. Apply core, reference kit and named opt-in skills
+separately. Validate and show the receipt before recording completion.
+
+GitHub Desktop `Fetch origin`/`Pull origin` synchronizes only an assigned repository.
+It never replaces the managed-release lifecycle.
 
 ## Three-worker activation rule
 

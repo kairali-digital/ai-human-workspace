@@ -3,11 +3,11 @@
   "components": [
     {
       "description": "Complete Kairali people, homework and governed-skill reference kit",
-      "file_count": 96,
+      "file_count": 98,
       "id": "kairali-company-rollout",
       "install_policy": "COMPANY_PROFILE",
       "source": "packages/kairali",
-      "tree_sha256": "52641f4a22cc2353205632519dc215c800c4148f24026e9ea3af30ca19367831",
+      "tree_sha256": "909563f6942a879f5edccf531ee6a846bf7f479205debcc9803a2f8f49bf54df",
       "type": "reference-pack"
     },
     {
@@ -31,5 +31,5 @@
   ],
   "repository": "kairali-digital/ai-human-workspace",
   "schema": "ai-human.component-release/v1",
-  "version": "1.5.0"
+  "version": "1.5.1"
 }

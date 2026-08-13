@@ -10,13 +10,26 @@ Use this when a named role prompt has not yet been issued. It teaches the common
 
 ## Where the system comes from
 
-The protected public `kairali-digital/ai-human-workspace` release v1.5.0 is the clean setup and update source. It contains the company reference kit, all approved people/setup prompts, universal homework starters and two optional governed skills. It contains no live company work or secrets, so staff do not need a collaborator invitation to receive it.
+The latest protected public `kairali-digital/ai-human-workspace` semantic-version release is the clean setup and update source. It contains the company reference kit, all approved people/setup prompts, universal homework starters and two optional governed skills. It contains no live company work or secrets, so staff do not need a collaborator invitation to receive it.
 
 Do not use the public repository as your work project. The Setup Helper opens a separate named private operations project only if your role has been assigned one; otherwise it opens an approved standalone local worker. System updates happen only at a safe checkpoint and preserve your worker state. The Akshar and Rahul skills are installed only after an explicit role decision; they are not active for everyone.
 
 ## If you attended the meeting but received no named start or homework page
 
-Use `packages/kairali/homework/START-HERE.md` inside the public v1.5.0 company kit. If the kit has already been installed as a reference pack, use its `homework/START-HERE.md` page.
+Use `packages/kairali/homework/START-HERE.md` inside the latest approved company kit. If the kit has already been installed as a reference pack, use its `homework/START-HERE.md` page.
+
+## When the company announces an update
+
+Open your existing worker, start a new Codex chat and paste the exact `CHECK FOR
+KAIRALI UPDATE` prompt from `packages/kairali/UPDATE-WORKFLOW.md`. The check changes
+nothing. If an update is available, review what changes and what stays preserved. Say
+`UPDATE NOW` only when your live task is clear or checkpointed. The Setup Helper does
+the update and shows the version, validation result and receipt; you never type a
+command.
+
+GitHub Desktop `Fetch origin`/`Pull origin` only synchronizes an assigned shared
+Kairali repository. It does not install or update your managed system, reference kit or
+role skill.
 
 1. Required: build the separate **Daily Email Triage AI Human** under task
    `EMAIL-HW-001`; choose the daily local time, prove the read-only pilot, rule

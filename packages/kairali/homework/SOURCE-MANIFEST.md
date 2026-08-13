@@ -26,12 +26,19 @@
   unresolved items for the employee. The reusable company version does not access or
   control LinkedIn and never sends; the employee manually copies messages and sends
   approved replies.
+- Owner instruction H-38, 13 Aug 2026: the reusable LinkedIn worker should use the
+  available computer/browser driver at the right permission level. The governed
+  implementation uses ChatGPT's real task-time Computer/Chrome permission for the
+  approved local worker or a named non-LinkedIn public page, then stops all such tools
+  and hands control to the employee before LinkedIn appears. A portal button does not
+  pretend to grant operating-system access.
 - LinkedIn User Agreement and Help Center, checked 13 Aug 2026: unauthorized bots,
   scraping and browser automation are prohibited. The company starter therefore uses
   employee-supplied text and a human-only send gate.
   Sources: https://www.linkedin.com/legal/user-agreement and
-  https://www.linkedin.com/help/linkedin/answer/a1341387
-- Protected public `kairali-digital/ai-human-workspace` release v1.4.0 - complete
+  https://www.linkedin.com/help/linkedin/answer/a1341387 and
+  https://www.linkedin.com/help/linkedin/answer/a1340567
+- Protected public `kairali-digital/ai-human-workspace` release v1.5.0 - complete
   integrity-checked Kairali reference kit, public distribution boundary, three homework
   starters, all approved people/setup prompts and two explicit role-opt-in skills.
 - `work/MULTI-COMPANY-AI-HUMAN-CORE-001/repo/packages/kairali/README.md` - the public
@@ -58,6 +65,10 @@
   when available and complete the provider authorization flow.
 - https://learn.chatgpt.com/use-cases/manage-your-inbox - Gmail and Outlook can support
   inbox triage; external mailbox changes require explicit approval.
+- https://learn.chatgpt.com/use-cases/use-your-computer-with-codex - Computer Use can
+  click, type and navigate approved Mac/Windows apps with permission prompts and human
+  review; use `@Computer` for local computer work and `@Chrome` for signed-in browser
+  work, with a pause before send, submit or another important change.
 
 ## Locked scope choices
 
@@ -72,8 +83,11 @@
   successful run in each new calendar month audits filed mail for false positives.
 - Permanent Gmail filters are never changed by the connector. New sender or query rules
   remain in `EMAIL-RULE-REVIEW.md` until a human rules them.
-- LinkedIn uses manually supplied message text in batches of at most 25. The employee
-  chooses the Saturday time, confirms the time zone, reviews all drafts and manually
-  sends. The AI does not open, read, control, scrape, click or send through LinkedIn.
+- LinkedIn uses manually supplied message text in batches of at most 25. Task-scoped
+  Computer control may operate the local worker and Chrome may open an approved
+  non-LinkedIn public page. Both stop before LinkedIn appears. The employee chooses the
+  Saturday time, confirms the time zone, manually copies messages, reviews all drafts
+  and manually sends. The AI does not inspect, open, read, control, scrape, click, type,
+  copy, paste or send through LinkedIn.
 - The roster and attendee headcount are not supplied; no names or print quantities are
   invented.

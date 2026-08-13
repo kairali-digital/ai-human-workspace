@@ -6,8 +6,8 @@ homework page.
 ## Where this pack comes from
 
 The preferred source is the protected public
-`kairali-digital/ai-human-workspace` release v1.4.0. The complete
-`kairali-company-rollout-1.4.0.zip` contains this homework, all approved people/setup
+`kairali-digital/ai-human-workspace` release v1.5.0. The complete
+`kairali-company-rollout-1.5.0.zip` contains this homework, all approved people/setup
 prompts and the two governed role skills. Public access needs no invitation or
 collaborator seat, and the kit contains no live company work or secrets.
 
@@ -53,8 +53,9 @@ account choice or permission. Never ask for a password or one-time code.
 - Drive: choose `TEST 25` or `FULL DRIVE INDEX`; every batch is at most 25 and
   checkpointed; index CSV, summary, cursor and scope coverage are visible; Drive unchanged.
 - Optional LinkedIn: approved Saturday time and time zone, reminder-only automation,
-  one manually supplied batch of at most 25, a numbered reply queue, employee-confirmed
-  outcomes, and no AI access to or sending through LinkedIn.
+  task-scoped Computer control proven in the local worker, the exact `YOUR TURN ON
+  LINKEDIN` stop/handoff, one manually supplied batch of at most 25, a numbered reply
+  queue, employee-confirmed outcomes, and no AI action on LinkedIn.
 - Each project says its workspace validator passed.
 
 Do not accept “installed” or “connected” as completion. The visible local report and

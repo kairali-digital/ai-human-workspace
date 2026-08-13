@@ -2,6 +2,18 @@
 
 All notable changes are recorded here in plain language.
 
+## [1.5.0] - 2026-08-13
+
+- Add one zero-knowledge, task-scoped Computer Use setup for the optional LinkedIn
+  worker, using ChatGPT's real permission prompt rather than a fake portal control.
+- Allow `@Computer` only inside the approved local worker and `@Chrome` only on a named
+  non-LinkedIn public page; keep Ask for approval and prohibit Full access/Always allow.
+- Require the exact `YOUR TURN ON LINKEDIN` stop/handoff before LinkedIn appears. While
+  LinkedIn is visible, the AI cannot inspect, move, click, type, read, copy, paste or
+  send; the employee performs and confirms every LinkedIn action.
+- Refresh the starter, prompts, guides, homework video/captions, decks, release proofs
+  and noindex portal to the same right-level-access behavior.
+
 ## [1.4.0] - 2026-08-13
 
 - Replace the optional one-time LinkedIn profile draft with a weekly Saturday message

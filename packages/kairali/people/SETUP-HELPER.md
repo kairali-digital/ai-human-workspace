@@ -10,7 +10,7 @@ Use this before asking the employee to troubleshoot. It works even when the desk
 
 ## Current distribution model
 
-The protected public `kairali-digital/ai-human-workspace` release v1.4.0 is the clean setup and update source. Public-read access needs no invitation or collaborator seat. Verify the release and obtain the complete Kairali reference kit, then open a separate work project: the named private operations repository only when the employee has been assigned it, otherwise an approved standalone local worker.
+The protected public `kairali-digital/ai-human-workspace` release v1.5.0 is the clean setup and update source. Public-read access needs no invitation or collaborator seat. Verify the release and obtain the complete Kairali reference kit, then open a separate work project: the named private operations repository only when the employee has been assigned it, otherwise an approved standalone local worker.
 
 Never place live company work, employee state or secrets in the public distribution repository. Installing the reference kit does not activate the Akshar or Rahul skills. Install a governed skill only after an explicit role decision. Update or remove managed system/components only at a safe checkpoint; preserve employee state and keep the recovery archive.
 

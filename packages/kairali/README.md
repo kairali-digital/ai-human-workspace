@@ -13,8 +13,10 @@ Drive content or private evidence.
   connector-visible metadata in checkpointed batches of at most 25 and creates a local
   future-searchable CSV, summary and cursor without opening or changing Drive files;
 - the optional Weekly LinkedIn Message Assistant: employee-chosen Saturday time,
-  manually supplied message batches, evidenced tone, numbered drafts and human-only
-  LinkedIn access and sending;
+  task-scoped Computer control in its local worker, Chrome only on approved
+  non-LinkedIn pages, a forced `YOUR TURN ON LINKEDIN` control handoff, manually
+  supplied message batches, evidenced tone, numbered drafts and human-only LinkedIn
+  access and sending;
 - exact copy-paste prompts, Mac/Windows guide, transcript, captions and narrated video.
 
 ## Optional governed skills

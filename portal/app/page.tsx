@@ -53,6 +53,7 @@ export default async function Home() {
         </a>
         <nav aria-label="Portal navigation">
           <a href="#start">Start</a>
+          <a href="#access">Access</a>
           <a href="#downloads">Downloads</a>
           <a href="#technical">Technical</a>
         </nav>
@@ -64,10 +65,10 @@ export default async function Home() {
           <h1>One link for the complete Kairali AI Method.</h1>
           <p className="hero-summary">Open the guide, get the approved files and begin without an account.</p>
           <div className="hero-actions">
-            <a className="button button-primary" href="/downloads/KAIRALI-AI-METHOD-ROLLOUT-v14-PUBLIC-KIT.zip" download>
+            <a className="button button-primary" href="/downloads/KAIRALI-AI-METHOD-ROLLOUT-v15-PUBLIC-KIT.zip" download>
               Download everything
             </a>
-            <a className="button button-secondary" href="/downloads/EMPLOYEE-SETUP-AND-PROOF-GUIDE-v5-PUBLIC-KIT.pdf">
+            <a className="button button-secondary" href="/downloads/EMPLOYEE-SETUP-AND-PROOF-GUIDE-v6-PUBLIC-KIT.pdf">
               Read the start guide
             </a>
           </div>
@@ -86,7 +87,7 @@ export default async function Home() {
       <section className="release-strip" aria-label="Current source status">
         <div>
           <span>Portal review package</span>
-          <strong>v1.4.0</strong>
+          <strong>v1.5.0</strong>
         </div>
         <div>
           <span>Latest approved GitHub release</span>
@@ -109,16 +110,42 @@ export default async function Home() {
           <article className="path path-employee">
             <span>For employees</span>
             <h3>Use the Setup Helper.</h3>
-            <p>No Terminal, Git or command line. Set your daily Email Importance Brief, complete the full Drive Index, then optionally add Saturday LinkedIn drafts with human-only access and sending.</p>
-            <a href="/downloads/EMPLOYEE-SETUP-AND-PROOF-GUIDE-v5-PUBLIC-KIT.pdf">Open employee guide</a>
+            <p>No Terminal, Git or command line. Set your daily Email Importance Brief, complete the full Drive Index, then optionally add Saturday LinkedIn drafts with right-level local control and human-only LinkedIn access and sending.</p>
+            <a href="/downloads/EMPLOYEE-SETUP-AND-PROOF-GUIDE-v6-PUBLIC-KIT.pdf">Open employee guide</a>
           </article>
           <article className="path path-facilitator">
             <span>For facilitators</span>
             <h3>Prepare once. Share this portal.</h3>
             <p>Use the runbook, main presentation and print checklist. Keep the advanced clinic separate.</p>
-            <a href="/downloads/FACILITATOR-RUNBOOK-v7-PUBLIC-KIT.pdf">Open facilitator runbook</a>
+            <a href="/downloads/FACILITATOR-RUNBOOK-v8-PUBLIC-KIT.pdf">Open facilitator runbook</a>
           </article>
         </div>
+      </section>
+
+      <section className="access-boundary" id="access" aria-labelledby="access-heading">
+        <div className="section-intro">
+          <p className="eyebrow">Right-level access</p>
+          <h2 id="access-heading">Mouse and browser control, with a hard LinkedIn handoff.</h2>
+          <p>The portal cannot grant computer access. The real permission prompt appears inside ChatGPT when the employee starts an approved Computer or Chrome task.</p>
+        </div>
+        <div className="access-grid">
+          <article>
+            <span>1</span>
+            <h3>Choose Computer.</h3>
+            <p>Close LinkedIn. Start the local request with <code>@Computer</code>. Approve only the visible local project and current task. Keep Ask for approval. Never choose Full access or Always allow.</p>
+          </article>
+          <article>
+            <span>2</span>
+            <h3>Stop before LinkedIn.</h3>
+            <p>Computer and Chrome control stop first. Codex shows <strong>YOUR TURN ON LINKEDIN</strong> and makes no screen, mouse, keyboard or browser action while LinkedIn is visible.</p>
+          </article>
+          <article>
+            <span>3</span>
+            <h3>You take over.</h3>
+            <p>You copy no more than 25 conversations, close LinkedIn, return to the local project and say BATCH READY. You also review, paste and send every approved reply yourself.</p>
+          </article>
+        </div>
+        <a className="access-link" href="https://learn.chatgpt.com/use-cases/use-your-computer-with-codex" target="_blank" rel="noreferrer">Read the official Computer Use guide</a>
       </section>
 
       <section className="downloads" id="downloads" aria-labelledby="downloads-heading">
@@ -183,7 +210,7 @@ export default async function Home() {
 
       <footer>
         <p>This portal is intentionally excluded from search engines. Anyone with the link can open it, so it must contain no confidential information.</p>
-        <a href="/downloads/SETUP-HELPER-CARD-v5-PUBLIC-KIT.pdf">Stuck? Open the Setup Helper card.</a>
+        <a href="/downloads/SETUP-HELPER-CARD-v6-PUBLIC-KIT.pdf">Stuck? Open the Setup Helper card.</a>
       </footer>
     </main>
   );

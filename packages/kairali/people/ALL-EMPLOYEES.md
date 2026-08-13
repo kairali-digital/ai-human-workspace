@@ -10,13 +10,13 @@ Use this when a named role prompt has not yet been issued. It teaches the common
 
 ## Where the system comes from
 
-The protected public `kairali-digital/ai-human-workspace` release v1.4.0 is the clean setup and update source. It contains the company reference kit, all approved people/setup prompts, universal homework starters and two optional governed skills. It contains no live company work or secrets, so staff do not need a collaborator invitation to receive it.
+The protected public `kairali-digital/ai-human-workspace` release v1.5.0 is the clean setup and update source. It contains the company reference kit, all approved people/setup prompts, universal homework starters and two optional governed skills. It contains no live company work or secrets, so staff do not need a collaborator invitation to receive it.
 
 Do not use the public repository as your work project. The Setup Helper opens a separate named private operations project only if your role has been assigned one; otherwise it opens an approved standalone local worker. System updates happen only at a safe checkpoint and preserve your worker state. The Akshar and Rahul skills are installed only after an explicit role decision; they are not active for everyone.
 
 ## If you attended the meeting but received no named start or homework page
 
-Use `packages/kairali/homework/START-HERE.md` inside the public v1.4.0 company kit. If the kit has already been installed as a reference pack, use its `homework/START-HERE.md` page.
+Use `packages/kairali/homework/START-HERE.md` inside the public v1.5.0 company kit. If the kit has already been installed as a reference pack, use its `homework/START-HERE.md` page.
 
 1. Required: build the separate **Daily Email Triage AI Human** under task
    `EMAIL-HW-001`; choose the daily local time, prove the read-only pilot, rule
@@ -24,14 +24,18 @@ Use `packages/kairali/homework/START-HERE.md` inside the public v1.4.0 company k
 2. Required: build the separate **Drive Index AI Human** under task `DRIVE-HW-001`; choose `FULL DRIVE INDEX` for the complete connector-visible metadata index, or `TEST 25` only for a quick proof.
 3. Optional, only after both pass: build the **Weekly LinkedIn Message Assistant** under
    task `LINKEDIN-WEEKLY-001`; choose the Saturday local time, confirm the time zone,
-   supply prior reply examples and unread conversations manually in batches of no more
-   than 25, review the numbered drafts, and manually send anything approved.
+   approve task-scoped Computer control for the local worker, prove the `YOUR TURN ON
+   LINKEDIN` stop/handoff, supply prior reply examples and unread conversations manually
+   in batches of no more than 25, review the numbered drafts, and manually send anything
+   approved.
 
 This fallback does not replace a named employee plan. Email never sends, deletes,
 unsubscribes, opens attachments or silently changes permanent Gmail filters; reversible
 filing requires the employee's explicit rule. Drive remains read-only. Both projects
 finish only when the visible local report, state proof and validator pass are present.
-The LinkedIn assistant never accesses, reads, clicks, controls or sends through
+The LinkedIn assistant may use Computer control inside its approved local worker and
+Chrome on an approved non-LinkedIn public page. It stops all computer/browser tools
+before LinkedIn appears and never accesses, reads, clicks, controls or sends through
 LinkedIn; its scheduled job opens the local review project only. Email daily periods,
 Drive full mode and a LinkedIn review may cover more than 25 items in total, but each
 must checkpoint after every batch of no more than 25 and leave a durable resume cursor.

@@ -7,7 +7,8 @@ in this folder is authoritative.
 
 1. Read `PARAMETERS.md`, `MASTER_CURSOR.md`, `OPEN_REGISTER.md`, and `TODAY.md`.
 2. Read `SATURDAY-REVIEW-PROMPT.md`, `LINKEDIN-TONE-AND-PRECEDENTS.md`,
-   `LINKEDIN-REPLY-QUEUE.md`, and `LINKEDIN-REVIEW-CURSOR.md` for a review run.
+   `LINKEDIN-REPLY-QUEUE.md`, `LINKEDIN-REVIEW-CURSOR.md`, and
+   `LINKEDIN-CONTROL-HANDOFF.md` for a review run.
 3. Name the live task ID, next action, exit evidence, and any blocker before changing
    state.
 4. If no task is live, follow `PARAMETERS.md`. Do not invent or promote work.
@@ -15,12 +16,15 @@ in this folder is authoritative.
 ## Work loop
 
 1. Work on one task ID and no more than 25 pasted conversations at a time.
-2. Use only employee-supplied local text. Never access or control LinkedIn.
-3. Prepare drafts in the employee's evidenced tone and route uncertainty to the
+2. Use Computer Use only inside the approved local worker and `@Chrome` only on an
+   approved non-LinkedIn page. Use only employee-supplied local message text.
+3. Before LinkedIn appears, stop every computer/browser tool and show the exact
+   `YOUR TURN ON LINKEDIN` handoff. Never access or control LinkedIn.
+4. Prepare drafts in the employee's evidenced tone and route uncertainty to the
    numbered decision queue.
-4. Treat every reply as a draft until the employee reviews it and manually sends it.
-5. Learn only from employee-confirmed outcomes.
-6. After each batch, update the cursor, queue, today table, and evidence.
+5. Treat every reply as a draft until the employee reviews it and manually sends it.
+6. Learn only from employee-confirmed outcomes.
+7. After each batch, update the cursor, queue, today table, and evidence.
 
 ## Prevent drift and forgetting
 
@@ -31,6 +35,8 @@ in this folder is authoritative.
   local files.
 - Do not let two writers change this workspace concurrently.
 - A scheduled reminder may open this local project; it may never open LinkedIn.
+- A Computer Use or Chrome permission is task-scoped capability, not permission to use
+  LinkedIn. Never choose Full access or Always allow.
 
 ## Close a batch
 

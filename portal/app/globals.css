@@ -185,7 +185,7 @@ h1 {
 .release-strip a { color: var(--amber); font-weight: 700; }
 .release-fallback { font-size: 0.78rem; grid-column: 1 / -1; margin: 0; }
 
-.start-paths, .downloads, .technical, .update-policy {
+.start-paths, .access-boundary, .downloads, .technical, .update-policy {
   margin: 0 auto;
   max-width: 1400px;
   padding: clamp(88px, 11vw, 150px) 32px;
@@ -228,6 +228,16 @@ h2 {
 .path-employee p { color: color-mix(in srgb, var(--surface) 78%, transparent); }
 .path-employee a { color: var(--amber); }
 .path-facilitator { background: var(--surface-warm); color: var(--amber-ink); }
+
+.access-boundary { background: var(--surface-soft); }
+.access-boundary h2 { max-width: 16ch; }
+.access-grid { display: grid; gap: 20px; grid-template-columns: repeat(3, minmax(0, 1fr)); margin-top: 54px; }
+.access-grid article { background: var(--surface-raised); border: 1px solid var(--line); border-radius: var(--radius); padding: 30px; }
+.access-grid article > span { align-items: center; background: var(--forest); border-radius: 50%; color: var(--surface); display: inline-flex; font-family: var(--font-mono), monospace; font-weight: 760; height: 38px; justify-content: center; width: 38px; }
+.access-grid h3 { font-size: 1.5rem; letter-spacing: -0.025em; margin: 34px 0 12px; }
+.access-grid p { color: var(--muted); margin-bottom: 0; }
+.access-grid code { background: var(--surface-soft); border-radius: 5px; font-family: var(--font-mono), monospace; padding: 2px 5px; }
+.access-link { display: inline-block; font-weight: 750; margin-top: 30px; }
 
 .downloads { padding-top: 40px; }
 
@@ -337,7 +347,7 @@ footer a { flex: 0 0 auto; font-weight: 750; }
   .hero-media { min-height: 480px; order: -1; }
   .release-strip { grid-template-columns: repeat(2, 1fr); }
   .release-strip a { justify-self: start; }
-  .path-grid, .download-visual, .technical { grid-template-columns: 1fr; }
+  .path-grid, .access-grid, .download-visual, .technical { grid-template-columns: 1fr; }
   .policy-grid { grid-template-columns: 1fr; }
 }
 
@@ -360,7 +370,7 @@ footer a { flex: 0 0 auto; font-weight: 750; }
   .hero-actions { align-items: stretch; flex-direction: column; }
   .button { width: 100%; }
   .release-strip { grid-template-columns: 1fr; padding: 24px 20px; }
-  .start-paths, .downloads, .technical, .update-policy { padding: 76px 20px; }
+  .start-paths, .access-boundary, .downloads, .technical, .update-policy { padding: 76px 20px; }
   .path-grid, .download-grid { grid-template-columns: 1fr; }
   .download-group-featured { grid-column: auto; }
   .download-item { align-items: flex-start; flex-direction: column; gap: 12px; }

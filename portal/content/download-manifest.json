@@ -2,114 +2,114 @@
   "schema": "kairali.portal-downloads/v1",
   "files": [
     {
-      "name": "ADVANCED-CAPABILITY-AND-TRAINER-SKILLS-GUIDE-v4-PUBLIC-KIT.docx",
-      "sha256": "61762b158f1172059cde585b6be56179796e3cac60e99fa94b92dd7aa232a6b5",
-      "size": 41276
+      "name": "ADVANCED-CAPABILITY-AND-TRAINER-SKILLS-GUIDE-v5-PUBLIC-KIT.docx",
+      "sha256": "b9b946c979c30917ae4e33d402a09ba6ca109dbc651667f16bdd291a783f76cb",
+      "size": 41434
     },
     {
-      "name": "ADVANCED-CAPABILITY-AND-TRAINER-SKILLS-GUIDE-v4-PUBLIC-KIT.pdf",
-      "sha256": "249427541d2616d359e32f73eda47d324fbd5d52f71528a65d85a0d9cae61889",
-      "size": 98705
+      "name": "ADVANCED-CAPABILITY-AND-TRAINER-SKILLS-GUIDE-v5-PUBLIC-KIT.pdf",
+      "sha256": "12573337eea15a593aa59c1be09c1c4476398a4829c8580b728c8a13894e7280",
+      "size": 148384
     },
     {
-      "name": "EMPLOYEE-SETUP-AND-PROOF-GUIDE-v5-PUBLIC-KIT.docx",
-      "sha256": "79b2dc0e360015bdfc5c368379f5925a342d7fef788390e79d590bdb5b39d9a7",
-      "size": 43926
+      "name": "EMPLOYEE-SETUP-AND-PROOF-GUIDE-v6-PUBLIC-KIT.docx",
+      "sha256": "b71f98797c4e94f352ac655e9194505351b9ed16175d3bde42525758b2f76f06",
+      "size": 44763
     },
     {
-      "name": "EMPLOYEE-SETUP-AND-PROOF-GUIDE-v5-PUBLIC-KIT.pdf",
-      "sha256": "4c4c82d7bc97a519bb8bf1d06acc13434cdfefc67a6cbebb4e70b8e0a2bea081",
-      "size": 134292
+      "name": "EMPLOYEE-SETUP-AND-PROOF-GUIDE-v6-PUBLIC-KIT.pdf",
+      "sha256": "ec135df0fb0a8af15f9d64483c09e4199850b1bd7938832a927a71433d4fff0d",
+      "size": 215195
     },
     {
       "name": "EVERYONE-ELSE-AI-HUMAN-HOMEWORK-GUIDE.docx",
-      "sha256": "7b0995bbdc6d59d3dcd39ff8bbbead28772483c0224ecb11129b6e957b53bd47",
-      "size": 47734
+      "sha256": "c5529c3740ea8bdbf2d709a86d21d24a4f51da2dcdca4c3e0323887144257073",
+      "size": 48459
     },
     {
       "name": "EVERYONE-ELSE-AI-HUMAN-HOMEWORK-GUIDE.pdf",
-      "sha256": "c7393b69e80c185858ffdfa9cfcb55647fcd39a613e3f3f215c87b6844afa704",
-      "size": 192578
+      "sha256": "b981ec9071eabbde8579644667e38d0cfa38010a06a693f0f6a042005d188553",
+      "size": 235708
     },
     {
       "name": "EVERYONE-ELSE-AI-HUMAN-HOMEWORK-PACK.sha256",
-      "sha256": "9a54d21307d07cf86966faab15a669661e21c287069513647b71a56598aa1f44",
+      "sha256": "d2f0d3f435231db482278e64d436f5cb631c1a1ad9a036efa9aae330b2530627",
       "size": 107
     },
     {
       "name": "EVERYONE-ELSE-AI-HUMAN-HOMEWORK-PACK.zip",
-      "sha256": "014c37f7a982d114ffe07d878980a61c4c662923565c7b78e902987ee4eda39c",
-      "size": 9337855
+      "sha256": "4ef6b6da36b47ff2781f452cf550b1be257e2a65a6ebbb57cc6f05c7eb6edf81",
+      "size": 10034492
     },
     {
-      "name": "FACILITATOR-RUNBOOK-v7-PUBLIC-KIT.docx",
-      "sha256": "824fd8a3ec603d605e59337d0741933ca4360f8b05243719cc3689cfbb83994f",
-      "size": 42240
+      "name": "FACILITATOR-RUNBOOK-v8-PUBLIC-KIT.docx",
+      "sha256": "d739b1b11a38884bdbd6e9f3a96564abe91be392406103e9f1931b00e6116121",
+      "size": 42316
     },
     {
-      "name": "FACILITATOR-RUNBOOK-v7-PUBLIC-KIT.pdf",
-      "sha256": "b2677f2f33a230372e425976115a7974589c45d2c8fb89faf26196cde2065f09",
-      "size": 115221
+      "name": "FACILITATOR-RUNBOOK-v8-PUBLIC-KIT.pdf",
+      "sha256": "291fcc16b5f0848d22c9cb5c3894c95180898061e71423cb1818f53b639e9d37",
+      "size": 163465
     },
     {
-      "name": "KAIRALI-AI-METHOD-ADVANCED-CLI-BONUS-v6-PUBLIC-KIT.pdf",
-      "sha256": "a91805bdfd2629e75425a0be695eea0808c7f58911a9cc57c0e0f7669830615e",
-      "size": 228348
+      "name": "KAIRALI-AI-METHOD-ADVANCED-CLI-BONUS-v7-PUBLIC-KIT.pdf",
+      "sha256": "12861f67baf5eb801020ac9c6136ba64998ca206e1cf12e19b3905c1f60d17c7",
+      "size": 423910
     },
     {
-      "name": "KAIRALI-AI-METHOD-ADVANCED-CLI-BONUS-v6-PUBLIC-KIT.pptx",
-      "sha256": "81bdc4c80e9bfae24295034c60de070df33a96f31528b89a4167e236fb7be88b",
-      "size": 136196
+      "name": "KAIRALI-AI-METHOD-ADVANCED-CLI-BONUS-v7-PUBLIC-KIT.pptx",
+      "sha256": "1a5d63ae889e4396b9a6c9032f510a49e5be13d2a9e9abf973fd43545ae4232a",
+      "size": 136323
     },
     {
-      "name": "KAIRALI-AI-METHOD-DECK-v14-PUBLIC-KIT.pdf",
-      "sha256": "f7cf1f536fd28abbb3e2e0b045b0be3f0dab5fd8a4a98a0ab4020c46a36a6795",
-      "size": 275094
+      "name": "KAIRALI-AI-METHOD-DECK-v15-PUBLIC-KIT.pdf",
+      "sha256": "519da0ca43338ba611565f5ca1fb5a33a99f7ea495e84109b8b518eec67ff04a",
+      "size": 550895
     },
     {
-      "name": "KAIRALI-AI-METHOD-DECK-v14-PUBLIC-KIT.pptx",
-      "sha256": "ffcde5aeadb081da72679b64c9725367ec4936d3f0657696dd3b01acd4d50ac6",
-      "size": 162808
+      "name": "KAIRALI-AI-METHOD-DECK-v15-PUBLIC-KIT.pptx",
+      "sha256": "ba8fa9cfa115eef358eb7143abcd66d238899fa948a00a47d43aef34306f5130",
+      "size": 162948
     },
     {
-      "name": "KAIRALI-AI-METHOD-ROLLOUT-v14-PUBLIC-KIT.sha256",
-      "sha256": "54f6835add31009fe8d2c5bcce5b170184242678f6f549941553c768562373ce",
+      "name": "KAIRALI-AI-METHOD-ROLLOUT-v15-PUBLIC-KIT.sha256",
+      "sha256": "d9863747e2b95c863710bcd9cd5aba22485aec82d7a58b071e3f46e7bca489fd",
       "size": 111
     },
     {
-      "name": "KAIRALI-AI-METHOD-ROLLOUT-v14-PUBLIC-KIT.zip",
-      "sha256": "26fcd7b8286e60b79b773c6ca359a976ccc1e20e9217528444c643f555f02af5",
-      "size": 38640984
+      "name": "KAIRALI-AI-METHOD-ROLLOUT-v15-PUBLIC-KIT.zip",
+      "sha256": "62af72e00385be6e70b4a607d45ea76b4e7b38f7b2b17eba7c04ebf3803c0f33",
+      "size": 42098335
     },
     {
-      "name": "PRINT-CHECKLIST-v7-PUBLIC-KIT.docx",
-      "sha256": "235a111ee3759226caa0a4ce8df9e9a43ab02b1f10c094492965330497d9f453",
-      "size": 39830
+      "name": "PRINT-CHECKLIST-v8-PUBLIC-KIT.docx",
+      "sha256": "c57eed701382b76f89c83d5c80bdce5142852c9ba53f1c0d6b7161bb18ce30dc",
+      "size": 39894
     },
     {
-      "name": "PRINT-CHECKLIST-v7-PUBLIC-KIT.pdf",
-      "sha256": "5b013cace5a483c8559517c3636fc28893e06fd721e7458bf38c7ae46927ca61",
-      "size": 78046
+      "name": "PRINT-CHECKLIST-v8-PUBLIC-KIT.pdf",
+      "sha256": "c99b69e0eaa7c4179c3e80ff7048e7261aa2127151ee7cb4684ae71f2cba94c5",
+      "size": 105578
     },
     {
-      "name": "ROLE-MISSION-WORKBOOK-v6-PUBLIC-KIT.docx",
-      "sha256": "625d0c6e43cba9b3730f06727327ae4395968e80d0fe152cb21148113a7948cc",
+      "name": "ROLE-MISSION-WORKBOOK-v7-PUBLIC-KIT.docx",
+      "sha256": "75e4fb4a645ab603e028644cc43c7604579db326a946f8c5359d69fd8f637525",
       "size": 40409
     },
     {
-      "name": "ROLE-MISSION-WORKBOOK-v6-PUBLIC-KIT.pdf",
-      "sha256": "a3a2f99f6f88a6d80c113473eb49d0ad9a55a42e80409f78cbe966687e565047",
-      "size": 89392
+      "name": "ROLE-MISSION-WORKBOOK-v7-PUBLIC-KIT.pdf",
+      "sha256": "8d9be64b7af4aca9971aa2f24ce2dffd6d78a549f0c87a2d6c82bb027d0eb34c",
+      "size": 139110
     },
     {
-      "name": "SETUP-HELPER-CARD-v5-PUBLIC-KIT.docx",
-      "sha256": "cb071dadfe7f443d1b9bb22f5a9363c5901d65a68ac14a26c190a48b35732409",
+      "name": "SETUP-HELPER-CARD-v6-PUBLIC-KIT.docx",
+      "sha256": "322288219b0910ae48d3c8d46305838df7654a8db115afceaeeb571e925822d6",
       "size": 39679
     },
     {
-      "name": "SETUP-HELPER-CARD-v5-PUBLIC-KIT.pdf",
-      "sha256": "4153b35406893fb41748f98a404c7c7a4e34388a34a7c08527439dce75da9b6b",
-      "size": 58108
+      "name": "SETUP-HELPER-CARD-v6-PUBLIC-KIT.pdf",
+      "sha256": "978611c5b09e368037b8f361f359c267507f87446cccae47bddf6844559a731d",
+      "size": 80591
     }
   ]
 }

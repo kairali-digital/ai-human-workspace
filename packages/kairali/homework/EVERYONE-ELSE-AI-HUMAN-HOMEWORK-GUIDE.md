@@ -6,7 +6,7 @@ Use this guide only if you attended the meeting and do not already have a named 
 or homework page.
 
 This homework is part of the protected public
-`kairali-digital/ai-human-workspace` v1.4.0 company kit. The public kit is the clean
+`kairali-digital/ai-human-workspace` v1.5.0 company kit. The public kit is the clean
 setup and update source; it contains no live company work or secrets, so no GitHub
 invitation or collaborator seat is needed. Ask the Setup Helper to obtain and verify
 the kit. Then copy the Email and Drive starters into separate local work folders. Do
@@ -23,16 +23,17 @@ You will make two small workers:
 2. **Drive Index AI Human** - choose a 25-item test or index every connector-visible
    Drive item in checkpointed batches of 25. It does not open file contents or change Drive.
 3. **Optional Weekly LinkedIn Message Assistant** - at your chosen Saturday time,
-   prepares replies from message text you manually paste. It learns from your supplied
-   prior replies, keeps uncertain drafts for your decision, and never accesses or sends
-   through LinkedIn. You review and manually press **Send**.
+   uses task-scoped Computer control in its local folder, then stops all Computer and
+   Chrome control before LinkedIn appears. It prepares replies from message text you
+   manually paste, learns from your supplied prior replies, and keeps uncertain drafts
+   for your decision. You alone access LinkedIn and manually press **Send**.
 
 An AI human is one folder with one job. Each worker gets a separate folder so their
 instructions, state and proof never mix.
 
 ## The whole loop at a glance
 
-1. Ask the Setup Helper to find the verified public v1.4.0 company kit on your screen.
+1. Ask the Setup Helper to find the verified public v1.5.0 company kit on your screen.
 2. Make an `AI Humans` folder inside Documents.
 3. Copy the Email and Drive starter folders into it.
 4. Open one starter folder as a local project in the ChatGPT desktop app.
@@ -73,7 +74,7 @@ showing another.
 
 # Step 1 - find and open the verified company kit
 
-The preferred file is named `kairali-company-rollout-1.4.0.zip`. If your facilitator
+The preferred file is named `kairali-company-rollout-1.5.0.zip`. If your facilitator
 gave you the smaller homework-only file, it is named
 `EVERYONE-ELSE-AI-HUMAN-HOMEWORK-PACK.zip`. Both routes open this same homework. You
 do not need a GitHub invitation.
@@ -115,7 +116,7 @@ do not need a GitHub invitation.
    **DONE WHEN:** You can see `AI-HUMAN-STARTERS` and this guide.
 
 If the ZIP is not visible, do not search the whole computer. Paste the Setup Helper
-rescue. The helper checks Downloads, obtains the protected public v1.4.0 kit when safe,
+rescue. The helper checks Downloads, obtains the protected public v1.5.0 kit when safe,
 and asks Ambuj only if the approved source or access decision is missing.
 
 # Step 2 - make one home for your AI humans
@@ -387,21 +388,39 @@ Do this only after both required projects pass.
 
    **DONE WHEN:** The reminder card opens only this local project at the approved time.
 
-4. If you are allowed to keep them locally, paste up to 25 representative earlier
+4. Close every LinkedIn tab and the LinkedIn app. Open
+   `LINKEDIN-CONTROL-HANDOFF.md`. In the local project, start one message with
+   `@Computer` and use the exact request printed there. ChatGPT shows the real access
+   prompt. Approve only this visible local project and current task. Keep **Ask for
+   approval**. Never choose **Full access**, **Always allow**, or your whole computer.
+
+   **DONE WHEN:** Codex can name `AGENTS.md` and `LINKEDIN-CONTROL-HANDOFF.md` from the
+   local folder and confirms that LinkedIn is outside the granted task.
+
+5. Use `@Chrome` only if Codex needs one approved non-LinkedIn public setup page. Read
+   and approve the real browser prompt for only that page and task. Stop Chrome control
+   before opening LinkedIn. A portal link is an instruction link; it cannot itself
+   grant mouse, computer or browser control.
+
+   **DONE WHEN:** The approved public page was used and browser control is stopped.
+
+6. If you are allowed to keep them locally, paste up to 25 representative earlier
    incoming-message and sent-reply pairs into `LINKEDIN-TONE-AND-PRECEDENTS.md`. You may
    remove names or write `NONE YET`.
 
    **DONE WHEN:** Codex records only evidenced tone and routing rules. If there are no
    examples, it starts with no high-confidence precedents.
 
-5. For the supervised pilot, you open LinkedIn yourself, check unread conversations in
-   both **Focused** and **Other**, and paste no more than 25 into
-   `LINKEDIN-INBOX-BATCH.md`. Do not paste passwords, codes, suspicious links,
-   attachments, or sensitive information.
+7. For the supervised pilot, Codex must first stop every Computer and Chrome tool and
+   show `YOUR TURN ON LINKEDIN`. You open LinkedIn yourself, check unread conversations
+   in both **Focused** and **Other**, copy no more than 25, close LinkedIn, return to the
+   local project, paste them into `LINKEDIN-INBOX-BATCH.md`, and say `BATCH READY`. Do
+   not paste passwords, codes, suspicious links, attachments, or sensitive information.
 
-   **DONE WHEN:** Codex processes only the text you pasted. The AI never opens LinkedIn.
+   **DONE WHEN:** LinkedIn is closed, Codex processes only the text you pasted, and the
+   AI made no screenshot, mouse, keyboard, browser or page action on LinkedIn.
 
-6. Review `LINKEDIN-REPLY-QUEUE.md`. `READY TO SEND` contains routine drafts backed by
+8. Review `LINKEDIN-REPLY-QUEUE.md`. `READY TO SEND` contains routine drafts backed by
    an evidenced precedent. `NEEDS YOUR DECISION` contains a stable S.No., sender, date,
    concise summary, proposed reply, and reason for every uncertain item.
 
@@ -410,7 +429,8 @@ Do this only after both required projects pass.
    `SKIPPED`, or `KEEP FOR LATER`. Codex never claims a send without your confirmation.
 
 The weekly reminder works only while the computer is awake, ChatGPT is running and the
-local project remains available. It reminds and drafts; it does not access LinkedIn.
+local project remains available. It may control the approved local worker, then it
+stops. It does not access LinkedIn.
 
 # What to bring back
 
@@ -434,6 +454,8 @@ Stop and use the Setup Helper if:
 - the company app cannot be enabled or connected;
 - the wrong account is connected;
 - a permission asks for Full access;
+- a permission asks for Always allow, the whole computer or a screen outside this task;
+- Codex or Chrome remains in control when LinkedIn is about to open;
 - the AI asks for a password, one-time code, Terminal, PowerShell, Command Prompt,
   Python, a CLI, Git or GitHub;
 - the task reaches medical, dosage, certification, legal, spend, credentials, banking,
@@ -449,3 +471,4 @@ problem. Abilash receives owner decisions and every Gate 0 issue.
 - Projects and chats: https://learn.chatgpt.com/docs/projects
 - Apps: https://help.openai.com/en/articles/11487775-connectors-in-chatgpt
 - Email inbox use case: https://learn.chatgpt.com/use-cases/manage-your-inbox
+- Computer Use with Codex: https://learn.chatgpt.com/use-cases/use-your-computer-with-codex

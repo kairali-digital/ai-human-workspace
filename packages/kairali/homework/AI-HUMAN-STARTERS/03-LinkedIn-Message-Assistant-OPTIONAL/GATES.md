@@ -19,8 +19,14 @@ whose consequence or intent is uncertain.
 
 ## Gate 2 — LinkedIn and external-effects lock
 
+- Computer Use and Chrome capability never expand the task boundary. Approve only the
+  visible app, folder, page and current task; keep Ask for approval; never choose Full
+  access or Always allow.
+- Before LinkedIn is opened, the AI stops every computer/browser tool and displays the
+  exact `YOUR TURN ON LINKEDIN` handoff in `LINKEDIN-CONTROL-HANDOFF.md`.
 - The AI must not sign in to, open, browse, read, control, scrape, search, click, or
-  send through LinkedIn.
+  send through LinkedIn. While LinkedIn is visible, it also must not inspect a
+  screenshot or page structure, move the pointer, type, copy, or paste.
 - The scheduled automation may open only this local project and show the manual review
   instructions.
 - A `READY TO SEND` item is still a draft. The employee reviews it and manually presses
@@ -32,7 +38,8 @@ whose consequence or intent is uncertain.
   employee-wide report, or public kit.
 - LinkedIn's current User Agreement and Help Center prohibit unauthorized bots and
   browser automation. See `https://www.linkedin.com/legal/user-agreement` and
-  `https://www.linkedin.com/help/linkedin/answer/a1341387`.
+  `https://www.linkedin.com/help/linkedin/answer/a1341387` and
+  `https://www.linkedin.com/help/linkedin/answer/a1340567`.
 
 ## Gate 3 — batch and proof
 

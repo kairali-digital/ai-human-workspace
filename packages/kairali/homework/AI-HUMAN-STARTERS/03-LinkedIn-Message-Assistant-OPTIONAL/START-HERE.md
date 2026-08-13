@@ -4,9 +4,10 @@
 > judgment. Codex performs approved work through a controlled autonomous loop.
 
 This optional local project prepares a Saturday LinkedIn reply review in your own tone.
-It never signs in to LinkedIn, opens the site, reads the inbox, clicks anything, or sends
-a message. You manually copy in the messages you want reviewed, review every draft, and
-manually press **Send** in LinkedIn.
+Codex may use task-scoped Computer control in this local folder and Chrome on an
+approved non-LinkedIn page. It stops both before LinkedIn appears. You manually copy in
+the messages you want reviewed, review every draft, and manually press **Send** in
+LinkedIn.
 
 You do not need Terminal, PowerShell, Command Prompt, Python, Git, GitHub, or VS Code.
 
@@ -51,14 +52,19 @@ My name is [TYPE YOUR NAME]. I choose the optional task LINKEDIN-WEEKLY-001.
 Read AGENTS.md, AI-HUMAN.md, PARAMETERS.md, MASTER_CURSOR.md, OPEN_REGISTER.md,
 TODAY.md, TOOLBOX.md, GATES.md, DECISIONS.md, SATURDAY-REVIEW-PROMPT.md,
 LINKEDIN-TONE-AND-PRECEDENTS.md, LINKEDIN-REPLY-QUEUE.md,
-LINKEDIN-REVIEW-CURSOR.md and LINKEDIN-INBOX-BATCH.md.
+LINKEDIN-REVIEW-CURSOR.md, LINKEDIN-INBOX-BATCH.md and
+LINKEDIN-CONTROL-HANDOFF.md.
 
 First, replace “Kairali employee using this copy” with my name in this project's
 owner fields only. Do not change the worker name, purpose, limits or gates.
 
-Never sign in to LinkedIn, open or control LinkedIn, use a browser session, read the
-inbox, scrape, search, click a link, open an attachment, send a message, or change my
-account. I will copy in message text and manually send any reply I approve.
+You may use Computer Use only inside this approved local worker and `@Chrome` only on
+an approved non-LinkedIn public page. A permission grants capability, not permission
+to use LinkedIn. Keep Ask for approval; never choose Full access or Always allow.
+Before LinkedIn appears, stop every computer/browser tool and show the exact `YOUR TURN
+ON LINKEDIN` handoff. Never sign in to, open, view, read, inspect, control, scrape,
+search, click, type, copy, paste, or send through LinkedIn. I will copy in message text
+and manually send any reply I approve.
 
 Show only one setup action at a time and wait after it.
 
@@ -66,26 +72,38 @@ Show only one setup action at a time and wait after it.
    start? For example, 10:00 AM.”
 2. Detect the device's local time zone, show it in plain words, and ask whether it is
    correct. Do not guess if it cannot be detected.
-3. Ask me to open LINKEDIN-TONE-AND-PRECEDENTS.md and paste up to 25 representative
+3. Ask me to close every LinkedIn tab and app. Then show me the one exact `@Computer`
+   request in LINKEDIN-CONTROL-HANDOFF.md. Wait while ChatGPT shows its real permission
+   prompt. Ask me to approve only this task and visible local project, then verify that
+   you can name AGENTS.md and LINKEDIN-CONTROL-HANDOFF.md. Do not simulate a permission
+   button, approve a request for me, or open an external site. Record the proof.
+4. If an approved public setup page is genuinely needed, ask me to start that one
+   request with `@Chrome`. Use only the named non-LinkedIn page, then stop browser
+   control. Never use Chrome while LinkedIn is visible.
+5. Ask me to open LINKEDIN-TONE-AND-PRECEDENTS.md and paste up to 25 representative
    earlier incoming-message and sent-reply pairs that I am allowed to keep locally.
    I may remove names or write NONE YET. Never ask for a password, code, private key,
    confidential attachment, sensitive personal data, or message I am not allowed to
    store.
-4. Derive only evidenced tone and routing rules. If I supplied no examples, start with
+6. Derive only evidenced tone and routing rules. If I supplied no examples, start with
    no high-confidence precedents; do not invent my voice.
-5. Create a native weekly automation named “Saturday LinkedIn Message Review —
+7. Create a native weekly automation named “Saturday LinkedIn Message Review —
    [my name]” for my chosen Saturday local time. Its only automated job is to open this
    local project and present SATURDAY-REVIEW-PROMPT.md. It must never open, read, click,
    control, or send through LinkedIn. Show the automation card and ask me to approve it
    before marking it ACTIVE.
-6. Run one supervised pilot. Ask me to open LinkedIn myself, check both Focused and
-   Other, and paste no more than 25 unread conversations into LINKEDIN-INBOX-BATCH.md.
+8. Run one supervised pilot. Stop Computer Use and Chrome first. Make no more computer
+   or browser tool calls and show the exact `YOUR TURN ON LINKEDIN` handoff. Ask me to
+   open LinkedIn myself, check both Focused and Other, close LinkedIn, return here, and
+   paste no more than 25 unread conversations into LINKEDIN-INBOX-BATCH.md.
    I must not paste passwords, codes, sensitive data, suspicious links, or attachments.
-7. Process only what I pasted. Put evidenced, routine replies under READY TO SEND and
+   Do not continue until LinkedIn is closed and I say BATCH READY.
+9. Process only what I pasted. Put evidenced, routine replies under READY TO SEND and
    uncertain or consequential replies under NEEDS YOUR DECISION with a stable S.No.,
    sender, date, concise summary, proposed reply, and reason. A READY TO SEND item is
    still a draft. I review it and manually press Send in LinkedIn.
-8. After I act, ask me to mark each item SENT AS WRITTEN, EDITED AND SENT, SKIPPED, or
+10. Stop every computer/browser tool again before I return to LinkedIn. After I act,
+   ask me to mark each item SENT AS WRITTEN, EDITED AND SENT, SKIPPED, or
    KEEP FOR LATER. Never claim a message was sent without my confirmation. Learn only
    from confirmed outcomes and keep unresolved items in LINKEDIN-REPLY-QUEUE.md.
 
@@ -101,10 +119,15 @@ remaining queue count, and the exact manual-send boundary.
 
 - The automation card shows the employee's chosen Saturday time and confirmed time zone.
 - The automation opens only this local project and never LinkedIn.
+- Task-scoped Computer control is proven inside this local folder; Chrome, if used,
+  opened only an approved non-LinkedIn page.
+- The exact `YOUR TURN ON LINKEDIN` handoff proves that Computer and Chrome control
+  stopped before LinkedIn appeared.
 - `LINKEDIN-TONE-AND-PRECEDENTS.md` contains only supplied examples and confirmed rules.
 - A supervised batch of no more than 25 pasted conversations has been processed.
 - `LINKEDIN-REPLY-QUEUE.md` separates `READY TO SEND` from `NEEDS YOUR DECISION`.
 - Every sent status is supported by the employee's confirmation.
 - Codex says the workspace validator passed.
 
-This assistant drafts and remembers. The employee alone accesses LinkedIn and sends.
+This assistant may control the approved local worker, then stops. The employee alone
+accesses LinkedIn and sends.

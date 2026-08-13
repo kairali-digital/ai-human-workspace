@@ -47,8 +47,11 @@ For Kairali, the helper also opens the approved role prompt. If the attendee has
 named plan, it installs the universal homework reference kit and creates separate Email
 Triage and Drive Index worker folders; Drive offers `TEST 25` or a resumable full
 metadata index with every batch capped at 25. The Weekly LinkedIn Message Assistant
-stays optional: the employee manually pastes up to 25 messages at a time, reviews every
-draft and manually sends; the AI never accesses LinkedIn. The helper installs
+stays optional: it may use task-scoped Computer control inside its local worker and
+Chrome on an approved non-LinkedIn setup page, but stops all tools and shows `YOUR TURN
+ON LINKEDIN` before the employee opens LinkedIn. The employee manually pastes up to 25
+messages at a time, reviews every draft and manually sends; the AI never acts on
+LinkedIn. The helper installs
 an Akshar or Rahul governed skill only when the employee's approved role or the owner
 explicitly names that skill. No employee chooses from the machine's full skill list.
 

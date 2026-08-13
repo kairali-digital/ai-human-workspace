@@ -14,8 +14,8 @@ from PIL import Image, ImageDraw, ImageFont
 
 
 ROOT = Path(__file__).resolve().parents[1]
-WORKSPACE = ROOT.parents[2]
-TMP = WORKSPACE / "tmp" / "H-37-LINKEDIN-MESSAGE" / "video-build"
+WORKSPACE = ROOT.parents[5]
+TMP = WORKSPACE / "tmp" / "H-38-RIGHT-LEVEL-ACCESS" / "video-build"
 OUTPUT = ROOT / "EVERYONE-ELSE-AI-HUMAN-HOMEWORK-VIDEO.mp4"
 TRANSCRIPT = ROOT / "EVERYONE-ELSE-AI-HUMAN-HOMEWORK-VIDEO-TRANSCRIPT.txt"
 SRT = ROOT / "EVERYONE-ELSE-AI-HUMAN-HOMEWORK-VIDEO-CAPTIONS.srt"
@@ -56,7 +56,7 @@ SCENES = [
         "label": "SAFETY PROMISE",
         "actions": ["No Terminal  ·  No typed commands", "No Full access  ·  No password or one-time code", "No send, delete, attachment or silent Gmail filter change"],
         "done": "Ask for approval remains selected.",
-        "narration": "You do not use Terminal or type commands. Keep Ask for approval. Never choose Full access. Login happens on the provider screen. Never paste a password or one-time code into chat. Email begins with a read-only pilot. Later safe filing needs your approval and never sends, deletes or changes a permanent Gmail filter. Drive stays unchanged. For LinkedIn, you manually paste message text, review every draft and manually press Send. Codex never opens or controls LinkedIn.",
+        "narration": "You do not use Terminal or type commands. Keep Ask for approval. Never choose Full access or Always allow. Login happens on the provider screen. Never paste a password or one-time code into chat. Email begins with a read-only pilot. Later safe filing needs your approval and never sends, deletes or changes a permanent Gmail filter. Drive stays unchanged. For LinkedIn, Computer control may help inside the local project, but it stops before LinkedIn appears. You manually paste message text, review every draft and manually press Send.",
     },
     {
         "title": "If any screen looks different, stop",
@@ -131,16 +131,23 @@ SCENES = [
     {
         "title": "Optional: set up Saturday LinkedIn review",
         "label": "ONLY AFTER BOTH REQUIRED PROJECTS PASS",
-        "actions": ["Copy starter 03  →  open it as a separate project", "Paste PROMPT 3  →  choose Saturday time + confirm time zone", "Supply up to 25 prior reply pairs  ·  or write NONE YET"],
-        "done": "The approved reminder card opens this local project only.",
-        "narration": "The LinkedIn project is optional. Do it only after Email and Drive pass. Copy starter zero three, open it separately, and paste Prompt Three. Choose the local Saturday time and confirm the time zone. You may paste up to twenty-five earlier incoming-message and sent-reply pairs so Codex learns only your evidenced tone. Done when the reminder card opens this local project only.",
+        "actions": ["Copy starter 03  →  open it as a separate project", "Paste PROMPT 3  →  choose Saturday time + confirm time zone", "Close LinkedIn  ·  @Computer  ·  approve only this local task"],
+        "done": "Codex names the handoff file; LinkedIn is outside the grant.",
+        "narration": "The LinkedIn project is optional. Do it only after Email and Drive pass. Copy starter zero three, open it separately, and paste Prompt Three. Choose the local Saturday time and confirm the time zone. Close every LinkedIn tab. Choose Computer from the at tools menu and approve only this local project and current task. Keep Ask for approval. Never choose Full access or Always allow.",
+    },
+    {
+        "title": "Prove the LinkedIn handoff",
+        "label": "CONTROL STOPS BEFORE LINKEDIN",
+        "actions": ["Codex stops Computer + Chrome", "YOUR TURN ON LINKEDIN  ·  you copy no more than 25", "Close LinkedIn  ·  return  ·  say BATCH READY"],
+        "done": "The employee supplied the batch; no AI LinkedIn action occurred.",
+        "narration": "Before LinkedIn opens, Codex stops Computer and Chrome control and shows Your Turn on LinkedIn. You alone open LinkedIn, check Focused and Other, copy no more than twenty-five conversations, close LinkedIn, return to the local project and say Batch Ready. While LinkedIn is visible, Codex does not inspect the screen, move the mouse, type, read, copy, paste, click or send.",
     },
     {
         "title": "Run the supervised Saturday review",
-        "label": "YOU ACCESS LINKEDIN  ·  CODEX DRAFTS",
-        "actions": ["You check Focused + Other  →  paste no more than 25", "Codex separates READY TO SEND from NEEDS YOUR DECISION", "You review + manually send  →  confirm every outcome"],
+        "label": "LOCAL DRAFTS  ·  HUMAN LINKEDIN ACTIONS",
+        "actions": ["Codex separates READY TO SEND from NEEDS YOUR DECISION", "Codex stops Computer + Chrome again", "You review + manually send  →  confirm every outcome"],
         "done": "The numbered queue is saved; Codex never accesses or sends through LinkedIn.",
-        "narration": "You open LinkedIn yourself and check unread conversations in both Focused and Other. Paste no more than twenty-five into the local batch file. Codex prepares routine drafts and keeps uncertain replies in a numbered decision queue. You review every draft and manually press Send in LinkedIn. Return and confirm what you sent, edited, skipped or kept. Codex never accesses or sends through LinkedIn.",
+        "narration": "After Batch Ready, Codex processes only the local text you supplied. It prepares routine drafts and keeps uncertain replies in a numbered decision queue. It stops Computer and Chrome again. You review every draft, manually paste and press Send in LinkedIn, close LinkedIn, then return and confirm what you sent, edited, skipped or kept.",
     },
     {
         "title": "Bring only safe proof",
@@ -154,7 +161,7 @@ SCENES = [
         "label": "YOUR AI HUMAN",
         "actions": ["Codex performs only the approved bounded work", "Start with Email  →  prove the daily brief", "Then build Drive  →  optional human-send LinkedIn comes last"],
         "done": "Bounded work + evidence turns a folder into an AI human.",
-        "narration": "You provide the mission and judgment. Codex performs the approved work inside the boundaries. Start with Email. Prove the pilot and daily automation. Then build Drive. Add the Saturday LinkedIn assistant only if you choose it, with human-only access and sending.",
+        "narration": "You provide the mission and judgment. Codex performs the approved work inside the boundaries. Start with Email. Prove the pilot and daily automation. Then build Drive. Add the Saturday LinkedIn assistant only if you choose it: task scoped control for the local worker, then human only LinkedIn access and sending.",
     },
 ]
 
@@ -266,7 +273,7 @@ def build_contact_sheet(frames: list[Path]) -> None:
 
 def build() -> None:
     TMP.mkdir(parents=True, exist_ok=True)
-    dependency_dir = WORKSPACE / "tmp" / "H-37-LINKEDIN-MESSAGE" / "python-deps"
+    dependency_dir = WORKSPACE / "tmp" / "H-38-RIGHT-LEVEL-ACCESS" / "python-deps"
     sys.path.insert(0, str(dependency_dir))
     import imageio_ffmpeg  # type: ignore
 

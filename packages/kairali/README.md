@@ -8,9 +8,23 @@ Drive content or private evidence.
 
 - `people/` — the approved common, named-role, intern and Setup Helper start prompts;
 - `homework/` — the complete fallback homework for any attendee without a named plan;
-- the Email Triage and Drive Inventory workers as required, separate read-only projects;
-- the optional local LinkedIn Draft worker;
+- the Email Triage and Drive Index workers as required, separate read-only projects;
+- a `TEST 25` or resumable `FULL DRIVE INDEX` choice; full mode enumerates all
+  connector-visible metadata in checkpointed batches of at most 25 and creates a local
+  future-searchable CSV, summary and cursor without opening or changing Drive files;
+- the optional Weekly LinkedIn Message Assistant: employee-chosen Saturday time,
+  task-scoped Computer control in its local worker, Chrome only on approved
+  non-LinkedIn pages, a forced `YOUR TURN ON LINKEDIN` control handoff, manually
+  supplied message batches, evidenced tone, numbered drafts and human-only LinkedIn
+  access and sending;
 - exact copy-paste prompts, Mac/Windows guide, transcript, captions and narrated video.
+
+## What “live” means
+
+The bundle makes all three starters available. It does not activate employee accounts
+or schedules. Use `homework/THREE-WORKER-GO-LIVE-CHECKLIST.md` for the final readback.
+Email and Full Drive are required; `TEST 25` is Drive setup proof only. Saturday
+LinkedIn is optional and may be recorded as `NOT ENABLED BY CHOICE`.
 
 ## Optional governed skills
 

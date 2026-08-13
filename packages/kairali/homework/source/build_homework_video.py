@@ -14,7 +14,8 @@ from PIL import Image, ImageDraw, ImageFont
 
 
 ROOT = Path(__file__).resolve().parents[1]
-TMP = ROOT.parents[1] / "tmp" / "GENERAL-AI-HUMAN-HOMEWORK-001" / "video-build"
+WORKSPACE = ROOT.parents[5]
+TMP = WORKSPACE / "tmp" / "H-39-THREE-WORKER-LIVE" / "video-build"
 OUTPUT = ROOT / "EVERYONE-ELSE-AI-HUMAN-HOMEWORK-VIDEO.mp4"
 TRANSCRIPT = ROOT / "EVERYONE-ELSE-AI-HUMAN-HOMEWORK-VIDEO-TRANSCRIPT.txt"
 SRT = ROOT / "EVERYONE-ELSE-AI-HUMAN-HOMEWORK-VIDEO-CAPTIONS.srt"
@@ -39,23 +40,23 @@ SCENES = [
     {
         "title": "No named homework page? Start here.",
         "label": "WHO THIS IS FOR",
-        "actions": ["Required 01  ·  Email Triage", "Required 02  ·  Drive Inventory", "Optional 03  ·  LinkedIn Draft"],
-        "done": "You know which two projects are required.",
-        "narration": "This is the homework for anyone from the meeting who did not receive a named start or homework page. You will build two tiny A I humans. Email Triage is first. Drive Inventory is second. LinkedIn Draft is optional after both are complete.",
+        "actions": ["Required 01  ·  Email Triage", "Required 02  ·  Drive Inventory", "Optional 03  ·  Saturday LinkedIn Assistant"],
+        "done": "All three are available; none is live for you until its proof passes.",
+        "narration": "This is the homework for anyone from the meeting who did not receive a named start or homework page. The kit makes three starters available, but it does not activate your accounts or schedules. Email Triage and Full Drive Index are required. The Saturday LinkedIn Message Assistant is optional after both are complete.",
     },
     {
         "title": "See the whole loop first",
         "label": "THE OUTSKILL-STYLE LOOP",
-        "actions": ["Find pack  →  copy one starter folder", "Open it as one local project  →  connect one plugin", "Paste the exact prompt  →  show the report"],
-        "done": "A visible report and validator pass are the finish line.",
-        "narration": "Here is the whole loop before we begin. Find the pack. Copy one starter folder. Open that folder as its own local project. Connect only the app it needs. Paste the exact prompt. Stop when the report and validator pass are visible.",
+        "actions": ["Find pack  →  copy one starter folder", "Open it as one local project  →  connect one app", "Paste prompt  →  show report  →  verify the daily job"],
+        "done": "A visible result, active automation and validator pass are the finish line.",
+        "narration": "Here is the whole loop before we begin. Find the pack. Copy one starter folder. Open that folder as its own local project. Connect only the app it needs. Paste the exact prompt. For Email, choose your daily time, prove the pilot and verify the daily automation. Stop when the result and validator pass are visible.",
     },
     {
         "title": "Keep the homework safe",
         "label": "SAFETY PROMISE",
-        "actions": ["No Terminal  ·  No typed commands", "No Full access  ·  No password or one-time code", "No Gmail, Drive or LinkedIn changes"],
+        "actions": ["No Terminal  ·  No typed commands", "No Full access  ·  No password or one-time code", "No send, delete, attachment or silent Gmail filter change"],
         "done": "Ask for approval remains selected.",
-        "narration": "You do not use Terminal or type commands. Keep Ask for approval. Never choose Full access. Login happens on the provider screen. Never paste a password or one-time code into chat. The homework does not change Gmail or Drive and does not open LinkedIn.",
+        "narration": "You do not use Terminal or type commands. Keep Ask for approval. Never choose Full access or Always allow. Login happens on the provider screen. Never paste a password or one-time code into chat. Email begins with a read-only pilot. Later safe filing needs your approval and never sends, deletes or changes a permanent Gmail filter. Drive stays unchanged. For LinkedIn, Computer control may help inside the local project, but it stops before LinkedIn appears. You manually paste message text, review every draft and manually press Send.",
     },
     {
         "title": "If any screen looks different, stop",
@@ -72,7 +73,7 @@ SCENES = [
         "narration": "On a Mac, open Finder, click Downloads and double-click the zip. On Windows, open File Explorer, click Downloads, right-click the zip and choose Extract All. Done when the normal folder shows the guide and A I Human Starters.",
     },
     {
-        "title": "Copy two separate starter folders",
+        "title": "Copy the two required starter folders",
         "label": "DOCUMENTS  ›  AI HUMANS",
         "actions": ["Make a folder named AI Humans", "Copy starter 01  ·  Email Triage", "Copy starter 02  ·  Drive Inventory"],
         "done": "The two copied folders sit beside each other.",
@@ -87,24 +88,24 @@ SCENES = [
     },
     {
         "title": "Connect only Gmail",
-        "label": "CHECK  →  INSTALL IF MISSING",
-        "actions": ["Open Plugins  →  search Gmail", "Install only if it is missing  →  start a new chat", "Choose only the approved company account"],
+        "label": "CHECK  →  CONNECT IF NEEDED",
+        "actions": ["Settings  →  Apps  →  Gmail", "Connect only if it is not connected  →  start a new chat", "Choose only the approved company account"],
         "done": "Codex verifies the Gmail connection.",
-        "narration": "Open Plugins and search for Gmail. If it is installed, return to the Email project. If it is missing, install it and start a new chat in the Email project. Choose only the approved company account. Done when Codex verifies the connection.",
+        "narration": "Open Settings, then Apps, and select Gmail. If it is already connected, return to the Email project. If it is not connected, choose Connect and complete the provider screen, then start a new chat in the Email project. Choose only the approved company account. Done when Codex verifies the connection.",
     },
     {
-        "title": "Run Email homework",
+        "title": "Choose the time and run the Email pilot",
         "label": "PROMPT 1",
-        "actions": ["Open COPY-PASTE-PROMPTS.txt", "Copy all of PROMPT 1  →  replace the name box", "Paste it in the Email project  ·  do not shorten it"],
-        "done": "EMAIL-HW-001 reads no more than 25 inbox messages.",
-        "narration": "Open the prompt file. Copy all of Prompt One. Replace the name box with your name. Paste it into the Email project. Do not shorten it. Done when Codex names Email H W zero zero one and reads no more than twenty-five inbox messages.",
+        "actions": ["Copy PROMPT 1  →  replace the name box  →  paste", "Answer: what local time should the daily brief run?", "Confirm time zone  →  run the read-only 25-message pilot"],
+        "done": "EMAIL-TRIAGE-REPORT.md shows the read-only pilot.",
+        "narration": "Open the prompt file. Copy all of Prompt One, replace the name box and paste it into the Email project. Do not shorten it. Codex asks what local time you want the daily brief and confirms the computer's time zone. It then runs a read-only pilot of no more than twenty-five Inbox messages. Done when the Email Triage Report is visible.",
     },
     {
-        "title": "Check Email proof",
+        "title": "Approve and activate the daily brief",
         "label": "CONNECTED IS NOT DONE",
-        "actions": ["EMAIL-TRIAGE-REPORT.md is visible", "Five buckets  ·  sensitive items say HUMAN REVIEW", "Gmail unchanged  ·  workspace validator passes"],
-        "done": "The visible local report is the proof.",
-        "narration": "Stop when the Email Triage Report is visible. It shows how the messages were selected, uses the five buckets, protects sensitive messages, and states that no mailbox action occurred. The workspace validator must pass. Connected is not done. The visible report is done.",
+        "actions": ["Review the report + exact safe-filing rules", "Choose BRIEF ONLY or BRIEF + SAFE FILING", "Verify automation time + time zone + project + prompt"],
+        "done": "The report and active Daily Email Importance Brief are visible.",
+        "narration": "Read the pilot report and the safe filing rules. Choose Brief Only or Brief plus Safe Filing. Safe filing uses approved A I labels only; it never deletes, sends, unsubscribes or changes permanent Gmail filters. Codex then creates one daily Email Importance Brief at your chosen local time. Verify the automation card, time zone, Email project and prompt. The computer must be awake with Chat G P T running when the job is due.",
     },
     {
         "title": "Open Drive as a separate project",
@@ -115,38 +116,52 @@ SCENES = [
     },
     {
         "title": "Connect Drive and run Prompt 2",
-        "label": "CHECK  →  INSTALL IF MISSING",
-        "actions": ["Plugins  →  Google Drive  →  approved company account", "Open COPY-PASTE-PROMPTS.txt  →  copy PROMPT 2", "Replace the name box  →  paste in the Drive project"],
-        "done": "DRIVE-HW-001 reads metadata for no more than 25 items.",
-        "narration": "In Plugins, find Google Drive. Install it only if missing, then connect the approved company account. Copy all of Prompt Two, replace the name box, and paste it into the Drive project. Done when Codex names Drive H W zero zero one and reads metadata for no more than twenty-five items.",
+        "label": "CHECK  →  CONNECT IF NEEDED",
+        "actions": ["Settings  →  Apps  →  Google Drive", "Connect the approved company account only if needed", "PROMPT 2  ·  TEST 25 setup or FULL DRIVE homework"],
+        "done": "TEST 25 proves setup; FULL DRIVE completes homework; every batch is at most 25.",
+        "narration": "Open Settings, then Apps, and select Google Drive. If it is not connected, choose Connect and use the approved company account. Copy all of Prompt Two, replace the name box, and paste it into the Drive project. Test Twenty Five proves setup only. Choose Full Drive Index to complete the company homework. Every batch is no more than twenty-five items and ends with a saved checkpoint.",
     },
     {
         "title": "Check Drive proof",
-        "label": "FIRST BOUNDED BATCH",
-        "actions": ["DRIVE-INVENTORY.md is visible", "Missing facts say UNKNOWN  ·  sensitive titles say HUMAN REVIEW", "Drive unchanged  ·  workspace validator passes"],
-        "done": "The report never claims to cover the whole Drive.",
-        "narration": "Stop when Drive Inventory is visible. It must say First bounded batch, never complete inventory. Missing facts say Unknown. Sensitive titles say Human Review. The file states that Drive was not changed, and the validator passes.",
+        "label": "RESUMABLE METADATA INDEX",
+        "actions": ["DRIVE-INDEX.csv + summary + cursor are visible", "Every batch ≤ 25  ·  IDs prevent duplicates", "Drive unchanged  ·  scope coverage recorded"],
+        "done": "Full mode ends only when every supported scope has no next page.",
+        "narration": "The Drive project creates a CSV index, a summary and a saved cursor. Test Twenty Five stops after one batch and says the full Drive was not indexed. Full Drive Index continues in checkpointed batches until every connector-visible scope has no next page. Missing facts say Unknown. Sensitive titles say Human Review. No file content is opened and Drive is not changed.",
     },
     {
-        "title": "Optional: make a LinkedIn draft",
+        "title": "Optional: set up Saturday LinkedIn review",
         "label": "ONLY AFTER BOTH REQUIRED PROJECTS PASS",
-        "actions": ["Copy starter 03  →  open it as a separate project", "Paste PROMPT 3  →  answer one safe question at a time", "Create a local draft only  ·  do not open LinkedIn"],
-        "done": "The local file says DRAFT - NOT PUBLISHED.",
-        "narration": "The LinkedIn project is optional. Do it only after Email and Drive pass. Copy starter zero three, open it separately, and paste Prompt Three. Answer one safe question at a time. Done when the local draft says Draft, Not Published. Do not open LinkedIn.",
+        "actions": ["Copy starter 03  →  open it as a separate project", "Paste PROMPT 3  →  choose Saturday time + confirm time zone", "Close LinkedIn  ·  @Computer  ·  approve only this local task"],
+        "done": "Codex names the handoff file; LinkedIn is outside the grant.",
+        "narration": "The LinkedIn project is optional. Do it only after Email and Drive pass. Copy starter zero three, open it separately, and paste Prompt Three. Choose the local Saturday time and confirm the time zone. Close every LinkedIn tab. Choose Computer from the at tools menu and approve only this local project and current task. Keep Ask for approval. Never choose Full access or Always allow.",
     },
     {
-        "title": "Bring only safe proof",
-        "label": "HOMEWORK COMPLETE",
-        "actions": ["Email report  +  Drive inventory", "Evidence rows  +  validator passes", "Optional local LinkedIn draft"],
-        "done": "Two visible required reports are ready for review.",
-        "narration": "Bring the laptop or safe screenshots showing the Email report, Drive inventory, evidence rows and validator passes. Do not expose email bodies, private Drive content, passwords, codes, H R information or banking information. Your two visible reports are the homework.",
+        "title": "Prove the LinkedIn handoff",
+        "label": "CONTROL STOPS BEFORE LINKEDIN",
+        "actions": ["Codex stops Computer + Chrome", "YOUR TURN ON LINKEDIN  ·  you copy no more than 25", "Close LinkedIn  ·  return  ·  say BATCH READY"],
+        "done": "The employee supplied the batch; no AI LinkedIn action occurred.",
+        "narration": "Before LinkedIn opens, Codex stops Computer and Chrome control and shows Your Turn on LinkedIn. You alone open LinkedIn, check Focused and Other, copy no more than twenty-five conversations, close LinkedIn, return to the local project and say Batch Ready. While LinkedIn is visible, Codex does not inspect the screen, move the mouse, type, read, copy, paste, click or send.",
+    },
+    {
+        "title": "Run the supervised Saturday review",
+        "label": "LOCAL DRAFTS  ·  HUMAN LINKEDIN ACTIONS",
+        "actions": ["Codex separates READY TO SEND from NEEDS YOUR DECISION", "Codex stops Computer + Chrome again", "You review + manually send  →  confirm every outcome"],
+        "done": "The numbered queue is saved; Codex never accesses or sends through LinkedIn.",
+        "narration": "After Batch Ready, Codex processes only the local text you supplied. It prepares routine drafts and keeps uncertain replies in a numbered decision queue. It stops Computer and Chrome again. You review every draft, manually paste and press Send in LinkedIn, close LinkedIn, then return and confirm what you sent, edited, skipped or kept.",
+    },
+    {
+        "title": "Check what is live for you",
+        "label": "THREE-WORKER GO-LIVE READBACK",
+        "actions": ["Email  ·  LIVE FOR ME or exact blocker", "Full Drive  ·  LIVE FOR ME or exact blocker", "LinkedIn  ·  OPTIONAL LIVE, NOT ENABLED, or blocker"],
+        "done": "Available in the kit is not live until the named proof passes.",
+        "narration": "Bring the laptop or safe screenshots showing the Email report and active daily automation, plus the completed Full Drive Index, final cursor, evidence rows and validator passes. Test Twenty Five proves Drive setup only; it does not complete the company homework. Optional LinkedIn proof shows only the schedule, counts, queue headings and employee-confirmed outcomes, not message bodies. If you decline LinkedIn, record Not Enabled By Choice. Do not expose private content, passwords, codes, H R information or banking information.",
     },
     {
         "title": "Mission + judgment = you",
         "label": "YOUR AI HUMAN",
-        "actions": ["Codex performs only the approved bounded work", "Start with Email  →  finish with visible proof", "Then build Drive  →  optional LinkedIn comes last"],
-        "done": "Bounded work + evidence turns a folder into an AI human.",
-        "narration": "You provide the mission and judgment. Codex performs the approved work inside the boundaries. Start with Email. Finish with visible proof. Then build Drive.",
+        "actions": ["Codex performs only the approved bounded work", "Start with Email  →  prove the daily brief", "Then build Drive  →  optional human-send LinkedIn comes last"],
+        "done": "Two required live proofs and one optional status complete the readback.",
+        "narration": "You provide the mission and judgment. Codex performs the approved work inside the boundaries. Start with Email and prove the daily automation. Then complete Full Drive Index. Add the Saturday LinkedIn assistant only if you choose it: task scoped control for the local worker, then human only LinkedIn access and sending. Finish with the three line go live readback.",
     },
 ]
 
@@ -248,7 +263,8 @@ def srt_time(seconds: float) -> str:
 
 def build_contact_sheet(frames: list[Path]) -> None:
     thumb_w, thumb_h = 480, 270
-    sheet = Image.new("RGB", (thumb_w * 4, thumb_h * 4), WHITE)
+    rows = (len(frames) + 3) // 4
+    sheet = Image.new("RGB", (thumb_w * 4, thumb_h * rows), WHITE)
     for index, frame in enumerate(frames):
         shot = Image.open(frame).convert("RGB").resize((thumb_w, thumb_h), Image.Resampling.LANCZOS)
         sheet.paste(shot, ((index % 4) * thumb_w, (index // 4) * thumb_h))
@@ -257,7 +273,7 @@ def build_contact_sheet(frames: list[Path]) -> None:
 
 def build() -> None:
     TMP.mkdir(parents=True, exist_ok=True)
-    dependency_dir = ROOT.parents[1] / "tmp" / "GENERAL-AI-HUMAN-HOMEWORK-001" / "python-deps"
+    dependency_dir = WORKSPACE / "tmp" / "H-38-RIGHT-LEVEL-ACCESS" / "python-deps"
     sys.path.insert(0, str(dependency_dir))
     import imageio_ffmpeg  # type: ignore
 

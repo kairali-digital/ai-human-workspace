@@ -2,6 +2,11 @@ KAIRALI - EVERYONE ELSE AI-HUMAN HOMEWORK - COPY-PASTE PROMPTS
 
 Use this only when you do not already have a named start or homework page.
 
+All three starters are available in the kit. Run PROMPT 1 and PROMPT 2 in separate
+projects; FULL DRIVE INDEX is required for completed company homework and TEST 25 is
+setup proof only. PROMPT 3 is optional. Use THREE-WORKER-GO-LIVE-CHECKLIST.md for the
+final readback. Downloaded, installed or connected alone does not mean live.
+
 ============================================================
 PROMPT 0 - SETUP HELPER RESCUE
 ============================================================
@@ -24,43 +29,72 @@ Be my Setup Helper.
 Do not teach me how the machinery works unless I ask. Start now by checking what I already have.
 
 ============================================================
-PROMPT 1 - EMAIL TRIAGE AI HUMAN - REQUIRED
+PROMPT 1 - DAILY EMAIL TRIAGE AI HUMAN - REQUIRED
 Replace [TYPE YOUR NAME] before sending.
 ============================================================
 
 My name is [TYPE YOUR NAME]. This is task EMAIL-HW-001.
 
 Read AGENTS.md, AI-HUMAN.md, PARAMETERS.md, MASTER_CURSOR.md, OPEN_REGISTER.md,
-TODAY.md, TOOLBOX.md, GATES.md and DECISIONS.md.
+TODAY.md, TOOLBOX.md, GATES.md, DECISIONS.md, EMAIL-TRIAGE-RULES.md,
+EMAIL-TRIAGE-CURSOR.md and DAILY-TRIAGE-PROMPT.md.
 
 First, replace “Kairali employee using this copy” with my name in this project's
-owner fields only. Do not change the worker's name, purpose, task, limits or gates.
+owner fields only. Do not change the worker's name, purpose, batch cap or gates.
 
-Then check whether the Gmail plugin is installed and connected to my approved company
-account. If it is missing or disconnected, do not troubleshoot with Terminal and do
+Ask me exactly one setup question: “What local time should your daily email brief
+run? For example, 8:30 AM.” Wait for my answer. Detect the computer's local time zone,
+show it to me and ask only for confirmation if it appears wrong. Record the approved
+time and time zone in PARAMETERS.md. Do not create an automation yet.
+
+Then check whether the Gmail connector is available under Apps and connected to my
+approved company account. If it is missing or disconnected, do not troubleshoot with Terminal and do
 not ask for my password. Show me only the next click or login I must do, wait for me,
-and verify the connection before continuing.
+and verify the connection. If the connected account is not the approved company
+account, stop without reading mail.
 
-When the approved company inbox is connected, read no more than the 25 most recent
-messages currently in the inbox. Do not open attachments. Put each message into one of
-these buckets: REPLY, DECISION, READ, LOW PRIORITY, HUMAN REVIEW.
+Run one manual read-only pilot before scheduling anything. Read no more than the 25
+most recent messages currently in the Inbox, excluding Spam and Trash. Do not open
+attachments and do not rely on Gmail's Important marker alone. Read thread context
+when a message may need action.
 
-Create EMAIL-TRIAGE-REPORT.md with:
-- the account label without exposing secrets;
-- the exact selection rule and number reviewed;
-- one short row per message: date, sender, subject, bucket, why it is there, and the
-  next human action;
-- a short “Start here” list of the items that need attention first; and
-- the sentence “No email was sent, drafted, archived, labelled, deleted, moved, marked
-  read or unread, and no attachment was opened.”
+Create EMAIL-TRIAGE-REPORT.md with exactly these sections:
+- NEEDS ACTION — sender, subject, why it matters, deadline or age, and the next human
+  action;
+- WAITING / FOLLOW UP — who owes the next step, what is expected, age, and a suggested
+  follow-up date;
+- WORTH READING — every genuinely useful item, one line explaining why;
+- HUMAN REVIEW — sender, subject and date only for sensitive or Gate 0 mail;
+- FILTER HEALTH — pilot count, likely low-risk filing count, uncertain senders, and
+  any proposed rule change; and
+- RUN SUMMARY — counts, exact selection rule and the sentence “PILOT ONLY: no email
+  was sent, drafted, archived, labelled, deleted, moved, marked read or unread; no
+  attachment was opened; no Gmail filter was changed.”
 
-Do not copy full private message text into the report. If a message contains medical,
-dosage, certification, legal, spend, credentials, banking, personal HR or other highly
-sensitive content, use HUMAN REVIEW and show sender, subject and date only. Do not
-advise, rewrite or quote it.
+Put critical account, security, broken-system or direct-human items first. Include a
+direct Gmail link when the connector provides one. Do not copy full private message
+text into the report. For medical, dosage, certification, legal, spend, credentials,
+banking, personal HR or other highly sensitive mail, use HUMAN REVIEW and do not
+advise, rewrite or quote it. If nothing needs attention, say “No action required”
+instead of filling the report with low-value mail.
 
-Read the finished report back to me. If it passes the task's exit evidence, update the
-ledger, register, cursor, today file and evidence log. Then validate this workspace.
+Read the pilot report and EMAIL-TRIAGE-RULES.md back to me. Then ask me exactly one
+approval question: “Choose BRIEF ONLY or BRIEF + SAFE FILING.” Explain in one sentence
+that safe filing can only apply the approved AI labels, archive clearly low-risk mail
+and mark that mail read; it never deletes, sends, unsubscribes or changes permanent
+Gmail filters. Wait for my answer and record it in DECISIONS.md and PARAMETERS.md.
+
+After the pilot passes and my choice is recorded, create one daily recurring Codex
+automation named “Daily Email Importance Brief — [MY NAME]” at my approved local time
+and time zone, running against this Email Triage project. Its task prompt must tell it
+to read and follow DAILY-TRIAGE-PROMPT.md exactly. Add the complete approved schedule,
+scope, stop condition and status to AUTOMATIONS.md. Do not create a duplicate if one
+with that name already exists.
+
+Explain that this local automation runs only while the computer is awake, ChatGPT is
+running and this project remains available. Verify the automation card, time, time
+zone, project and prompt. Then update the ledger, register, cursor, today file and
+evidence log and validate this workspace.
 
 ============================================================
 PROMPT 2 - DRIVE INVENTORY AI HUMAN - REQUIRED
@@ -75,67 +109,124 @@ TODAY.md, TOOLBOX.md, GATES.md and DECISIONS.md.
 First, replace “Kairali employee using this copy” with my name in this project's
 owner fields only. Do not change the worker's name, purpose, task, limits or gates.
 
-Then check whether the Google Drive plugin is installed and connected to my approved
-company account. If it is missing or disconnected, do not troubleshoot with Terminal
+Then check whether the Google Drive app is available under Apps and connected to my
+approved company account. If it is missing or disconnected, do not troubleshoot with Terminal
 and do not ask for my password. Show me only the next click or login I must do, wait
 for me, and verify the connection before continuing.
 
-When the approved company Drive is connected, read metadata only for no more than the
-25 most recently modified or recently viewed items the connector can list reliably.
-Do not read file contents and do not download files.
+When the approved company Drive is connected, ask me one question: Choose TEST 25 for
+setup proof or FULL DRIVE INDEX for completed company homework. Wait for my answer. Do
+not ask another setup question.
 
-Create DRIVE-INVENTORY.md with:
-- the account label without exposing secrets;
-- the exact selection rule and number reviewed;
-- one row per item: file name, file type, owner or relationship if available, last
-  modified date if available, parent or location if available, link, and review note;
-- UNKNOWN for every unavailable value instead of a guess;
-- HUMAN REVIEW for titles or metadata that point to medical, dosage, certification,
-  legal, spend, credentials, banking, personal HR or other highly sensitive material;
-  do not open those files; and
-- the sentence “No Drive file was opened beyond metadata, downloaded, created, edited,
-  renamed, moved, shared, unshared, deleted or organized.”
+For either choice, read metadata only. Never open or download file contents. Use batches
+of no more than 25 items and checkpoint after every batch.
 
-Call this “First bounded batch”, never “complete Drive inventory”.
+Create or update these local files:
+- DRIVE-INDEX.csv, with one row per unique Drive item and these columns: item_id, name,
+  file_type, owner_or_relationship, modified_time, parent_or_location, sharing_status,
+  web_link, source_scope, indexed_at_utc, review_note;
+- DRIVE-INDEX.md, with the account label without secrets, chosen mode, coverage by
+  source scope, batch count, unique item count, duplicate count, unavailable fields,
+  and a plain-language guide for asking Codex to find a file later; and
+- DRIVE-INDEX-CURSOR.md, with chosen mode, current source scope, last completed batch,
+  the connector's next-page state when safely available, unique item count, and the
+  exact next action. Never store a password, one-time code or access token.
 
-Read the finished inventory back to me. If it passes the task's exit evidence, update
-the ledger, register, cursor, today file and evidence log. Then validate this workspace.
+Use the connector's stable item ID to prevent duplicates. If a saved page cursor expires,
+restart that source scope and skip every item ID already present in DRIVE-INDEX.csv.
+Use UNKNOWN for every unavailable value instead of a guess. Use HUMAN REVIEW for titles
+or metadata that point to medical, dosage, certification, legal, spend, credentials,
+banking, personal HR or other highly sensitive material; do not open them.
+
+If I choose TEST 25, index up to 25 recently modified or recently viewed items, label
+the result TEST 25 COMPLETE — FULL DRIVE NOT INDEXED, then stop.
+
+If I choose FULL DRIVE INDEX, enumerate every page the connector exposes for all visible
+scopes it supports: owned or created by me, shared with me, shared by me when that
+relationship is available, and visible shared drives. Work in batches of no more than
+25. After each batch, save the CSV, summary, cursor, state files and evidence, then
+continue automatically inside this approved task. If the session must end, validate the
+workspace and leave the cursor ready so a new session resumes without starting over.
+Call the result complete only when every supported scope has no next page. Record any
+scope the connector cannot expose as UNKNOWN — CONNECTOR COVERAGE GAP; never claim it
+was scanned.
+
+Put this exact sentence in DRIVE-INDEX.md: “No Drive file content was opened or
+downloaded, and no Drive item was created, edited, renamed, moved, shared, unshared,
+deleted or organized.”
+
+Read the finished index summary back to me. If it passes the task's exit evidence,
+update the ledger, register, cursor, today file and evidence log. Then validate this
+workspace.
 
 ============================================================
-PROMPT 3 - LINKEDIN DRAFT AI HUMAN - OPTIONAL BONUS
+PROMPT 3 - WEEKLY LINKEDIN MESSAGE ASSISTANT - OPTIONAL
 Replace [TYPE YOUR NAME] before sending.
 ============================================================
 
-My name is [TYPE YOUR NAME]. I choose the optional task LINKEDIN-BONUS-001.
+My name is [TYPE YOUR NAME]. I choose the optional task LINKEDIN-WEEKLY-001.
 
 Read AGENTS.md, AI-HUMAN.md, PARAMETERS.md, MASTER_CURSOR.md, OPEN_REGISTER.md,
-TODAY.md, TOOLBOX.md, GATES.md and DECISIONS.md.
+TODAY.md, TOOLBOX.md, GATES.md, DECISIONS.md, SATURDAY-REVIEW-PROMPT.md,
+LINKEDIN-TONE-AND-PRECEDENTS.md, LINKEDIN-REPLY-QUEUE.md,
+LINKEDIN-REVIEW-CURSOR.md, LINKEDIN-INBOX-BATCH.md and
+LINKEDIN-CONTROL-HANDOFF.md.
 
 First, replace “Kairali employee using this copy” with my name in this project's
-owner fields only. Do not change the worker's name, purpose, task, limits or gates.
+owner fields only. Do not change the worker name, purpose, limits or gates.
 
-Do not open LinkedIn, use a browser, search people, scrape a profile, publish, message,
-connect, comment, follow, apply, or change any account.
+You may use Computer Use only inside this approved local worker and `@Chrome` only on
+an approved non-LinkedIn public page. A permission grants capability, not permission
+to use LinkedIn. Keep Ask for approval; never choose Full access or Always allow.
+Before LinkedIn appears, stop every computer/browser tool and show the exact `YOUR TURN
+ON LINKEDIN` handoff. Never sign in to, open, view, read, inspect, control, scrape,
+search, click, type, copy, paste, or send through LinkedIn. I will copy in message text
+and manually send any reply I approve.
 
-Ask me these questions one at a time and wait after each answer:
-1. What is your current role, in your own words?
-2. Who do you help and what kind of work do you help them with?
-3. What real skill or work example are you comfortable making public?
-4. What tone do you want: warm, direct, or formal?
+Show only one setup action at a time and wait after it.
 
-If I do not give a fact, do not guess it. Do not invent a title, employer,
-qualification, certification, number, date, client, result or endorsement. Stop if I
-give medical, dosage, certification, legal, spend, confidential client, personal HR or
-other sensitive material; tell me to choose a safe public fact instead.
+1. Ask exactly: “What local time every Saturday should your LinkedIn message review
+   start? For example, 10:00 AM.”
+2. Detect the device's local time zone, show it in plain words, and ask whether it is
+   correct. Do not guess if it cannot be detected.
+3. Ask me to close every LinkedIn tab and app. Then show me the one exact `@Computer`
+   request in LINKEDIN-CONTROL-HANDOFF.md. Wait while ChatGPT shows its real permission
+   prompt. Ask me to approve only this task and visible local project, then verify that
+   you can name AGENTS.md and LINKEDIN-CONTROL-HANDOFF.md. Do not simulate a permission
+   button, approve a request for me, or open an external site. Record the proof.
+4. If an approved public setup page is genuinely needed, ask me to start that one
+   request with `@Chrome`. Use only the named non-LinkedIn page, then stop browser
+   control. Never use Chrome while LinkedIn is visible.
+5. Ask me to open LINKEDIN-TONE-AND-PRECEDENTS.md and paste up to 25 representative
+   earlier incoming-message and sent-reply pairs that I am allowed to keep locally.
+   I may remove names or write NONE YET. Never ask for a password, code, private key,
+   confidential attachment, sensitive personal data, or message I am not allowed to
+   store.
+6. Derive only evidenced tone and routing rules. If I supplied no examples, start with
+   no high-confidence precedents; do not invent my voice.
+7. Create a native weekly automation named “Saturday LinkedIn Message Review —
+   [my name]” for my chosen Saturday local time. Its only automated job is to open this
+   local project and present SATURDAY-REVIEW-PROMPT.md. It must never open, read, click,
+   control, or send through LinkedIn. Show the automation card and ask me to approve it
+   before marking it ACTIVE.
+8. Run one supervised pilot. Stop Computer Use and Chrome first. Make no more computer
+   or browser tool calls and show the exact `YOUR TURN ON LINKEDIN` handoff. Ask me to
+   open LinkedIn myself, check both Focused and Other, close LinkedIn, return here, and
+   paste no more than 25 unread conversations into LINKEDIN-INBOX-BATCH.md.
+   I must not paste passwords, codes, sensitive data, suspicious links, or attachments.
+   Do not continue until LinkedIn is closed and I say BATCH READY.
+9. Process only what I pasted. Put evidenced, routine replies under READY TO SEND and
+   uncertain or consequential replies under NEEDS YOUR DECISION with a stable S.No.,
+   sender, date, concise summary, proposed reply, and reason. A READY TO SEND item is
+   still a draft. I review it and manually press Send in LinkedIn.
+10. Stop every computer/browser tool again before I return to LinkedIn. After I act,
+   ask me to mark each item SENT AS WRITTEN, EDITED AND SENT, SKIPPED, or
+   KEEP FOR LATER. Never claim a message was sent without my confirmation. Learn only
+   from confirmed outcomes and keep unresolved items in LINKEDIN-REPLY-QUEUE.md.
 
-Create LINKEDIN-DRAFTS.md with:
-- the heading “DRAFT - NOT PUBLISHED”;
-- the exact safe facts I supplied;
-- three headline options;
-- one short About draft;
-- a checklist of any statement I must verify before public use; and
-- the sentence “No LinkedIn page was opened and nothing was published, messaged,
-  connected, commented, followed, applied or changed.”
+If more than 25 items remain, checkpoint the cursor and offer the next batch only after
+the first batch is recorded. Never weaken the 25-item batch cap.
 
-Read the finished draft back to me. If it passes the task's exit evidence, update the
-ledger, register, cursor, today file and evidence log. Then validate this workspace.
+When the pilot passes, update AUTOMATIONS.md, the ledger, register, cursor, today file,
+and evidence log. Then validate this workspace and show the schedule, pilot counts,
+remaining queue count, and the exact manual-send boundary.

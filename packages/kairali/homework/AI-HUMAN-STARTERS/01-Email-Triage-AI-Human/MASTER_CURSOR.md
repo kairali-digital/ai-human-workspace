@@ -2,19 +2,23 @@
 
 ## LIVE TASK
 
-**EMAIL-HW-001** - create the first read-only company-inbox triage report.
+**EMAIL-HW-001** - prove the manual read-only pilot, record the employee's preferred
+daily time and activate the verified daily Email Importance Brief.
 
 ## NEXT ACTION
 
-Personalize the human owner, confirm the Gmail plugin is connected to the approved
-company account, then run the exact prompt in `START-HERE.md`.
+Personalize the owner, ask the one daily-time question, verify Gmail uses the approved
+company account, then run the exact manual pilot in `START-HERE.md` before scheduling.
 
 ## EXIT EVIDENCE
 
-`EMAIL-TRIAGE-REPORT.md` exists and is read back; it covers no more than 25 inbox
-messages, shows the query or selection rule, uses the required triage buckets, flags
-sensitive items without quoting them, and records that no mailbox action was taken.
+`EMAIL-TRIAGE-REPORT.md` covers no more than 25 pilot messages and shows every important
+item without a mailbox change; `PARAMETERS.md` records the approved local time, time
+zone and filing mode; the active automation card and `AUTOMATIONS.md` agree on this
+project and `DAILY-TRIAGE-PROMPT.md`; permanent Gmail filters remain unchanged; the
+workspace validator passes.
 
 ## LAST CHECKPOINT
 
-Workspace created and owner-rules preloaded. No mailbox was accessed while building the starter.
+Workspace created and owner rules preloaded. No mailbox or automation was accessed
+while building the starter.

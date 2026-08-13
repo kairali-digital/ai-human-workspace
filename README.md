@@ -42,6 +42,7 @@ personal files.
 - Rollout owner: [`docs/MULTI-COMPANY-ROLLOUT.md`](docs/MULTI-COMPANY-ROLLOUT.md)
 - Updates and removal: [`docs/UPDATES-ROLLBACK-REMOVAL.md`](docs/UPDATES-ROLLBACK-REMOVAL.md)
 - Kairali complete bundle: [`packages/kairali/README.md`](packages/kairali/README.md)
+- Three-worker go-live: [`docs/THREE-WORKER-GO-LIVE.md`](docs/THREE-WORKER-GO-LIVE.md)
 
 Skills are not installed indiscriminately. The Kairali Akshar marketing skill and Rahul
 sales-system skill are explicit, role-based options. Platform/system and third-party

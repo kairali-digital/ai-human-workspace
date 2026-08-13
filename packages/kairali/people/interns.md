@@ -4,6 +4,8 @@
 
 > You are learning to wear Codex like an Iron Man suit. You provide the mission and judgment. Codex performs approved work through a controlled autonomous loop.
 
+Before this role mission, use `people/ALL-EMPLOYEES.md` to verify the common three-worker setup: Daily Email and Full Drive are required; Saturday LinkedIn is optional. Available in the kit is not live for you until the named proof passes.
+
 Your mission is one assigned page from research through proof, never live. You choose the page goal and review every draft. Codex prepares the work, checks it and stops at Gate 0 or any publishing decision.
 
 **Your list:** One page, taken all the way — not live

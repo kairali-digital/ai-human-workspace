@@ -2,7 +2,8 @@ DRIVE INVENTORY AI HUMAN - FIRST SCREEN
 
 1. Open START-HERE.md.
 2. Follow only one numbered action at a time.
-3. DONE WHEN DRIVE-INVENTORY.md is visible and Codex says Drive was unchanged.
+3. Choose TEST 25 for setup proof or FULL DRIVE INDEX for completed company homework.
+4. LIVE FOR ME only when full scope coverage, DRIVE-INDEX.csv, DRIVE-INDEX.md, the final cursor and validator agree and Codex says Drive was unchanged.
 
 You do not need Terminal, PowerShell, Command Prompt, Python, Git, GitHub or VS Code.
 
@@ -29,4 +30,4 @@ Official screen references:
 https://learn.chatgpt.com/docs/quickstart
 https://learn.chatgpt.com/docs/app
 https://learn.chatgpt.com/docs/projects
-https://learn.chatgpt.com/docs/plugins
+https://help.openai.com/en/articles/11487775-connectors-in-chatgpt

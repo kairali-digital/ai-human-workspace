@@ -2,19 +2,22 @@
 
 ## LIVE TASK
 
-**DRIVE-HW-001** - create the first metadata-only Google Drive inventory.
+**DRIVE-HW-001** - build the complete connector-visible Google Drive metadata index in checkpointed batches. `TEST 25` may prove setup, but only `FULL DRIVE INDEX` completes company homework.
 
 ## NEXT ACTION
 
-Personalize the human owner, confirm the Google Drive plugin is connected to the
-approved company account, then run the exact prompt in `START-HERE.md`.
+Personalize the human owner, confirm the Google Drive app is connected to the
+approved company account, then ask the owner to choose `TEST 25` or `FULL DRIVE INDEX`.
 
 ## EXIT EVIDENCE
 
-`DRIVE-INVENTORY.md` exists and is read back; it covers no more than 25 items, shows
-the selection rule, distinguishes owned/shared relationships when metadata permits,
-uses `UNKNOWN` instead of guessing, flags sensitive titles without opening files, and
-records that no Drive action was taken.
+`DRIVE-INDEX.csv`, `DRIVE-INDEX.md` and `DRIVE-INDEX-CURSOR.md` exist and are read back.
+Every batch is at most 25 and checkpointed; item IDs prevent duplicates; supported
+owned/created, shared-with, shared-by and shared-drive scopes are recorded; unknowns and
+coverage gaps are explicit; sensitive titles are flagged without opening files; and no
+Drive action was taken. Full mode is complete only when every supported scope has no
+next page. Test mode says the full Drive was not indexed. The worker is marked **LIVE
+FOR ME** only after full mode and the final validator pass.
 
 ## LAST CHECKPOINT
 

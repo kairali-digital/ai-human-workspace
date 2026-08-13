@@ -38,6 +38,7 @@ REQUIRED_FILES = {
     "docs/RELEASE-PROCESS.md",
     "docs/SECURITY-AND-DATA-BOUNDARIES.md",
     "docs/TECHNICAL-SETUP.md",
+    "docs/THREE-WORKER-GO-LIVE.md",
     "docs/UPDATES-ROLLBACK-REMOVAL.md",
     "release-manifest.json",
     "packages/kairali/README.md",
@@ -46,6 +47,7 @@ REQUIRED_FILES = {
     "packages/kairali/homework/EVERYONE-ELSE-AI-HUMAN-HOMEWORK-GUIDE.pdf",
     "packages/kairali/homework/EVERYONE-ELSE-AI-HUMAN-HOMEWORK-VIDEO.mp4",
     "packages/kairali/homework/START-HERE.md",
+    "packages/kairali/homework/THREE-WORKER-GO-LIVE-CHECKLIST.md",
     "packages/kairali/people/ALL-EMPLOYEES.md",
     "packages/kairali/people/SETUP-HELPER.md",
     "packages/kairali/skills/kairali-akshar-marketing-science/SKILL.md",
@@ -129,7 +131,9 @@ def safe_relative(value):
 
 
 def text_files(root):
-    ignored = {".git", "__pycache__", "dist"}
+    # The portal is a separately validated Vercel application, not part of the
+    # installable AI-Human workspace release.
+    ignored = {".git", "__pycache__", "dist", "portal"}
     for path in root.rglob("*"):
         if not path.is_file() or any(part in ignored for part in path.parts):
             continue
@@ -291,7 +295,7 @@ def validate(root):
     expected_homework = {
         "01-Email-Triage-AI-Human",
         "02-Drive-Inventory-AI-Human",
-        "03-LinkedIn-Draft-AI-Human-OPTIONAL",
+        "03-LinkedIn-Message-Assistant-OPTIONAL",
     }
     if homework_root.is_dir():
         actual_homework = {path.name for path in homework_root.iterdir() if path.is_dir()}
@@ -321,7 +325,7 @@ def validate(root):
         for folder in (
             "01-Email-Triage-AI-Human",
             "02-Drive-Inventory-AI-Human",
-            "03-LinkedIn-Draft-AI-Human-OPTIONAL",
+            "03-LinkedIn-Message-Assistant-OPTIONAL",
         ):
             for name in ("START-HERE.md", "READ-ME-FIRST.txt"):
                 path = root / "packages/kairali/homework/AI-HUMAN-STARTERS" / folder / name
@@ -331,18 +335,107 @@ def validate(root):
     all_employees_path = root / "packages/kairali/people/ALL-EMPLOYEES.md"
     if all_employees_path.is_file():
         all_employees = all_employees_path.read_text(encoding="utf-8")
-        for required in ("Email Triage", "Drive Inventory", "LinkedIn Draft", "homework/START-HERE.md"):
+        for required in ("Email Triage", "Drive Index", "Weekly LinkedIn Message Assistant", "homework/START-HERE.md"):
             if required.casefold() not in all_employees.casefold():
                 failures.append("all-employee prompt lacks fallback route: " + required)
     homework_prompts_path = root / "packages/kairali/homework/COPY-PASTE-PROMPTS.txt"
     if homework_prompts_path.is_file():
         homework_prompts = homework_prompts_path.read_text(encoding="utf-8")
+        homework_prompts_flat = re.sub(r"\s+", " ", homework_prompts)
         for required in (
-            "EMAIL-HW-001", "DRIVE-HW-001", "LINKEDIN-BONUS-001",
-            "No email was sent", "metadata only", "DRAFT - NOT PUBLISHED",
+            "EMAIL-HW-001", "DRIVE-HW-001", "LINKEDIN-WEEKLY-001",
+            "What local time should your daily email brief",
+            "BRIEF + SAFE FILING", "Daily Email Importance Brief",
+            "no Gmail filter was changed", "metadata only",
+            "TEST 25", "FULL DRIVE INDEX", "DRIVE-INDEX.csv",
+            "UNKNOWN — CONNECTOR COVERAGE GAP",
+            "What local time every Saturday", "Focused and Other",
+            "READY TO SEND", "NEEDS YOUR DECISION", "manually press Send",
         ):
-            if required.casefold() not in homework_prompts.casefold():
+            if required.casefold() not in homework_prompts_flat.casefold():
                 failures.append("homework prompts lack: " + required)
+    email_root = homework_root / "01-Email-Triage-AI-Human"
+    if email_root.is_dir():
+        email_required_files = {
+            "DAILY-TRIAGE-PROMPT.md", "EMAIL-RULE-REVIEW.md",
+            "EMAIL-TRIAGE-CURSOR.md", "EMAIL-TRIAGE-RULES.md",
+        }
+        for name in sorted(email_required_files):
+            if not (email_root / name).is_file():
+                failures.append("Email Triage starter missing " + name)
+        email_text = "\n".join(
+            path.read_text(encoding="utf-8", errors="replace")
+            for path in sorted(email_root.iterdir()) if path.is_file()
+        )
+        for required in (
+            "What local time should your daily email brief",
+            "BRIEF ONLY", "BRIEF + SAFE FILING",
+            "Daily Email Importance Brief", "DAILY-TRIAGE-PROMPT.md",
+            "no more than 25", "every connector-visible result", "checkpoint",
+            "first successful daily run in a new calendar month",
+            "AI Triage/Reviewed", "AI Filed/Promotions",
+            "permanent Gmail filter", "computer is awake",
+            "ChatGPT is running", "this exact project remains available",
+        ):
+            if required.casefold() not in email_text.casefold():
+                failures.append("Email Triage starter lacks: " + required)
+        for forbidden in (
+            "send without approval", "delete low-risk mail",
+            "change permanent Gmail filters automatically",
+        ):
+            if forbidden.casefold() in email_text.casefold():
+                failures.append("Email Triage starter contains unsafe instruction: " + forbidden)
+    drive_root = homework_root / "02-Drive-Inventory-AI-Human"
+    if drive_root.is_dir():
+        drive_text = "\n".join(
+            path.read_text(encoding="utf-8", errors="replace")
+            for path in sorted(drive_root.iterdir()) if path.is_file()
+        )
+        for required in (
+            "TEST 25", "FULL DRIVE INDEX", "DRIVE-INDEX.csv",
+            "DRIVE-INDEX-CURSOR.md", "no more than 25", "checkpoint",
+            "connector coverage gap", "item ID", "never store a password",
+        ):
+            if required.casefold() not in drive_text.casefold():
+                failures.append("Drive Index starter lacks: " + required)
+        for forbidden in (
+            "stop after 25 items", "never complete Drive inventory",
+            "Call this “First bounded batch”",
+        ):
+            if forbidden.casefold() in drive_text.casefold():
+                failures.append("Drive Index starter retains obsolete limit: " + forbidden)
+    linkedin_root = homework_root / "03-LinkedIn-Message-Assistant-OPTIONAL"
+    if linkedin_root.is_dir():
+        linkedin_required_files = {
+            "SATURDAY-REVIEW-PROMPT.md", "LINKEDIN-TONE-AND-PRECEDENTS.md",
+            "LINKEDIN-REPLY-QUEUE.md", "LINKEDIN-REVIEW-CURSOR.md",
+            "LINKEDIN-INBOX-BATCH.md",
+        }
+        for name in sorted(linkedin_required_files):
+            if not (linkedin_root / name).is_file():
+                failures.append("LinkedIn Message Assistant missing " + name)
+        linkedin_text = "\n".join(
+            path.read_text(encoding="utf-8", errors="replace")
+            for path in sorted(linkedin_root.iterdir()) if path.is_file()
+        )
+        linkedin_flat = re.sub(r"\s+", " ", linkedin_text)
+        for required in (
+            "LINKEDIN-WEEKLY-001", "What local time every Saturday",
+            "Focused and Other", "no more than 25", "checkpoint",
+            "READY TO SEND", "NEEDS YOUR DECISION", "NO REPLY / SKIP",
+            "SENT AS WRITTEN", "EDITED AND SENT", "KEEP FOR LATER",
+            "manually press Send", "employee's confirmation",
+            "SATURDAY-REVIEW-PROMPT.md", "LINKEDIN-REPLY-QUEUE.md",
+            "must never open, read, click, control, or send through LinkedIn",
+        ):
+            if required.casefold() not in linkedin_flat.casefold():
+                failures.append("LinkedIn Message Assistant lacks: " + required)
+        for forbidden in (
+            "open LinkedIn automatically", "send automatically through LinkedIn",
+            "Codex sends the reply", "scrape the LinkedIn inbox",
+        ):
+            if forbidden.casefold() in linkedin_text.casefold():
+                failures.append("LinkedIn Message Assistant contains unsafe instruction: " + forbidden)
     for skill_id in sorted(APPROVED_SKILLS):
         skill_path = root / "packages/kairali/skills" / skill_id / "SKILL.md"
         if skill_path.is_file():

@@ -45,9 +45,33 @@ the public repository.
 
 For Kairali, the helper also opens the approved role prompt. If the attendee has no
 named plan, it installs the universal homework reference kit and creates separate Email
-Triage and Drive Inventory worker folders; LinkedIn Draft stays optional. It installs
+Triage and Drive Index worker folders; Drive offers `TEST 25` or a resumable full
+metadata index with every batch capped at 25. The Weekly LinkedIn Message Assistant
+stays optional: it may use task-scoped Computer control inside its local worker and
+Chrome on an approved non-LinkedIn setup page, but stops all tools and shows `YOUR TURN
+ON LINKEDIN` before the employee opens LinkedIn. The employee manually pastes up to 25
+messages at a time, reviews every draft and manually sends; the AI never acts on
+LinkedIn. The helper installs
 an Akshar or Rahul governed skill only when the employee's approved role or the owner
 explicitly names that skill. No employee chooses from the machine's full skill list.
+
+## Three-worker go-live readback
+
+The public kit makes the three starters available; it does not activate an employee's
+accounts or schedule. Use the complete
+[`THREE-WORKER-GO-LIVE-CHECKLIST.md`](../packages/kairali/homework/THREE-WORKER-GO-LIVE-CHECKLIST.md)
+after setup.
+
+- Daily Email is required and becomes **LIVE FOR ME** only after its account, chosen
+  schedule, pilot, mode, automation and validator agree.
+- Full Drive Index is required and becomes **LIVE FOR ME** only after full supported
+  scope coverage, final cursor, output files and validator agree. `TEST 25` is setup
+  proof only.
+- Saturday LinkedIn is optional. It becomes **LIVE FOR ME, OPTIONAL** only after its
+  schedule, scoped local-control handoff, manually supplied pilot, queue and validator
+  agree. Otherwise record **NOT ENABLED BY CHOICE**.
+
+Downloaded, installed or connected alone is not a completed worker.
 
 ## DONE WHEN
 

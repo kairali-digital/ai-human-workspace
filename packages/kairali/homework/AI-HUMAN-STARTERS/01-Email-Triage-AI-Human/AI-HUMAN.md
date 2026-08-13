@@ -1,4 +1,4 @@
-# AI HUMAN — Email Triage AI Human
+# AI HUMAN — Daily Email Triage AI Human
 
 This folder is one bounded worker. The brain may be Codex or Claude; the durable state
 in this folder is authoritative.

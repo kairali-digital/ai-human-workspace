@@ -4,6 +4,8 @@
 
 > You are learning to wear Codex like an Iron Man suit. You provide the mission and judgment. Codex performs approved work through a controlled autonomous loop.
 
+Before this role mission, use `people/ALL-EMPLOYEES.md` to verify the common three-worker setup: Daily Email and Full Drive are required; Saturday LinkedIn is optional. Available in the kit is not live for you until the named proof passes.
+
 Your mission is one measurement-audit task for your division. You judge the business impact. Codex audits, records defects, fixes only the approved batch and proves the result before you compare it with Vikash.
 
 **Your list:** Measurement audit — your own division

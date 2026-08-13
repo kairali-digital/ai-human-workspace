@@ -120,6 +120,19 @@ def set_table_geometry(table, widths_dxa):
             cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER
 
 
+def mark_table_headers(doc):
+    """Expose every designed table's first row to assistive technology."""
+    for table in doc.tables:
+        if not table.rows:
+            continue
+        tr_pr = table.rows[0]._tr.get_or_add_trPr()
+        header = tr_pr.find(qn("w:tblHeader"))
+        if header is None:
+            header = OxmlElement("w:tblHeader")
+            tr_pr.append(header)
+        header.set(qn("w:val"), "true")
+
+
 def add_page_field(paragraph):
     run = paragraph.add_run()
     begin = OxmlElement("w:fldChar")
@@ -225,7 +238,7 @@ def style_paragraph(paragraph, after=6, line=1.25):
         set_font(run, size=11, color=INK)
 
 
-def add_rich_text(paragraph, text, base_size=11, color=INK):
+def add_rich_text(paragraph, text, base_size=10.6, color=INK):
     # Minimal Markdown emphasis parser for bold spans and inline code.
     parts = re.split(r"(`[^`]+`|\*\*[^*]+\*\*)", text)
     for part in parts:
@@ -267,11 +280,11 @@ def configure_styles(doc):
     normal.font.name = "Calibri"
     normal._element.rPr.rFonts.set(qn("w:ascii"), "Calibri")
     normal._element.rPr.rFonts.set(qn("w:hAnsi"), "Calibri")
-    normal.font.size = Pt(11)
+    normal.font.size = Pt(10.6)
     normal.font.color.rgb = INK
     normal.paragraph_format.space_before = Pt(0)
     normal.paragraph_format.space_after = Pt(6)
-    normal.paragraph_format.line_spacing = 1.25
+    normal.paragraph_format.line_spacing = 1.20
 
     tokens = {
         "Heading 1": (16, BLUE, 18, 10),
@@ -313,19 +326,19 @@ def add_title_block(doc):
 
     title = doc.add_paragraph()
     title.paragraph_format.space_after = Pt(8)
-    run = title.add_run("Build Your First Two AI Humans")
+    run = title.add_run("Two Required Workers. One Optional Worker.")
     set_font(run, size=31, color=NAVY, bold=True)
 
     subtitle = doc.add_paragraph()
     subtitle.paragraph_format.space_after = Pt(18)
-    run = subtitle.add_run("Email Triage + Drive Inventory, with an optional LinkedIn Draft bonus")
+    run = subtitle.add_run("Email Triage + Drive Inventory, with an optional Saturday LinkedIn Message Assistant")
     set_font(run, size=13.5, color=GRAY)
 
     table = doc.add_table(rows=2, cols=2)
     set_table_geometry(table, [4680, 4680])
     values = [
         ("WHO", "Meeting attendee without a named homework page"),
-        ("REQUIRED", "Two separate, read-only local projects"),
+        ("REQUIRED", "Daily Email worker + Full Drive Index"),
         ("HUMAN ROLE", "Mission, login, approval and final judgment"),
         ("PROOF", "Visible local report + evidence + validator pass"),
     ]
@@ -464,7 +477,7 @@ def build():
             apply_numbering(p, list_num_id)
             p.paragraph_format.space_before = Pt(0)
             p.paragraph_format.space_after = Pt(4)
-            p.paragraph_format.line_spacing = 1.25
+            p.paragraph_format.line_spacing = 1.20
             following = next((candidate for candidate in lines[position + 1:] if candidate), "")
             if number and following.startswith("**DONE WHEN:**"):
                 p.paragraph_format.keep_with_next = True
@@ -476,7 +489,7 @@ def build():
         p = doc.add_paragraph()
         p.paragraph_format.space_before = Pt(0)
         p.paragraph_format.space_after = Pt(6)
-        p.paragraph_format.line_spacing = 1.25
+        p.paragraph_format.line_spacing = 1.20
         if line.startswith("> "):
             p.paragraph_format.left_indent = Inches(0.18)
             p.paragraph_format.right_indent = Inches(0.18)
@@ -499,10 +512,11 @@ def build():
         else:
             add_rich_text(p, line)
 
-    doc.core_properties.title = "Build Your First Two AI Humans"
-    doc.core_properties.subject = "Beginner Email Triage and Drive Inventory homework"
+    doc.core_properties.title = "Two Required Workers. One Optional Worker."
+    doc.core_properties.subject = "Beginner Daily Email, Full Drive Index and optional Saturday LinkedIn homework"
     doc.core_properties.author = "Kairali AI Method"
-    doc.core_properties.keywords = "Codex, AI human, email triage, drive inventory, beginner"
+    doc.core_properties.keywords = "Codex, AI human, email triage, full drive index, LinkedIn message assistant, beginner"
+    mark_table_headers(doc)
     doc.save(OUTPUT)
     print(OUTPUT)
 

@@ -1,35 +1,62 @@
-# Build Your First Two AI Humans
+# Two Required Workers. One Optional Worker.
 
 ## The “everyone else” homework - explained one tiny step at a time
 
 Use this guide only if you attended the meeting and do not already have a named start
 or homework page.
 
+This homework is part of the protected public
+`kairali-digital/ai-human-workspace` v1.5.0 company kit. The public kit is the clean
+setup and update source; it contains no live company work or secrets, so no GitHub
+invitation or collaborator seat is needed. Ask the Setup Helper to obtain and verify
+the kit. Then copy the Email and Drive starters into separate local work folders. Do
+not use the public distribution repository as a work project.
+
 > You are learning to wear Codex like an Iron Man suit. You provide the mission and
 > judgment. Codex performs approved work through a controlled autonomous loop.
 
-You will make two small workers:
+You will set up two required workers and may choose a third:
 
-1. **Email Triage AI Human** - reads up to 25 inbox messages and makes a local review
-   list. It does not change your mailbox.
-2. **Drive Inventory AI Human** - reads metadata for up to 25 Drive items and makes a
-   local inventory. It does not open or change the files.
-3. **Optional LinkedIn Draft AI Human** - makes a local draft from facts you supply. It
-   does not open LinkedIn or publish anything.
+1. **Daily Email Triage AI Human** - asks what local time you want the brief, proves a
+   read-only 25-message pilot, then runs a concise daily importance report. You choose
+   whether it is brief-only or may safely label and file clearly low-risk mail.
+2. **Drive Index AI Human** - choose a 25-item test or index every connector-visible
+   Drive item in checkpointed batches of 25. It does not open file contents or change Drive.
+3. **Optional Weekly LinkedIn Message Assistant** - at your chosen Saturday time,
+   uses task-scoped Computer control in its local folder, then stops all Computer and
+   Chrome control before LinkedIn appears. It prepares replies from message text you
+   manually paste, learns from your supplied prior replies, and keeps uncertain drafts
+   for your decision. You alone access LinkedIn and manually press **Send**.
 
 An AI human is one folder with one job. Each worker gets a separate folder so their
 instructions, state and proof never mix.
 
+## Available is not live
+
+The kit makes all three starter folders available. It does not connect your accounts,
+choose your times or activate your workers. Open
+`THREE-WORKER-GO-LIVE-CHECKLIST.md` and keep it beside this guide.
+
+- Email is required and is live for you only after its account, schedule, pilot,
+  filing-mode ruling, automation and validator agree.
+- Full Drive Index is required and is live for you only after every supported scope,
+  output file, final cursor and validator agree. `TEST 25` proves setup only.
+- Saturday LinkedIn is optional. If you choose it, its schedule, scoped local-control
+  handoff, manually supplied pilot, queue and validator must agree. If you decline it,
+  record `NOT ENABLED BY CHOICE`.
+
 ## The whole loop at a glance
 
-1. Find the homework pack on your screen.
+1. Ask the Setup Helper to find the verified public v1.5.0 company kit on your screen.
 2. Make an `AI Humans` folder inside Documents.
 3. Copy the Email and Drive starter folders into it.
 4. Open one starter folder as a local project in the ChatGPT desktop app.
 5. Connect only the app that project needs.
 6. Paste the exact prompt.
-7. Stop at the visible `DONE WHEN` result.
-8. Repeat with the second folder.
+7. For Email, choose your daily local time, review the read-only pilot, choose the
+   filing mode and verify the active automation.
+8. Stop at the visible `DONE WHEN` result.
+9. Repeat with the second folder.
 
 This is a standalone local-project path. It does not need GitHub or GitHub Desktop.
 
@@ -59,9 +86,12 @@ Do not teach me how the machinery works unless I ask. Start now by checking what
 **DONE WHEN:** The helper shows only one next action, waits, and verifies it before
 showing another.
 
-# Step 1 - find and open the homework pack
+# Step 1 - find and open the verified company kit
 
-The file is named `EVERYONE-ELSE-AI-HUMAN-HOMEWORK-PACK.zip`.
+The preferred file is named `kairali-company-rollout-1.5.0.zip`. If your facilitator
+gave you the smaller homework-only file, it is named
+`EVERYONE-ELSE-AI-HUMAN-HOMEWORK-PACK.zip`. Both routes open this same homework. You
+do not need a GitHub invitation.
 
 ## On a Mac
 
@@ -69,7 +99,7 @@ The file is named `EVERYONE-ELSE-AI-HUMAN-HOMEWORK-PACK.zip`.
 
    **DONE WHEN:** A Finder window is open.
 
-2. Click **Downloads** in the left side.
+2. Click **Downloads** in the left side. Use the exact file the Setup Helper verified.
 
    **DONE WHEN:** You can see the ZIP file.
 
@@ -87,7 +117,7 @@ The file is named `EVERYONE-ELSE-AI-HUMAN-HOMEWORK-PACK.zip`.
 
    **DONE WHEN:** A File Explorer window is open.
 
-2. Click **Downloads** on the left.
+2. Click **Downloads** on the left. Use the exact file the Setup Helper verified.
 
    **DONE WHEN:** You can see the ZIP file.
 
@@ -100,7 +130,8 @@ The file is named `EVERYONE-ELSE-AI-HUMAN-HOMEWORK-PACK.zip`.
    **DONE WHEN:** You can see `AI-HUMAN-STARTERS` and this guide.
 
 If the ZIP is not visible, do not search the whole computer. Paste the Setup Helper
-rescue. The helper should check Downloads and ask Ambuj only if the pack was not given.
+rescue. The helper checks Downloads, obtains the protected public v1.5.0 kit when safe,
+and asks Ambuj only if the approved source or access decision is missing.
 
 # Step 2 - make one home for your AI humans
 
@@ -219,23 +250,24 @@ Never paste a password or one-time code into a chat.
 
 If the button wording is different, use the Setup Helper rescue. Do not guess.
 
-## Step 5 - connect Gmail only if it is missing
+## Step 5 - connect Gmail only if it is not already connected
 
-1. Open the **Plugins** tab in the ChatGPT desktop app.
+1. Open **Settings**, then **Apps**, in the ChatGPT desktop app.
 
-   **DONE WHEN:** The plugin directory is visible.
+   **DONE WHEN:** The Apps directory is visible.
 
 2. Search for `Gmail`.
 
-   **DONE WHEN:** The Gmail plugin is visible as installed or available to install.
+   **DONE WHEN:** The Gmail connector is visible under Apps as connected or available to connect.
 
-3. If it is already installed, do not install it again. Return to the Email project.
+3. If it is already connected to the approved company account, do not connect it
+   again. Return to the Email project.
 
    **DONE WHEN:** You are back in the Email project.
 
-4. If it is missing, click its plus or install button.
+4. If it is available but not connected, click **Connect**.
 
-   **DONE WHEN:** Gmail shows as installed.
+   **DONE WHEN:** The provider login or account-choice screen appears.
 
 5. Start a new chat in the Email project. If asked to connect, choose the approved
    company account and complete the provider login yourself.
@@ -250,26 +282,39 @@ blocker; it does not ask for your secret information or choose a broader account
 Open `COPY-PASTE-PROMPTS.txt`. Copy everything under **PROMPT 1**. Replace
 `[TYPE YOUR NAME]` with your name. Paste it into the Email project chat and send it.
 
-**DONE WHEN:** Codex says the live task is `EMAIL-HW-001` and starts with no more than
-25 inbox messages.
+**DONE WHEN:** Codex says the live task is `EMAIL-HW-001`, asks what local time you
+want the daily brief and starts the read-only pilot with no more than 25 Inbox messages.
 
 The full prompt is also printed in the Email starter's `START-HERE.md`. Do not shorten
-it: the last lines are the rules that stop mailbox changes.
+it: the last lines prove the pilot before scheduling and protect your mailbox.
+
+After the pilot, Codex reads the report and the exact safe-filing rules to you. Choose
+`BRIEF ONLY` or `BRIEF + SAFE FILING`. Safe filing is limited to the approved AI labels
+and clearly low-risk mail. It never deletes, sends, unsubscribes or changes a permanent
+Gmail filter.
+
+**DONE WHEN:** The daily automation card shows your approved local time and time zone,
+uses this exact Email project and tells the job to follow `DAILY-TRIAGE-PROMPT.md`.
+
+This is a local automation. The computer must be awake, ChatGPT must be running and the
+Email project must remain available at the chosen time.
 
 ## Email proof
 
 Stop when all of these are visible:
 
 - `EMAIL-TRIAGE-REPORT.md` exists.
-- It shows the selection rule and no more than 25 reviewed messages.
-- It uses REPLY, DECISION, READ, LOW PRIORITY and HUMAN REVIEW.
+- It shows the pilot selection rule and no more than 25 reviewed messages.
+- It uses NEEDS ACTION, WAITING / FOLLOW UP, WORTH READING, HUMAN REVIEW, FILTER HEALTH
+  and RUN SUMMARY.
 - Sensitive messages are not quoted.
-- It says no email was sent, drafted, archived, labelled, deleted, moved, marked read
-  or unread, and no attachment was opened.
+- The pilot says Gmail was unchanged and no permanent Gmail filter was changed.
+- `PARAMETERS.md` shows your approved daily time, time zone and filing mode.
+- The daily automation card and `AUTOMATIONS.md` show the same schedule and project.
 - The workspace validator passed.
 
-**DONE WHEN:** You can show the report on your screen. A connected Gmail account alone
-is not completion.
+**DONE WHEN:** You can show the report and active daily automation on your screen. A
+connected Gmail account alone is not completion.
 
 # Project 2 - Drive Inventory AI Human
 
@@ -291,20 +336,21 @@ is not completion.
 Do not attach both folders to the same project. Separate folders are what keep the two
 AI humans from mixing memory or state.
 
-## Step 8 - connect Google Drive only if it is missing
+## Step 8 - connect Google Drive only if it is not already connected
 
-1. Open the **Plugins** tab.
+1. Open **Settings**, then **Apps**.
 
-   **DONE WHEN:** The plugin directory is visible.
+   **DONE WHEN:** The Apps directory is visible.
 
 2. Search for `Google Drive`.
 
-   **DONE WHEN:** The Google Drive plugin is visible as installed or available.
+   **DONE WHEN:** The Google Drive app is visible as connected or available to connect.
 
-3. If already installed, return to the Drive project. If missing, click its plus or
-   install button, then start a new chat in the Drive project.
+3. If already connected to the approved company account, return to the Drive project.
+   If available but not connected, click **Connect**, then start a new chat in the
+   Drive project.
 
-   **DONE WHEN:** The Drive project is open in a new chat with the plugin available.
+   **DONE WHEN:** The Drive project is open in a new chat with the app available.
 
 4. If asked to connect, choose the approved company account and complete the provider
    login yourself.
@@ -316,56 +362,106 @@ AI humans from mixing memory or state.
 Open `COPY-PASTE-PROMPTS.txt`. Copy everything under **PROMPT 2**. Replace
 `[TYPE YOUR NAME]` with your name. Paste it into the Drive project chat and send it.
 
-**DONE WHEN:** Codex says the live task is `DRIVE-HW-001` and reads metadata for no
-more than 25 items.
+**DONE WHEN:** Codex says the live task is `DRIVE-HW-001`, asks you to choose `TEST 25`
+or `FULL DRIVE INDEX`, and never processes more than 25 items before a checkpoint.
 
 ## Drive proof
 
 Stop when all of these are visible:
 
-- `DRIVE-INVENTORY.md` exists.
-- It says `First bounded batch`, not complete inventory.
-- It shows the selection rule and no more than 25 items.
+- `DRIVE-INDEX.csv`, `DRIVE-INDEX.md` and `DRIVE-INDEX-CURSOR.md` exist.
+- Every batch is no more than 25 items and has a durable checkpoint.
+- `TEST 25` says the full Drive was not indexed. `FULL DRIVE INDEX` shows each
+  connector-visible source scope has no next page, or names the coverage gap.
+- Stable item IDs prevent duplicate rows and let a new session resume.
 - Missing fields say UNKNOWN; sensitive titles say HUMAN REVIEW.
-- It says no Drive file was opened beyond metadata, downloaded, created, edited,
-  renamed, moved, shared, unshared, deleted or organized.
+- It says no Drive file content was opened or downloaded and no Drive item was created,
+  edited, renamed, moved, shared, unshared, deleted or organized.
 - The workspace validator passed.
 
-**DONE WHEN:** You can show the inventory on your screen. A connected Drive account
-alone is not completion.
+**DONE WHEN:** You can show the index summary and cursor on your screen. A connected
+Drive account alone is not completion. The index helps Codex find files later, but
+opening a file later still needs current Drive permission and a new approved task.
 
-# Optional bonus - LinkedIn Draft AI Human
+For company homework, stop after `TEST 25` only if setup is blocked and record that
+blocker. The Drive worker is marked **LIVE FOR ME** only after `FULL DRIVE INDEX`
+finishes every supported scope and the final validator passes.
+
+# Optional bonus — Weekly LinkedIn Message Assistant
 
 Do this only after both required projects pass.
 
-1. Copy `03-LinkedIn-Draft-AI-Human-OPTIONAL` from the untouched starter pack into
+1. Copy `03-LinkedIn-Message-Assistant-OPTIONAL` from the untouched starter pack into
    Documents > AI Humans.
 
    **DONE WHEN:** The optional folder exists beside the other two.
 
 2. Add it as a third, separate local project in Codex.
 
-   **DONE WHEN:** The LinkedIn Draft project is open separately.
+   **DONE WHEN:** The LinkedIn Message Assistant project is open separately.
 
 3. Open `COPY-PASTE-PROMPTS.txt`. Copy everything under **PROMPT 3**. Replace
-   `[TYPE YOUR NAME]` with your name. Paste it and answer one question at a time.
+   `[TYPE YOUR NAME]` with your name. Paste it. Choose your Saturday local time and
+   confirm the time zone, one screen action at a time.
 
-   **DONE WHEN:** Codex uses only the safe facts you supplied.
+   **DONE WHEN:** The reminder card opens only this local project at the approved time.
 
-4. Stop when `LINKEDIN-DRAFTS.md` says `DRAFT - NOT PUBLISHED`, lists your supplied
-   facts, gives three headline choices and one About draft, and says no LinkedIn action
-   occurred.
+4. Close every LinkedIn tab and the LinkedIn app. Open
+   `LINKEDIN-CONTROL-HANDOFF.md`. In the local project, start one message with
+   `@Computer` and use the exact request printed there. ChatGPT shows the real access
+   prompt. Approve only this visible local project and current task. Keep **Ask for
+   approval**. Never choose **Full access**, **Always allow**, or your whole computer.
 
-   **DONE WHEN:** You can show the local draft. Nothing was posted or messaged.
+   **DONE WHEN:** Codex can name `AGENTS.md` and `LINKEDIN-CONTROL-HANDOFF.md` from the
+   local folder and confirms that LinkedIn is outside the granted task.
+
+5. Use `@Chrome` only if Codex needs one approved non-LinkedIn public setup page. Read
+   and approve the real browser prompt for only that page and task. Stop Chrome control
+   before opening LinkedIn. A portal link is an instruction link; it cannot itself
+   grant mouse, computer or browser control.
+
+   **DONE WHEN:** The approved public page was used and browser control is stopped.
+
+6. If you are allowed to keep them locally, paste up to 25 representative earlier
+   incoming-message and sent-reply pairs into `LINKEDIN-TONE-AND-PRECEDENTS.md`. You may
+   remove names or write `NONE YET`.
+
+   **DONE WHEN:** Codex records only evidenced tone and routing rules. If there are no
+   examples, it starts with no high-confidence precedents.
+
+7. For the supervised pilot, Codex must first stop every Computer and Chrome tool and
+   show `YOUR TURN ON LINKEDIN`. You open LinkedIn yourself, check unread conversations
+   in both **Focused** and **Other**, copy no more than 25, close LinkedIn, return to the
+   local project, paste them into `LINKEDIN-INBOX-BATCH.md`, and say `BATCH READY`. Do
+   not paste passwords, codes, suspicious links, attachments, or sensitive information.
+
+   **DONE WHEN:** LinkedIn is closed, Codex processes only the text you pasted, and the
+   AI made no screenshot, mouse, keyboard, browser or page action on LinkedIn.
+
+8. Review `LINKEDIN-REPLY-QUEUE.md`. `READY TO SEND` contains routine drafts backed by
+   an evidenced precedent. `NEEDS YOUR DECISION` contains a stable S.No., sender, date,
+   concise summary, proposed reply, and reason for every uncertain item.
+
+   **DONE WHEN:** You review every draft, manually send any reply you approve in
+   LinkedIn, and return to mark each item `SENT AS WRITTEN`, `EDITED AND SENT`,
+   `SKIPPED`, or `KEEP FOR LATER`. Codex never claims a send without your confirmation.
+
+The weekly reminder works only while the computer is awake, ChatGPT is running and the
+local project remains available. It may control the approved local worker, then it
+stops. It does not access LinkedIn.
 
 # What to bring back
 
 Bring the laptop or screenshots that show:
 
 - Email project open with `EMAIL-TRIAGE-REPORT.md`.
-- Drive project open with `DRIVE-INVENTORY.md`.
+- Drive project open with `DRIVE-INDEX.md` and its saved cursor.
 - The final evidence row and validator pass in each project.
-- Optional: `LINKEDIN-DRAFTS.md` marked `DRAFT - NOT PUBLISHED`.
+- Optional: approved Saturday schedule, tone/precedent file, numbered reply queue,
+  cursor, employee-confirmed outcomes, and validator pass. Do not show message bodies.
+- The three-line final readback from `THREE-WORKER-GO-LIVE-CHECKLIST.md`: Email and
+  Drive are `LIVE FOR ME` or show an exact blocker; LinkedIn is `LIVE FOR ME,
+  OPTIONAL`, `NOT ENABLED BY CHOICE`, or shows an exact blocker.
 
 Do not bring email bodies, passwords, one-time codes, private HR details, banking
 information, or sensitive Drive content. Show the safe report headings and proof.
@@ -376,9 +472,11 @@ Stop and use the Setup Helper if:
 
 - the correct folder is not visible;
 - the app or button names do not match;
-- the company plugin cannot be installed or connected;
+- the company app cannot be enabled or connected;
 - the wrong account is connected;
 - a permission asks for Full access;
+- a permission asks for Always allow, the whole computer or a screen outside this task;
+- Codex or Chrome remains in control when LinkedIn is about to open;
 - the AI asks for a password, one-time code, Terminal, PowerShell, Command Prompt,
   Python, a CLI, Git or GitHub;
 - the task reaches medical, dosage, certification, legal, spend, credentials, banking,
@@ -392,9 +490,6 @@ problem. Abilash receives owner decisions and every Gate 0 issue.
 - ChatGPT quickstart: https://learn.chatgpt.com/docs/quickstart
 - ChatGPT desktop app: https://learn.chatgpt.com/docs/app
 - Projects and chats: https://learn.chatgpt.com/docs/projects
-- Plugins: https://learn.chatgpt.com/docs/plugins
+- Apps: https://help.openai.com/en/articles/11487775-connectors-in-chatgpt
 - Email inbox use case: https://learn.chatgpt.com/use-cases/manage-your-inbox
-
-Teaching pattern adapted from the owner-shared Outskill document, “Build Your Own
-Prompts Using Meta Prompts - For Videos”: show the whole loop, give an exact prompt,
-show what a good result looks like, then repeat the loop.
+- Computer Use with Codex: https://learn.chatgpt.com/use-cases/use-your-computer-with-codex

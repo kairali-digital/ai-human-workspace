@@ -8,6 +8,33 @@ The Setup Helper gives the suit its first safe connection to the correct company
 
 Use this before asking the employee to troubleshoot. It works even when the desktop app is not installed yet.
 
+## Current distribution model
+
+The protected public `kairali-digital/ai-human-workspace` release v1.5.0 is the clean setup and update source. Public-read access needs no invitation or collaborator seat. Verify the release and obtain the complete Kairali reference kit, then open a separate work project: the named private operations repository only when the employee has been assigned it, otherwise an approved standalone local worker.
+
+Never place live company work, employee state or secrets in the public distribution repository. Installing the reference kit does not activate the Akshar or Rahul skills. Install a governed skill only after an explicit role decision. Update or remove managed system/components only at a safe checkpoint; preserve employee state and keep the recovery archive.
+
+## Three-worker activation rule
+
+The public kit makes the Daily Email Triage, Full Drive Index and optional Saturday
+LinkedIn Message Assistant starters available. Availability is not activation. Work on
+one separate worker at a time and show one unavoidable login, account choice or
+permission at a time.
+
+- Mark Email **LIVE FOR THIS EMPLOYEE** only after the approved Gmail account, chosen
+  local time and time zone, pilot, filing-mode ruling, automation card and validator
+  all match.
+- Mark Drive **LIVE FOR THIS EMPLOYEE** only after `FULL DRIVE INDEX` completes every
+  connector-supported scope through batches no larger than 25 and its CSV, summary,
+  final cursor and validator pass. `TEST 25` is setup proof, not completed homework.
+- Mark LinkedIn **LIVE FOR THIS EMPLOYEE, OPTIONAL** only after the employee chooses it
+  and the Saturday schedule, local-control proof, `YOUR TURN ON LINKEDIN` handoff,
+  manually supplied pilot, queue and cursor pass. If it is declined, record **NOT
+  ENABLED BY CHOICE**.
+
+Never infer “live” from downloaded, installed or connected. Verify the visible worker
+proof and evidence log.
+
 ## How the employee starts
 
 1. If ChatGPT is open, start a new chat.
@@ -41,4 +68,4 @@ Codex is open inside the correct project and answers this without asking for an 
 Read AGENTS.md and MASTER_CURSOR.md. Tell me the one live task, or say NOT SET. Change nothing.
 ```
 
-If the employee cannot sign in, cannot see the company invitation or must approve access, the helper presents that one human action and waits. It never asks for the employee's secret information.
+If the employee cannot sign in, cannot see a required private-project invitation or must approve access, the helper presents that one human action and waits. A public-kit download never requires an invitation. The helper never asks for the employee's secret information.

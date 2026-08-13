@@ -59,7 +59,9 @@ def main():
     atomic_json(component_path, components)
 
     included = {}
-    ignored_parts = {".git", ".pytest_cache", "__pycache__", "dist"}
+    # Portal source and hosted training binaries have their own manifest and CI
+    # gate. They must not enter the installable workspace release proof.
+    ignored_parts = {".git", ".pytest_cache", "__pycache__", "dist", "portal"}
     for path in sorted(root.rglob("*")):
         if (
             not path.is_file()

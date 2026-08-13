@@ -2,8 +2,8 @@ DRIVE INVENTORY AI HUMAN - FIRST SCREEN
 
 1. Open START-HERE.md.
 2. Follow only one numbered action at a time.
-3. Choose TEST 25 or FULL DRIVE INDEX. Full mode is recommended.
-4. DONE WHEN DRIVE-INDEX.csv, DRIVE-INDEX.md and DRIVE-INDEX-CURSOR.md are visible and Codex says Drive was unchanged.
+3. Choose TEST 25 for setup proof or FULL DRIVE INDEX for completed company homework.
+4. LIVE FOR ME only when full scope coverage, DRIVE-INDEX.csv, DRIVE-INDEX.md, the final cursor and validator agree and Codex says Drive was unchanged.
 
 You do not need Terminal, PowerShell, Command Prompt, Python, Git, GitHub or VS Code.
 

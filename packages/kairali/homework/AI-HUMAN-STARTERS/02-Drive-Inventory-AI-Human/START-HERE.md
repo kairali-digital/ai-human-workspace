@@ -38,7 +38,8 @@ Do not teach me how the machinery works unless I ask. Start now by checking what
 4. Complete only a provider login or account-choice screen yourself. Never paste a
    password or one-time code into chat.
 5. Choose `TEST 25` for one practice batch or `FULL DRIVE INDEX` to index everything
-   the connected company account can see. Full mode is recommended.
+   the connected company account can see. Full mode is required for completed company
+   homework; test mode proves setup only.
 6. Stop when Codex shows the index, coverage report and proof.
 
 Do not add this folder to the Email Triage project. Each AI human keeps separate memory
@@ -60,8 +61,9 @@ approved company account. If it is missing or disconnected, do not troubleshoot 
 and do not ask for my password. Show me only the next click or login I must do, wait
 for me, and verify the connection before continuing.
 
-When the approved company Drive is connected, ask me one question: Choose TEST 25 or
-FULL DRIVE INDEX (recommended). Wait for my answer. Do not ask another setup question.
+When the approved company Drive is connected, ask me one question: Choose TEST 25 for
+setup proof or FULL DRIVE INDEX for completed company homework. Wait for my answer. Do
+not ask another setup question.
 
 For either choice, read metadata only. Never open or download file contents. Use batches
 of no more than 25 items and checkpoint after every batch.
@@ -114,6 +116,10 @@ workspace.
   after every supported connector scope has no next page and lists coverage gaps.
 - The index says file contents were not opened and Drive was not changed.
 - Codex says the workspace validator passed.
+
+Mark this worker **LIVE FOR ME** only after `FULL DRIVE INDEX` and the final validator
+pass. `TEST 25` remains a valid bounded setup proof, but it does not complete the
+company homework.
 
 An installation or a connected account by itself is not homework proof. The visible
 index files and the evidence rows are the proof. The local index helps Codex find names,

@@ -4,6 +4,8 @@
 
 > You are learning to wear Codex like an Iron Man suit. You provide the mission and judgment. Codex performs approved work through a controlled autonomous loop.
 
+Before this role mission, use `people/ALL-EMPLOYEES.md` to verify the common three-worker setup: Daily Email and Full Drive are required; Saturday LinkedIn is optional. Available in the kit is not live for you until the named proof passes.
+
 Your mission is one ruled website-port task after the inventory and first-site gates are satisfied. You choose and approve the task. Codex audits, ports, tests and records proof inside the Web lane. Nothing goes live without the required human gate.
 
 **Your list:** Kairali Domain Register. Brochure sites port. Shops and booking sites stay on WordPress. Blogs are a later run.

@@ -1,71 +1,71 @@
 1
-00:00:00,000 --> 00:00:20,000
-This is the homework for anyone from the meeting who did not receive a named start or homework page. You will build two tiny A I humans. Email Triage is first. Drive Inventory is second. The Saturday LinkedIn Message Assistant is optional after both are complete.
+00:00:00,000 --> 00:00:23,000
+This is the homework for anyone from the meeting who did not receive a named start or homework page. The kit makes three starters available, but it does not activate your accounts or schedules. Email Triage and Full Drive Index are required. The Saturday LinkedIn Message Assistant is optional after both are complete.
 
 2
-00:00:20,000 --> 00:00:42,000
+00:00:23,000 --> 00:00:46,030
 Here is the whole loop before we begin. Find the pack. Copy one starter folder. Open that folder as its own local project. Connect only the app it needs. Paste the exact prompt. For Email, choose your daily time, prove the pilot and verify the daily automation. Stop when the result and validator pass are visible.
 
 3
-00:00:42,000 --> 00:01:18,000
+00:00:46,030 --> 00:01:21,060
 You do not use Terminal or type commands. Keep Ask for approval. Never choose Full access or Always allow. Login happens on the provider screen. Never paste a password or one-time code into chat. Email begins with a read-only pilot. Later safe filing needs your approval and never sends, deletes or changes a permanent Gmail filter. Drive stays unchanged. For LinkedIn, Computer control may help inside the local project, but it stops before LinkedIn appears. You manually paste message text, review every draft and manually press Send.
 
 4
-00:01:18,000 --> 00:01:36,000
+00:01:21,060 --> 00:01:37,060
 If any button, app or folder is missing, stop. Open a normal Chat G P T chat. Open the prompt file in the pack. Copy Prompt Zero, the complete Setup Helper rescue. The helper gives you one action, waits, and verifies it before continuing.
 
 5
-00:01:36,000 --> 00:01:50,000
+00:01:37,060 --> 00:01:52,060
 On a Mac, open Finder, click Downloads and double-click the zip. On Windows, open File Explorer, click Downloads, right-click the zip and choose Extract All. Done when the normal folder shows the guide and A I Human Starters.
 
 6
-00:01:50,000 --> 00:02:08,000
+00:01:52,060 --> 00:02:10,060
 Inside Documents, make one folder named A I Humans. Copy starter zero one, Email Triage, into it. Then copy starter zero two, Drive Inventory, beside it. Keep the downloaded pack untouched. Done when the two copied folders are separate.
 
 7
-00:02:08,000 --> 00:02:28,000
+00:02:10,060 --> 00:02:30,090
 Check whether the Chat G P T desktop app is already installed. If it is, open it. Do not install it again. Choose Codex, open a folder, and select the Email Triage folder. Keep Ask for approval. Done when the Email project can see A G E N T S dot M D.
 
 8
-00:02:28,000 --> 00:02:47,000
+00:02:30,090 --> 00:02:51,090
 Open Settings, then Apps, and select Gmail. If it is already connected, return to the Email project. If it is not connected, choose Connect and complete the provider screen, then start a new chat in the Email project. Choose only the approved company account. Done when Codex verifies the connection.
 
 9
-00:02:47,000 --> 00:03:10,000
+00:02:51,090 --> 00:03:15,090
 Open the prompt file. Copy all of Prompt One, replace the name box and paste it into the Email project. Do not shorten it. Codex asks what local time you want the daily brief and confirms the computer's time zone. It then runs a read-only pilot of no more than twenty-five Inbox messages. Done when the Email Triage Report is visible.
 
 10
-00:03:10,000 --> 00:03:40,000
+00:03:15,090 --> 00:03:47,090
 Read the pilot report and the safe filing rules. Choose Brief Only or Brief plus Safe Filing. Safe filing uses approved A I labels only; it never deletes, sends, unsubscribes or changes permanent Gmail filters. Codex then creates one daily Email Importance Brief at your chosen local time. Verify the automation card, time zone, Email project and prompt. The computer must be awake with Chat G P T running when the job is due.
 
 11
-00:03:40,000 --> 00:03:54,530
+00:03:47,090 --> 00:04:01,090
 Now add the Drive Inventory folder as a second local project. Do not add it to the Email project. Start a new chat inside the Drive project. Done when Email and Drive appear as separate projects.
 
 12
-00:03:54,530 --> 00:04:16,530
-Open Settings, then Apps, and select Google Drive. If it is not connected, choose Connect and use the approved company account. Copy all of Prompt Two, replace the name box, and paste it into the Drive project. Choose Test Twenty Five or Full Drive Index. Every batch is no more than twenty-five items and ends with a saved checkpoint.
+00:04:01,090 --> 00:04:26,120
+Open Settings, then Apps, and select Google Drive. If it is not connected, choose Connect and use the approved company account. Copy all of Prompt Two, replace the name box, and paste it into the Drive project. Test Twenty Five proves setup only. Choose Full Drive Index to complete the company homework. Every batch is no more than twenty-five items and ends with a saved checkpoint.
 
 13
-00:04:16,530 --> 00:04:41,460
+00:04:26,120 --> 00:04:52,790
 The Drive project creates a CSV index, a summary and a saved cursor. Test Twenty Five stops after one batch and says the full Drive was not indexed. Full Drive Index continues in checkpointed batches until every connector-visible scope has no next page. Missing facts say Unknown. Sensitive titles say Human Review. No file content is opened and Drive is not changed.
 
 14
-00:04:41,460 --> 00:05:06,460
+00:04:52,790 --> 00:05:18,460
 The LinkedIn project is optional. Do it only after Email and Drive pass. Copy starter zero three, open it separately, and paste Prompt Three. Choose the local Saturday time and confirm the time zone. Close every LinkedIn tab. Choose Computer from the at tools menu and approve only this local project and current task. Keep Ask for approval. Never choose Full access or Always allow.
 
 15
-00:05:06,460 --> 00:05:32,530
+00:05:18,460 --> 00:05:44,460
 Before LinkedIn opens, Codex stops Computer and Chrome control and shows Your Turn on LinkedIn. You alone open LinkedIn, check Focused and Other, copy no more than twenty-five conversations, close LinkedIn, return to the local project and say Batch Ready. While LinkedIn is visible, Codex does not inspect the screen, move the mouse, type, read, copy, paste, click or send.
 
 16
-00:05:32,530 --> 00:05:56,530
+00:05:44,460 --> 00:06:08,460
 After Batch Ready, Codex processes only the local text you supplied. It prepares routine drafts and keeps uncertain replies in a numbered decision queue. It stops Computer and Chrome again. You review every draft, manually paste and press Send in LinkedIn, close LinkedIn, then return and confirm what you sent, edited, skipped or kept.
 
 17
-00:05:56,530 --> 00:06:27,530
-Bring the laptop or safe screenshots showing the Email report and active daily automation, plus the Drive index summary, saved cursor, evidence rows and validator passes. Optional LinkedIn proof shows only the schedule, counts, queue headings and employee-confirmed outcomes, not message bodies. Do not expose email bodies, private Drive content, passwords, codes, H R information or banking information. Your two required durable workers are the homework.
+00:06:08,460 --> 00:06:43,490
+Bring the laptop or safe screenshots showing the Email report and active daily automation, plus the completed Full Drive Index, final cursor, evidence rows and validator passes. Test Twenty Five proves Drive setup only; it does not complete the company homework. Optional LinkedIn proof shows only the schedule, counts, queue headings and employee-confirmed outcomes, not message bodies. If you decline LinkedIn, record Not Enabled By Choice. Do not expose private content, passwords, codes, H R information or banking information.
 
 18
-00:06:27,530 --> 00:06:49,860
-You provide the mission and judgment. Codex performs the approved work inside the boundaries. Start with Email. Prove the pilot and daily automation. Then build Drive. Add the Saturday LinkedIn assistant only if you choose it: task scoped control for the local worker, then human only LinkedIn access and sending.
+00:06:43,490 --> 00:07:08,490
+You provide the mission and judgment. Codex performs the approved work inside the boundaries. Start with Email and prove the daily automation. Then complete Full Drive Index. Add the Saturday LinkedIn assistant only if you choose it: task scoped control for the local worker, then human only LinkedIn access and sending. Finish with the three line go live readback.

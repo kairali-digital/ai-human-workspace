@@ -4,8 +4,8 @@ GENERAL-AI-HUMAN-HOMEWORK-001
 This transcript matches the narrated title-card video. No private employee data appears.
 
 SCENE 1: No named homework page? Start here.
-This is the homework for anyone from the meeting who did not receive a named start or homework page. You will build two tiny A I humans. Email Triage is first. Drive Inventory is second. The Saturday LinkedIn Message Assistant is optional after both are complete.
-DONE WHEN: You know which two projects are required.
+This is the homework for anyone from the meeting who did not receive a named start or homework page. The kit makes three starters available, but it does not activate your accounts or schedules. Email Triage and Full Drive Index are required. The Saturday LinkedIn Message Assistant is optional after both are complete.
+DONE WHEN: All three are available; none is live for you until its proof passes.
 
 SCENE 2: See the whole loop first
 Here is the whole loop before we begin. Find the pack. Copy one starter folder. Open that folder as its own local project. Connect only the app it needs. Paste the exact prompt. For Email, choose your daily time, prove the pilot and verify the daily automation. Stop when the result and validator pass are visible.
@@ -23,7 +23,7 @@ SCENE 5: Open the homework pack
 On a Mac, open Finder, click Downloads and double-click the zip. On Windows, open File Explorer, click Downloads, right-click the zip and choose Extract All. Done when the normal folder shows the guide and A I Human Starters.
 DONE WHEN: The normal folder shows the guide and AI-HUMAN-STARTERS.
 
-SCENE 6: Copy two separate starter folders
+SCENE 6: Copy the two required starter folders
 Inside Documents, make one folder named A I Humans. Copy starter zero one, Email Triage, into it. Then copy starter zero two, Drive Inventory, beside it. Keep the downloaded pack untouched. Done when the two copied folders are separate.
 DONE WHEN: The two copied folders sit beside each other.
 
@@ -48,8 +48,8 @@ Now add the Drive Inventory folder as a second local project. Do not add it to t
 DONE WHEN: Email and Drive appear as separate projects.
 
 SCENE 12: Connect Drive and run Prompt 2
-Open Settings, then Apps, and select Google Drive. If it is not connected, choose Connect and use the approved company account. Copy all of Prompt Two, replace the name box, and paste it into the Drive project. Choose Test Twenty Five or Full Drive Index. Every batch is no more than twenty-five items and ends with a saved checkpoint.
-DONE WHEN: Choose TEST 25 or FULL DRIVE INDEX; each batch is at most 25.
+Open Settings, then Apps, and select Google Drive. If it is not connected, choose Connect and use the approved company account. Copy all of Prompt Two, replace the name box, and paste it into the Drive project. Test Twenty Five proves setup only. Choose Full Drive Index to complete the company homework. Every batch is no more than twenty-five items and ends with a saved checkpoint.
+DONE WHEN: TEST 25 proves setup; FULL DRIVE completes homework; every batch is at most 25.
 
 SCENE 13: Check Drive proof
 The Drive project creates a CSV index, a summary and a saved cursor. Test Twenty Five stops after one batch and says the full Drive was not indexed. Full Drive Index continues in checkpointed batches until every connector-visible scope has no next page. Missing facts say Unknown. Sensitive titles say Human Review. No file content is opened and Drive is not changed.
@@ -67,10 +67,10 @@ SCENE 16: Run the supervised Saturday review
 After Batch Ready, Codex processes only the local text you supplied. It prepares routine drafts and keeps uncertain replies in a numbered decision queue. It stops Computer and Chrome again. You review every draft, manually paste and press Send in LinkedIn, close LinkedIn, then return and confirm what you sent, edited, skipped or kept.
 DONE WHEN: The numbered queue is saved; Codex never accesses or sends through LinkedIn.
 
-SCENE 17: Bring only safe proof
-Bring the laptop or safe screenshots showing the Email report and active daily automation, plus the Drive index summary, saved cursor, evidence rows and validator passes. Optional LinkedIn proof shows only the schedule, counts, queue headings and employee-confirmed outcomes, not message bodies. Do not expose email bodies, private Drive content, passwords, codes, H R information or banking information. Your two required durable workers are the homework.
-DONE WHEN: The two required workers and their durable proof are ready.
+SCENE 17: Check what is live for you
+Bring the laptop or safe screenshots showing the Email report and active daily automation, plus the completed Full Drive Index, final cursor, evidence rows and validator passes. Test Twenty Five proves Drive setup only; it does not complete the company homework. Optional LinkedIn proof shows only the schedule, counts, queue headings and employee-confirmed outcomes, not message bodies. If you decline LinkedIn, record Not Enabled By Choice. Do not expose private content, passwords, codes, H R information or banking information.
+DONE WHEN: Available in the kit is not live until the named proof passes.
 
 SCENE 18: Mission + judgment = you
-You provide the mission and judgment. Codex performs the approved work inside the boundaries. Start with Email. Prove the pilot and daily automation. Then build Drive. Add the Saturday LinkedIn assistant only if you choose it: task scoped control for the local worker, then human only LinkedIn access and sending.
-DONE WHEN: Bounded work + evidence turns a folder into an AI human.
+You provide the mission and judgment. Codex performs the approved work inside the boundaries. Start with Email and prove the daily automation. Then complete Full Drive Index. Add the Saturday LinkedIn assistant only if you choose it: task scoped control for the local worker, then human only LinkedIn access and sending. Finish with the three line go live readback.
+DONE WHEN: Two required live proofs and one optional status complete the readback.

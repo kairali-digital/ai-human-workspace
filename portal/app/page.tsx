@@ -53,6 +53,7 @@ export default async function Home() {
         </a>
         <nav aria-label="Portal navigation">
           <a href="#start">Start</a>
+          <a href="#workers">Workers</a>
           <a href="#access">Access</a>
           <a href="#downloads">Downloads</a>
           <a href="#technical">Technical</a>
@@ -86,7 +87,7 @@ export default async function Home() {
 
       <section className="release-strip" aria-label="Current source status">
         <div>
-          <span>Portal review package</span>
+          <span>Current portal package</span>
           <strong>v1.5.0</strong>
         </div>
         <div>
@@ -110,7 +111,7 @@ export default async function Home() {
           <article className="path path-employee">
             <span>For employees</span>
             <h3>Use the Setup Helper.</h3>
-            <p>No Terminal, Git or command line. Set your daily Email Importance Brief, complete the full Drive Index, then optionally add Saturday LinkedIn drafts with right-level local control and human-only LinkedIn access and sending.</p>
+            <p>No Terminal, Git or command line. Set your daily Email Importance Brief, complete the Full Drive Index, then optionally add Saturday LinkedIn drafts with right-level local control and human-only LinkedIn access and sending.</p>
             <a href="/downloads/EMPLOYEE-SETUP-AND-PROOF-GUIDE-v6-PUBLIC-KIT.pdf">Open employee guide</a>
           </article>
           <article className="path path-facilitator">
@@ -120,6 +121,32 @@ export default async function Home() {
             <a href="/downloads/FACILITATOR-RUNBOOK-v8-PUBLIC-KIT.pdf">Open facilitator runbook</a>
           </article>
         </div>
+      </section>
+
+      <section className="workers" id="workers" aria-labelledby="workers-heading">
+        <div className="section-intro">
+          <p className="eyebrow">Three-worker rollout</p>
+          <h2 id="workers-heading">Available here. Live only after your proof.</h2>
+          <p>The portal makes the approved starters available. It does not connect your accounts, choose your times or activate a worker. Each employee completes this readback in three separate local projects.</p>
+        </div>
+        <div className="worker-grid">
+          <article>
+            <span className="worker-status">Required</span>
+            <h3>Daily Email Triage</h3>
+            <p>Mark <strong>LIVE FOR ME</strong> only after the approved Gmail account, daily time and time zone, read-only pilot, filing-mode ruling, automation card and validator agree.</p>
+          </article>
+          <article>
+            <span className="worker-status">Required</span>
+            <h3>Full Drive Index</h3>
+            <p>Mark <strong>LIVE FOR ME</strong> only after every supported scope ends in checkpointed batches, and the CSV, summary, final cursor and validator agree. <strong>TEST 25 proves setup only.</strong></p>
+          </article>
+          <article>
+            <span className="worker-status worker-status-optional">Optional</span>
+            <h3>Saturday LinkedIn Message Assistant</h3>
+            <p>If chosen, prove the schedule, scoped local control, <strong>YOUR TURN ON LINKEDIN</strong> handoff, manually supplied pilot and local queue. Otherwise record <strong>NOT ENABLED BY CHOICE</strong>.</p>
+          </article>
+        </div>
+        <p className="worker-note">Downloaded, installed or connected alone does not mean live. Show the local report, cursor, evidence and validator.</p>
       </section>
 
       <section className="access-boundary" id="access" aria-labelledby="access-heading">

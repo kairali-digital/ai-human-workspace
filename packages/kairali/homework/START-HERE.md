@@ -19,7 +19,8 @@ the public distribution repository.
 ## What they do
 
 1. Required: `01-Email-Triage-AI-Human`.
-2. Required: `02-Drive-Inventory-AI-Human`.
+2. Required: `02-Drive-Inventory-AI-Human`; run `FULL DRIVE INDEX` for company
+   completion. `TEST 25` proves setup only.
 3. Optional after both: `03-LinkedIn-Message-Assistant-OPTIONAL`.
 
 Each is a separate standalone local project. The employee does not use Terminal,
@@ -27,6 +28,13 @@ PowerShell, Command Prompt, Python, a CLI, Git or GitHub Desktop.
 
 Future kit updates happen only at a safe checkpoint. Updating or removing the
 reference kit does not modify or delete the employee's copied homework workers.
+
+## Available is not live
+
+Open `THREE-WORKER-GO-LIVE-CHECKLIST.md` before starting. The kit makes all three
+starters available, but each employee still confirms their own approved account, time,
+permissions and proof. Email and Full Drive are required. LinkedIn is optional and may
+be recorded as `NOT ENABLED BY CHOICE`.
 
 ## Give the employee
 
@@ -50,13 +58,15 @@ account choice or permission. Never ask for a password or one-time code.
 - Email: the read-only 25-message pilot report, employee-approved daily time and time
   zone, ruled `BRIEF ONLY` or `BRIEF + SAFE FILING` mode, active daily automation and
   unchanged permanent Gmail filters.
-- Drive: choose `TEST 25` or `FULL DRIVE INDEX`; every batch is at most 25 and
-  checkpointed; index CSV, summary, cursor and scope coverage are visible; Drive unchanged.
+- Drive: `FULL DRIVE INDEX` reaches the end of every connector-supported scope; every
+  batch is at most 25 and checkpointed; index CSV, summary, final cursor and scope
+  coverage are visible; Drive is unchanged. `TEST 25` alone is not completion.
 - Optional LinkedIn: approved Saturday time and time zone, reminder-only automation,
   task-scoped Computer control proven in the local worker, the exact `YOUR TURN ON
   LINKEDIN` stop/handoff, one manually supplied batch of at most 25, a numbered reply
   queue, employee-confirmed outcomes, and no AI action on LinkedIn.
-- Each project says its workspace validator passed.
+- Each chosen project says its workspace validator passed and the final readback in
+  `THREE-WORKER-GO-LIVE-CHECKLIST.md` is complete.
 
 Do not accept “installed” or “connected” as completion. The visible local report and
 the evidence log are the proof.

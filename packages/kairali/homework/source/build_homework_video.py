@@ -15,7 +15,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 ROOT = Path(__file__).resolve().parents[1]
 WORKSPACE = ROOT.parents[5]
-TMP = WORKSPACE / "tmp" / "H-38-RIGHT-LEVEL-ACCESS" / "video-build"
+TMP = WORKSPACE / "tmp" / "H-39-THREE-WORKER-LIVE" / "video-build"
 OUTPUT = ROOT / "EVERYONE-ELSE-AI-HUMAN-HOMEWORK-VIDEO.mp4"
 TRANSCRIPT = ROOT / "EVERYONE-ELSE-AI-HUMAN-HOMEWORK-VIDEO-TRANSCRIPT.txt"
 SRT = ROOT / "EVERYONE-ELSE-AI-HUMAN-HOMEWORK-VIDEO-CAPTIONS.srt"
@@ -41,8 +41,8 @@ SCENES = [
         "title": "No named homework page? Start here.",
         "label": "WHO THIS IS FOR",
         "actions": ["Required 01  ·  Email Triage", "Required 02  ·  Drive Inventory", "Optional 03  ·  Saturday LinkedIn Assistant"],
-        "done": "You know which two projects are required.",
-        "narration": "This is the homework for anyone from the meeting who did not receive a named start or homework page. You will build two tiny A I humans. Email Triage is first. Drive Inventory is second. The Saturday LinkedIn Message Assistant is optional after both are complete.",
+        "done": "All three are available; none is live for you until its proof passes.",
+        "narration": "This is the homework for anyone from the meeting who did not receive a named start or homework page. The kit makes three starters available, but it does not activate your accounts or schedules. Email Triage and Full Drive Index are required. The Saturday LinkedIn Message Assistant is optional after both are complete.",
     },
     {
         "title": "See the whole loop first",
@@ -73,7 +73,7 @@ SCENES = [
         "narration": "On a Mac, open Finder, click Downloads and double-click the zip. On Windows, open File Explorer, click Downloads, right-click the zip and choose Extract All. Done when the normal folder shows the guide and A I Human Starters.",
     },
     {
-        "title": "Copy two separate starter folders",
+        "title": "Copy the two required starter folders",
         "label": "DOCUMENTS  ›  AI HUMANS",
         "actions": ["Make a folder named AI Humans", "Copy starter 01  ·  Email Triage", "Copy starter 02  ·  Drive Inventory"],
         "done": "The two copied folders sit beside each other.",
@@ -117,9 +117,9 @@ SCENES = [
     {
         "title": "Connect Drive and run Prompt 2",
         "label": "CHECK  →  CONNECT IF NEEDED",
-        "actions": ["Settings  →  Apps  →  Google Drive", "Connect the approved company account only if needed", "Copy PROMPT 2  →  replace name  →  paste in Drive project"],
-        "done": "Choose TEST 25 or FULL DRIVE INDEX; each batch is at most 25.",
-        "narration": "Open Settings, then Apps, and select Google Drive. If it is not connected, choose Connect and use the approved company account. Copy all of Prompt Two, replace the name box, and paste it into the Drive project. Choose Test Twenty Five or Full Drive Index. Every batch is no more than twenty-five items and ends with a saved checkpoint.",
+        "actions": ["Settings  →  Apps  →  Google Drive", "Connect the approved company account only if needed", "PROMPT 2  ·  TEST 25 setup or FULL DRIVE homework"],
+        "done": "TEST 25 proves setup; FULL DRIVE completes homework; every batch is at most 25.",
+        "narration": "Open Settings, then Apps, and select Google Drive. If it is not connected, choose Connect and use the approved company account. Copy all of Prompt Two, replace the name box, and paste it into the Drive project. Test Twenty Five proves setup only. Choose Full Drive Index to complete the company homework. Every batch is no more than twenty-five items and ends with a saved checkpoint.",
     },
     {
         "title": "Check Drive proof",
@@ -150,18 +150,18 @@ SCENES = [
         "narration": "After Batch Ready, Codex processes only the local text you supplied. It prepares routine drafts and keeps uncertain replies in a numbered decision queue. It stops Computer and Chrome again. You review every draft, manually paste and press Send in LinkedIn, close LinkedIn, then return and confirm what you sent, edited, skipped or kept.",
     },
     {
-        "title": "Bring only safe proof",
-        "label": "HOMEWORK COMPLETE",
-        "actions": ["Email report + active daily automation", "Drive index + saved cursor + validator passes", "Optional LinkedIn schedule + queue headings + confirmed outcomes"],
-        "done": "The two required workers and their durable proof are ready.",
-        "narration": "Bring the laptop or safe screenshots showing the Email report and active daily automation, plus the Drive index summary, saved cursor, evidence rows and validator passes. Optional LinkedIn proof shows only the schedule, counts, queue headings and employee-confirmed outcomes, not message bodies. Do not expose email bodies, private Drive content, passwords, codes, H R information or banking information. Your two required durable workers are the homework.",
+        "title": "Check what is live for you",
+        "label": "THREE-WORKER GO-LIVE READBACK",
+        "actions": ["Email  ·  LIVE FOR ME or exact blocker", "Full Drive  ·  LIVE FOR ME or exact blocker", "LinkedIn  ·  OPTIONAL LIVE, NOT ENABLED, or blocker"],
+        "done": "Available in the kit is not live until the named proof passes.",
+        "narration": "Bring the laptop or safe screenshots showing the Email report and active daily automation, plus the completed Full Drive Index, final cursor, evidence rows and validator passes. Test Twenty Five proves Drive setup only; it does not complete the company homework. Optional LinkedIn proof shows only the schedule, counts, queue headings and employee-confirmed outcomes, not message bodies. If you decline LinkedIn, record Not Enabled By Choice. Do not expose private content, passwords, codes, H R information or banking information.",
     },
     {
         "title": "Mission + judgment = you",
         "label": "YOUR AI HUMAN",
         "actions": ["Codex performs only the approved bounded work", "Start with Email  →  prove the daily brief", "Then build Drive  →  optional human-send LinkedIn comes last"],
-        "done": "Bounded work + evidence turns a folder into an AI human.",
-        "narration": "You provide the mission and judgment. Codex performs the approved work inside the boundaries. Start with Email. Prove the pilot and daily automation. Then build Drive. Add the Saturday LinkedIn assistant only if you choose it: task scoped control for the local worker, then human only LinkedIn access and sending.",
+        "done": "Two required live proofs and one optional status complete the readback.",
+        "narration": "You provide the mission and judgment. Codex performs the approved work inside the boundaries. Start with Email and prove the daily automation. Then complete Full Drive Index. Add the Saturday LinkedIn assistant only if you choose it: task scoped control for the local worker, then human only LinkedIn access and sending. Finish with the three line go live readback.",
     },
 ]
 

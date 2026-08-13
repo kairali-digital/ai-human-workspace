@@ -130,4 +130,5 @@ remaining queue count, and the exact manual-send boundary.
 - Codex says the workspace validator passed.
 
 This assistant may control the approved local worker, then stops. The employee alone
-accesses LinkedIn and sends.
+accesses LinkedIn and sends. If chosen, mark it **LIVE FOR ME, OPTIONAL** only when all
+of the Done when checks pass. If it is declined, record **NOT ENABLED BY CHOICE**.

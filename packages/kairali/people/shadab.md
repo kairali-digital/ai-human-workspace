@@ -4,6 +4,8 @@
 
 > You are learning to wear Codex like an Iron Man suit. You provide the mission and judgment. Codex performs approved work through a controlled autonomous loop.
 
+Before this role mission, use `people/ALL-EMPLOYEES.md` to verify the common three-worker setup: Daily Email and Full Drive are required; Saturday LinkedIn is optional. Available in the kit is not live for you until the named proof passes.
+
 Your mission is one Shopify task from your own list. You set the priority and judge the live result. Codex prepares and performs the approved change, proves it and keeps the undo path. Spend and Gate 0 always stop.
 
 **Your list:** Your Shopify sheet — 51 tasks, 14 of them High

@@ -1,4 +1,4 @@
-# Build Your First Two AI Humans
+# Two Required Workers. One Optional Worker.
 
 ## The “everyone else” homework - explained one tiny step at a time
 
@@ -15,7 +15,7 @@ not use the public distribution repository as a work project.
 > You are learning to wear Codex like an Iron Man suit. You provide the mission and
 > judgment. Codex performs approved work through a controlled autonomous loop.
 
-You will make two small workers:
+You will set up two required workers and may choose a third:
 
 1. **Daily Email Triage AI Human** - asks what local time you want the brief, proves a
    read-only 25-message pilot, then runs a concise daily importance report. You choose
@@ -30,6 +30,20 @@ You will make two small workers:
 
 An AI human is one folder with one job. Each worker gets a separate folder so their
 instructions, state and proof never mix.
+
+## Available is not live
+
+The kit makes all three starter folders available. It does not connect your accounts,
+choose your times or activate your workers. Open
+`THREE-WORKER-GO-LIVE-CHECKLIST.md` and keep it beside this guide.
+
+- Email is required and is live for you only after its account, schedule, pilot,
+  filing-mode ruling, automation and validator agree.
+- Full Drive Index is required and is live for you only after every supported scope,
+  output file, final cursor and validator agree. `TEST 25` proves setup only.
+- Saturday LinkedIn is optional. If you choose it, its schedule, scoped local-control
+  handoff, manually supplied pilot, queue and validator must agree. If you decline it,
+  record `NOT ENABLED BY CHOICE`.
 
 ## The whole loop at a glance
 
@@ -369,6 +383,10 @@ Stop when all of these are visible:
 Drive account alone is not completion. The index helps Codex find files later, but
 opening a file later still needs current Drive permission and a new approved task.
 
+For company homework, stop after `TEST 25` only if setup is blocked and record that
+blocker. The Drive worker is marked **LIVE FOR ME** only after `FULL DRIVE INDEX`
+finishes every supported scope and the final validator passes.
+
 # Optional bonus — Weekly LinkedIn Message Assistant
 
 Do this only after both required projects pass.
@@ -441,6 +459,9 @@ Bring the laptop or screenshots that show:
 - The final evidence row and validator pass in each project.
 - Optional: approved Saturday schedule, tone/precedent file, numbered reply queue,
   cursor, employee-confirmed outcomes, and validator pass. Do not show message bodies.
+- The three-line final readback from `THREE-WORKER-GO-LIVE-CHECKLIST.md`: Email and
+  Drive are `LIVE FOR ME` or show an exact blocker; LinkedIn is `LIVE FOR ME,
+  OPTIONAL`, `NOT ENABLED BY CHOICE`, or shows an exact blocker.
 
 Do not bring email bodies, passwords, one-time codes, private HR details, banking
 information, or sensitive Drive content. Show the safe report headings and proof.

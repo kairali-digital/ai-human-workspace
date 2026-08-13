@@ -64,11 +64,11 @@ export const downloadGroups: DownloadGroup[] = [
   },
   {
     title: "Homework",
-    description: "The daily Email Importance Brief and Drive Index are required. The Saturday LinkedIn Message Assistant is optional after both pass.",
+    description: "Daily Email and Full Drive Index are required. TEST 25 proves Drive setup only. Saturday LinkedIn is optional after both pass.",
     items: [
       {
         label: "Homework pack",
-        description: "Guide, prompts, video, captions and three starters: chosen-time daily email brief, TEST 25 or resumable FULL DRIVE INDEX, plus optional Saturday LinkedIn drafts with task-scoped local control and human-only LinkedIn access and sending.",
+        description: "Guide, prompts, video, captions, go-live checklist and three starters: chosen-time daily email brief, resumable FULL DRIVE INDEX, plus optional Saturday LinkedIn drafts with task-scoped local control and human-only LinkedIn access and sending.",
         file: "EVERYONE-ELSE-AI-HUMAN-HOMEWORK-PACK.zip",
         format: "ZIP",
       },

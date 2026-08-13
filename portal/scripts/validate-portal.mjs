@@ -45,7 +45,7 @@ const nextConfig = await readFile(path.join(root, "next.config.ts"), "utf8");
 const robots = await readFile(path.join(root, "app", "robots.ts"), "utf8");
 const visible = `${page}\n${await readFile(path.join(root, "content", "site-data.ts"), "utf8")}`;
 
-for (const phrase of ["Download everything", "Use the Setup Helper", "daily Email Importance Brief", "chosen-time daily email brief", "FULL DRIVE INDEX", "Saturday LinkedIn Message Assistant", "right-level local control", "human-only LinkedIn access and sending", "@Computer", "YOUR TURN ON LINKEDIN", "The portal cannot grant computer access", "GitHub stays the approved source of truth", "No login required"]) {
+for (const phrase of ["Download everything", "Use the Setup Helper", "daily Email Importance Brief", "chosen-time daily email brief", "FULL DRIVE INDEX", "Saturday LinkedIn Message Assistant", "right-level local control", "human-only LinkedIn access and sending", "Available here. Live only after your proof.", "LIVE FOR ME", "TEST 25 proves setup only", "NOT ENABLED BY CHOICE", "@Computer", "YOUR TURN ON LINKEDIN", "The portal cannot grant computer access", "GitHub stays the approved source of truth", "No login required"]) {
   if (!visible.includes(phrase)) issues.push(`visible portal copy lacks: ${phrase}`);
 }
 if (!layout.includes("index: false") || !layout.includes("follow: false")) issues.push("metadata robots are not noindex and nofollow");

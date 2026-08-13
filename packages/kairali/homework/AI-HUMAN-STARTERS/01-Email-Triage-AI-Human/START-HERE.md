@@ -120,4 +120,5 @@ evidence log and validate this workspace.
 - Codex says the workspace validator passed.
 
 A connected app or account is not proof. The report, active automation,
-recorded schedule and evidence row are the proof.
+recorded schedule and evidence row are the proof. Mark this worker **LIVE FOR ME** only
+when all of the Done when checks pass.

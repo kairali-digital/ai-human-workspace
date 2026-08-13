@@ -4,6 +4,8 @@
 
 > You are learning to wear Codex like an Iron Man suit. You provide the mission and judgment. Codex performs approved work through a controlled autonomous loop.
 
+Before this role mission, use `people/ALL-EMPLOYEES.md` to verify the common three-worker setup: Daily Email and Full Drive are required; Saturday LinkedIn is optional. Available in the kit is not live for you until the named proof passes.
+
 Your first mission is the fleet inventory that unlocks Deepu; the FMS audit follows under feature freeze. You judge infrastructure risk and approve access. Codex inventories or audits in bounded batches, records evidence and never changes DNS or releases the freeze on its own.
 
 **Your list:** Fleet inventory first. Then FMS sheets, Google Sheets and Apps Scripts — 200 in all

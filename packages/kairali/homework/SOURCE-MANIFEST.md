@@ -32,6 +32,12 @@
   approved local worker or a named non-LinkedIn public page, then stops all such tools
   and hands control to the employee before LinkedIn appears. A portal button does not
   pretend to grant operating-system access.
+- Owner instruction H-39, 13 Aug 2026: audit the instructions, homework,
+  presentations, repository and portal together; make the three worker pathways
+  visible everywhere and publish the governed repository and stable noindex portal
+  only after validation. The shared kit being available must not be confused with an
+  employee worker being activated. Email and Full Drive are required; `TEST 25` is
+  Drive setup proof only; Saturday LinkedIn remains optional.
 - LinkedIn User Agreement and Help Center, checked 13 Aug 2026: unauthorized bots,
   scraping and browser automation are prohibited. The company starter therefore uses
   employee-supplied text and a human-only send gate.
@@ -77,6 +83,9 @@
   every connector-visible page in checkpointed batches of at most 25. Unsupported
   scopes are reported as coverage gaps; the index never implies access the connector
   did not provide.
+- For the company homework completion readback, `TEST 25` proves connector and cursor
+  setup only. `FULL DRIVE INDEX` must finish every supported scope before the Drive
+  worker is marked live for that employee.
 - Email first records the employee's daily local time and time zone, then reads no more
   than 25 Inbox messages and changes nothing. After the pilot passes, the employee
   chooses `BRIEF ONLY` or `BRIEF + SAFE FILING`; every later batch remains no larger than 25, and the first

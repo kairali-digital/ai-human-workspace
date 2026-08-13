@@ -2,6 +2,11 @@ KAIRALI - EVERYONE ELSE AI-HUMAN HOMEWORK - COPY-PASTE PROMPTS
 
 Use this only when you do not already have a named start or homework page.
 
+All three starters are available in the kit. Run PROMPT 1 and PROMPT 2 in separate
+projects; FULL DRIVE INDEX is required for completed company homework and TEST 25 is
+setup proof only. PROMPT 3 is optional. Use THREE-WORKER-GO-LIVE-CHECKLIST.md for the
+final readback. Downloaded, installed or connected alone does not mean live.
+
 ============================================================
 PROMPT 0 - SETUP HELPER RESCUE
 ============================================================
@@ -109,8 +114,9 @@ approved company account. If it is missing or disconnected, do not troubleshoot 
 and do not ask for my password. Show me only the next click or login I must do, wait
 for me, and verify the connection before continuing.
 
-When the approved company Drive is connected, ask me one question: Choose TEST 25 or
-FULL DRIVE INDEX (recommended). Wait for my answer. Do not ask another setup question.
+When the approved company Drive is connected, ask me one question: Choose TEST 25 for
+setup proof or FULL DRIVE INDEX for completed company homework. Wait for my answer. Do
+not ask another setup question.
 
 For either choice, read metadata only. Never open or download file contents. Use batches
 of no more than 25 items and checkpoint after every batch.

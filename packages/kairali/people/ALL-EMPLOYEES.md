@@ -29,6 +29,23 @@ Use `packages/kairali/homework/START-HERE.md` inside the public v1.5.0 company k
    in batches of no more than 25, review the numbered drafts, and manually send anything
    approved.
 
+### What “live for me” means
+
+The public kit and portal make all three starters available; they do not activate your
+accounts or schedules.
+
+- **Email — LIVE FOR ME:** the approved Gmail account, chosen local time and time zone,
+  pilot report, filing-mode ruling, automation card and validator all match.
+- **Drive — LIVE FOR ME:** `FULL DRIVE INDEX` has reached the end of every supported
+  scope in checkpointed batches, and the CSV, summary, final cursor and validator pass.
+  `TEST 25` proves setup only; it is not the completed company homework.
+- **LinkedIn — LIVE FOR ME, OPTIONAL:** you chose it; the Saturday schedule, scoped
+  local-control proof, `YOUR TURN ON LINKEDIN` handoff, manually supplied pilot, queue
+  and cursor pass. Otherwise record **NOT ENABLED BY CHOICE**.
+
+Downloaded, installed or connected alone is not live. Show the visible proof inside
+each separate worker.
+
 This fallback does not replace a named employee plan. Email never sends, deletes,
 unsubscribes, opens attachments or silently changes permanent Gmail filters; reversible
 filing requires the employee's explicit rule. Drive remains read-only. Both projects

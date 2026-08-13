@@ -4,6 +4,8 @@
 
 > You are learning to wear Codex like an Iron Man suit. You provide the mission and judgment. Codex performs approved work through a controlled autonomous loop.
 
+Before this role mission, use `people/ALL-EMPLOYEES.md` to verify the common three-worker setup: Daily Email and Full Drive are required; Saturday LinkedIn is optional. Available in the kit is not live for you until the named proof passes.
+
 Your mission is to close your Marketing rows in the Master Delegation Sheet. You choose the row and judge the result. Codex sorts, prepares, executes the approved batch and records proof.
 
 **Your list:** Master Delegation Sheet — your own rows

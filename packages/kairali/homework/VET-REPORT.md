@@ -1,17 +1,20 @@
-# VET H-38 RIGHT-LEVEL ACCESS REFRESH — 13 August 2026
+# VET H-39 THREE-WORKER LIVE ALIGNMENT — 13 August 2026
 
 **VERDICT: SHIP**
 
 **BLOCKERS: none.**
 
-The task-scoped `@Computer`/`@Chrome` proof, real permission prompt, Ask-for-approval
-rule and exact `YOUR TURN ON LINKEDIN` stop/handoff pass independent review. Computer
-Use is restricted to the approved local worker; Chrome is restricted to a named
-non-LinkedIn public page. Every tool stops before LinkedIn appears, and the employee
-alone reads, copies, pastes, clicks and sends there.
+- Daily Email and `FULL DRIVE INDEX` are required; `TEST 25` is setup proof only.
+- Saturday LinkedIn is optional and uses the explicit `LIVE FOR ME, OPTIONAL` or
+  `NOT ENABLED BY CHOICE` readback.
+- Availability in the kit is not described as activation in an employee account.
+- Every processing batch remains capped at 25 with a durable checkpoint.
+- All 12 people prompts, checklist, starter files, guide, captions and transcript
+  match the governed release copies.
+- The 11-page guide, complete 428.546-second video and 18 ordered captions pass
+  structural, visual and accessibility review.
+- Homework, company, workspace and outer archives are deterministic, path-safe,
+  proof-covered and secret-scan clean.
 
-The no-more-than-25 batch/checkpoint rule, all 13 lifecycle tests, Mac/Windows recovery,
-149-file release proof, 95-file company component, 12 people-prompt identities,
-documents, decks, complete 409.912-second video, 18 captions, portal integrity,
-accessibility and secret/path boundaries passed. This verdict applies only when the
-distributed ZIP matches its final SHA-256 sidecar.
+This verdict applies only when the exact shipped homework ZIP matches its adjacent
+SHA-256 sidecar and the complete final release proof passes.

@@ -19,6 +19,13 @@ Drive content or private evidence.
   access and sending;
 - exact copy-paste prompts, Mac/Windows guide, transcript, captions and narrated video.
 
+## What “live” means
+
+The bundle makes all three starters available. It does not activate employee accounts
+or schedules. Use `homework/THREE-WORKER-GO-LIVE-CHECKLIST.md` for the final readback.
+Email and Full Drive are required; `TEST 25` is Drive setup proof only. Saturday
+LinkedIn is optional and may be recorded as `NOT ENABLED BY CHOICE`.
+
 ## Optional governed skills
 
 - `kairali-akshar-marketing-science` — explicit role opt-in for evidence-led marketing;

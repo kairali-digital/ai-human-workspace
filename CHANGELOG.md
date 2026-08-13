@@ -13,6 +13,12 @@ All notable changes are recorded here in plain language.
   send; the employee performs and confirms every LinkedIn action.
 - Refresh the starter, prompts, guides, homework video/captions, decks, release proofs
   and noindex portal to the same right-level-access behavior.
+- Add one three-worker go-live readback across the common/named prompts, Setup Helper,
+  homework, presentations, repository and portal. The public kit being available is
+  distinct from an employee worker being activated and proven.
+- Make `FULL DRIVE INDEX` the required company-homework completion state; `TEST 25`
+  remains a safe setup proof. Saturday LinkedIn remains optional and may be recorded
+  as `NOT ENABLED BY CHOICE`.
 
 ## [1.4.0] - 2026-08-13
 

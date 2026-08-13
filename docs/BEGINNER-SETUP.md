@@ -55,6 +55,24 @@ LinkedIn. The helper installs
 an Akshar or Rahul governed skill only when the employee's approved role or the owner
 explicitly names that skill. No employee chooses from the machine's full skill list.
 
+## Three-worker go-live readback
+
+The public kit makes the three starters available; it does not activate an employee's
+accounts or schedule. Use the complete
+[`THREE-WORKER-GO-LIVE-CHECKLIST.md`](../packages/kairali/homework/THREE-WORKER-GO-LIVE-CHECKLIST.md)
+after setup.
+
+- Daily Email is required and becomes **LIVE FOR ME** only after its account, chosen
+  schedule, pilot, mode, automation and validator agree.
+- Full Drive Index is required and becomes **LIVE FOR ME** only after full supported
+  scope coverage, final cursor, output files and validator agree. `TEST 25` is setup
+  proof only.
+- Saturday LinkedIn is optional. It becomes **LIVE FOR ME, OPTIONAL** only after its
+  schedule, scoped local-control handoff, manually supplied pilot, queue and validator
+  agree. Otherwise record **NOT ENABLED BY CHOICE**.
+
+Downloaded, installed or connected alone is not a completed worker.
+
 ## DONE WHEN
 
 Codex is open inside the employee's worker folder and answers this from the project

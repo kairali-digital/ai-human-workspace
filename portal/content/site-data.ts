@@ -74,7 +74,7 @@ export const downloadGroups: DownloadGroup[] = [
       },
       {
         label: "Homework guide",
-        description: "The nine-page printable employee guide.",
+        description: "The ten-page printable employee guide.",
         file: "EVERYONE-ELSE-AI-HUMAN-HOMEWORK-GUIDE.pdf",
         format: "PDF",
       },

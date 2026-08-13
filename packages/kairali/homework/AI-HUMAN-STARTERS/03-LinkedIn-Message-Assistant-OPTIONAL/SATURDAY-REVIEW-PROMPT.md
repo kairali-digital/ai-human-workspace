@@ -1,0 +1,58 @@
+# Saturday review prompt
+
+Use this prompt for the approved weekly reminder and any supervised manual run.
+
+```text
+Run LINKEDIN-WEEKLY-001 inside this local project.
+
+Read PARAMETERS.md, GATES.md, LINKEDIN-TONE-AND-PRECEDENTS.md,
+LINKEDIN-REPLY-QUEUE.md and LINKEDIN-REVIEW-CURSOR.md before doing anything.
+
+Do not sign in to LinkedIn, open or control LinkedIn, use a browser session, read the
+inbox, scrape, search, click a link, open an attachment, send, or change an account.
+The employee alone performs every LinkedIn action.
+
+Show only this first action:
+“Open LinkedIn yourself. Check unread conversations in both Focused and Other. Copy no
+more than 25 conversations into LINKEDIN-INBOX-BATCH.md. Include the sender display
+name or initials, date, relevant conversation text, and Focused or Other. Do not copy a
+password, code, private key, sensitive personal data, suspicious link, or attachment.
+Return here and say BATCH READY.”
+
+Wait. Do not continue until the employee says BATCH READY.
+
+Validate the pasted batch. If it has more than 25 conversations, process only the first
+25 and checkpoint the rest for a later batch. Preserve any unresolved items already in
+LINKEDIN-REPLY-QUEUE.md.
+
+For each new conversation, use only supplied text and evidenced precedents:
+
+1. READY TO SEND — use only when an explicit precedent or approved rule supports the
+   intent, facts, route, and tone. It remains a draft; never send it.
+2. NEEDS YOUR DECISION — use for missing context, no precedent, ambiguity, commitments,
+   confidential or consequential material, Gate 0, or any doubt. Give a stable S.No.,
+   sender, date, concise summary, proposed reply, and plain reason for the hold.
+3. NO REPLY / SKIP — use only when a confirmed rule supports no reply. Give the reason.
+
+Keep replies concise and faithful to LINKEDIN-TONE-AND-PRECEDENTS.md. Do not invent a
+relationship, fact, promise, meeting, deadline, introduction, contact, price, title,
+result, approval, or availability.
+
+Show the three sections and then stop. Say:
+“Review every draft. If you approve one, manually send it in LinkedIn. Then return and
+mark its S.No. as SENT AS WRITTEN, EDITED AND SENT with the final text, SKIPPED, or KEEP
+FOR LATER.”
+
+Wait for the employee's item-by-item outcomes. Never claim a send without confirmation.
+Learn only from SENT AS WRITTEN or EDITED AND SENT outcomes. Ask before turning a new
+outcome into a general routing rule.
+
+Update the queue and cursor only after outcomes are confirmed. A failed, partial, or
+abandoned run does not advance the successful cursor. Write LINKEDIN-SATURDAY-REPORT.md
+with the chosen schedule and counts for supplied, reviewed, ready drafts, decision
+holds, skips, employee-confirmed sends, unresolved queue items, and remaining batches.
+Do not put full message bodies in the report, ledger, or evidence log.
+
+Checkpoint after this batch. Offer the next batch only after the queue, cursor, today
+file, ledger, and evidence log are saved and the workspace validator passes.
+```

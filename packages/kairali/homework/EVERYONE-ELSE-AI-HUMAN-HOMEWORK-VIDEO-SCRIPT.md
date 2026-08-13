@@ -11,11 +11,12 @@
 ## Scene 1 - Who this is for
 
 **Screen:** “No named homework page? Start here.” Two required cards: Email Triage and
-Drive Inventory. One optional card: LinkedIn Draft.
+Drive Inventory. One optional card: Saturday LinkedIn Message Assistant.
 
 **Narration:** This is the homework for anyone from the meeting who did not receive a
 named start or homework page. You will build two tiny AI humans. Email Triage is first.
-Drive Inventory is second. LinkedIn Draft is optional after both are complete.
+Drive Inventory is second. The Saturday LinkedIn Message Assistant is optional after
+both are complete.
 
 ## Scene 2 - The whole loop
 
@@ -36,7 +37,8 @@ silent permanent Gmail-filter change.
 choose Full access. Login happens on the provider screen; never paste a password or
 one-time code into chat. Email begins with a read-only pilot. Later safe filing needs
 your approval and never sends, deletes or changes a permanent Gmail filter. Drive is
-unchanged and LinkedIn is not opened.
+unchanged. For LinkedIn, you manually paste message text, review every draft and
+manually press Send. Codex never opens or controls LinkedIn.
 
 ## Scene 4 - If the screen differs
 
@@ -132,30 +134,45 @@ Index continues in checkpointed batches until every connector-visible scope has 
 next page. Missing facts say Unknown. Sensitive titles say Human Review. No file
 content is opened and Drive is not changed.
 
-## Scene 14 - Optional LinkedIn draft
+## Scene 14 - Optional LinkedIn setup
 
 **Screen:** Only after both pass -> copy starter 03 -> separate project -> PROMPT 3 ->
-local draft only.
+choose Saturday time -> confirm time zone -> supply up to 25 prior reply pairs.
 
 **Narration:** The LinkedIn project is optional. Do it only after Email and Drive pass.
-Copy starter zero three, open it separately, and paste Prompt Three. Answer one safe
-question at a time. Done when the local draft says Draft - Not Published. Do not open
-LinkedIn.
+Copy starter zero three, open it separately, and paste Prompt Three. Choose the local
+Saturday time and confirm the time zone. You may paste up to twenty-five earlier
+incoming-message and sent-reply pairs so Codex learns only your evidenced tone. Done
+when the reminder card opens this local project only.
 
-## Scene 15 - Bring proof
+## Scene 15 - Run the supervised Saturday review
+
+**Screen:** You check Focused + Other -> paste <=25 -> READY TO SEND vs NEEDS YOUR
+DECISION -> you review and manually send -> confirm outcomes.
+
+**Narration:** You open LinkedIn yourself and check unread conversations in both
+Focused and Other. Paste no more than twenty-five into the local batch file. Codex
+prepares routine drafts and keeps uncertain replies in a numbered decision queue. You
+review every draft and manually press Send in LinkedIn. Return and confirm what you
+sent, edited, skipped or kept. Codex never accesses or sends through LinkedIn.
+
+## Scene 16 - Bring proof
 
 **Screen:** Email report + active daily automation + Drive index summary + saved cursor
-+ validator passes + optional draft.
++ validator passes + optional Saturday schedule and numbered queue.
 
 **Narration:** Bring the laptop or safe screenshots showing the Email report and active
 daily automation, plus the Drive index summary, saved cursor, evidence rows and
-validator passes. Do not expose email bodies, private Drive content, passwords, codes,
-HR information or banking information. Your two durable workers are the homework.
+validator passes. Optional LinkedIn proof shows only the schedule, counts, queue
+headings and employee-confirmed outcomes—not message bodies. Do not expose email bodies,
+private Drive content, passwords, codes, HR information or banking information. Your
+two required durable workers are the homework.
 
-## End card
+## Scene 17 - End card
 
 **Screen:** “Mission + judgment = you. Bounded work + proof = your AI human.”
 
 **Narration:** You provide the mission and judgment. Codex performs the approved work
 inside the boundaries. Start with Email. Prove the pilot and daily automation. Then
-build Drive.
+build Drive. Add the Saturday LinkedIn assistant only if you choose it, with human-only
+access and sending.

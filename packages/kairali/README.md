@@ -12,7 +12,9 @@ Drive content or private evidence.
 - a `TEST 25` or resumable `FULL DRIVE INDEX` choice; full mode enumerates all
   connector-visible metadata in checkpointed batches of at most 25 and creates a local
   future-searchable CSV, summary and cursor without opening or changing Drive files;
-- the optional local LinkedIn Draft worker;
+- the optional Weekly LinkedIn Message Assistant: employee-chosen Saturday time,
+  manually supplied message batches, evidenced tone, numbered drafts and human-only
+  LinkedIn access and sending;
 - exact copy-paste prompts, Mac/Windows guide, transcript, captions and narrated video.
 
 ## Optional governed skills

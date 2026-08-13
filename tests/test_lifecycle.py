@@ -82,7 +82,7 @@ class LifecycleTests(unittest.TestCase):
         worker = self.base / "Company Folder" / "Employee Workspace"
         result = self.install(worker)
         self.assertIn("AI-HUMAN INSTALL: PASS", result.stdout)
-        self.assertEqual((worker / ".ai-human/VERSION").read_text().strip(), "1.3.0")
+        self.assertEqual((worker / ".ai-human/VERSION").read_text().strip(), "1.4.0")
         self.assertIn("Example Holdings", (worker / "COMPANY.md").read_text())
         self.assertNotIn("{{", (worker / "PARAMETERS.md").read_text())
         self.assertEqual(self.run_cli("validate", worker).returncode, 0)
@@ -131,11 +131,11 @@ class LifecycleTests(unittest.TestCase):
         worker = self.base / "worker"
         self.install(worker)
 
-        new_release = self.base / "release-1.4.0"
+        new_release = self.base / "release-1.5.0"
         shutil.copytree(ROOT, new_release, ignore=shutil.ignore_patterns(".git", "__pycache__", "release-proof.json", "portal"))
         agent_rules = new_release / "core/AGENT-RULES.md"
-        agent_rules.write_text(agent_rules.read_text() + "\nRelease-test marker 1.4.0.\n", encoding="utf-8")
-        refresh_release(new_release, "1.4.0")
+        agent_rules.write_text(agent_rules.read_text() + "\nRelease-test marker 1.5.0.\n", encoding="utf-8")
+        refresh_release(new_release, "1.5.0")
 
         cursor = worker / "MASTER_CURSOR.md"
         cursor.write_text("# Master Cursor\n\n## LIVE TASK\n`TEST-1` — test checkpoint\n", encoding="utf-8")
@@ -157,26 +157,26 @@ class LifecycleTests(unittest.TestCase):
         deferred = self.run_cli("update", worker, "--source", new_release)
         self.assertIn("AI-HUMAN UPDATE: DEFERRED", deferred.stdout)
         self.assertEqual((worker / ".ai-human/VERSION").read_text(), before_defer_version)
-        self.assertIn("CORE-UPDATE-1.4.0", register.read_text())
+        self.assertIn("CORE-UPDATE-1.5.0", register.read_text())
 
         before_update_state = state_hashes(worker)
         updated = self.run_cli("update", worker, "--source", new_release, "--at-checkpoint")
         self.assertIn("AI-HUMAN UPDATE: PASS", updated.stdout)
-        self.assertEqual((worker / ".ai-human/VERSION").read_text().strip(), "1.4.0")
+        self.assertEqual((worker / ".ai-human/VERSION").read_text().strip(), "1.5.0")
         self.assertEqual(state_hashes(worker), before_update_state)
         self.assertIn("Release-test marker", (worker / ".ai-human/system/AGENT-RULES.md").read_text())
 
         before_rollback_state = state_hashes(worker)
-        rolled_back = self.run_cli("rollback", worker, "--version", "1.3.0")
+        rolled_back = self.run_cli("rollback", worker, "--version", "1.4.0")
         self.assertIn("AI-HUMAN ROLLBACK: PASS", rolled_back.stdout)
-        self.assertEqual((worker / ".ai-human/VERSION").read_text().strip(), "1.3.0")
+        self.assertEqual((worker / ".ai-human/VERSION").read_text().strip(), "1.4.0")
         self.assertEqual(state_hashes(worker), before_rollback_state)
         self.assertNotIn("Release-test marker", (worker / ".ai-human/system/AGENT-RULES.md").read_text())
 
         repeated = self.run_cli("update", worker, "--source", new_release, "--at-checkpoint")
         self.assertIn("AI-HUMAN UPDATE: PASS", repeated.stdout)
-        self.assertEqual((worker / ".ai-human/VERSION").read_text().strip(), "1.4.0")
-        matching_backups = list((worker / ".ai-human/backups").glob("1.3.0-before-1.4.0-*"))
+        self.assertEqual((worker / ".ai-human/VERSION").read_text().strip(), "1.5.0")
+        matching_backups = list((worker / ".ai-human/backups").glob("1.4.0-before-1.5.0-*"))
         self.assertEqual(len(matching_backups), 2)
 
     def test_component_catalog_skill_install_upgrade_and_remove(self):
@@ -240,6 +240,25 @@ class LifecycleTests(unittest.TestCase):
         self.assertIn("batches of no more than 25", email_daily)
         self.assertIn("EMAIL-RULE-REVIEW.md", email_daily)
         self.assertIn("Do not change a permanent Gmail filter", email_daily)
+        linkedin = starters / "03-LinkedIn-Message-Assistant-OPTIONAL"
+        for name in (
+            "SATURDAY-REVIEW-PROMPT.md", "LINKEDIN-TONE-AND-PRECEDENTS.md",
+            "LINKEDIN-REPLY-QUEUE.md", "LINKEDIN-REVIEW-CURSOR.md",
+            "LINKEDIN-INBOX-BATCH.md",
+        ):
+            self.assertTrue((linkedin / name).is_file(), name)
+        linkedin_start = (linkedin / "START-HERE.md").read_text(encoding="utf-8")
+        linkedin_weekly = (linkedin / "SATURDAY-REVIEW-PROMPT.md").read_text(encoding="utf-8")
+        linkedin_start_flat = " ".join(linkedin_start.split())
+        linkedin_weekly_flat = " ".join(linkedin_weekly.split())
+        self.assertIn("What local time every Saturday", linkedin_start_flat)
+        self.assertIn("both Focused and Other", linkedin_start_flat)
+        self.assertIn("no more than 25", linkedin_start_flat)
+        self.assertIn("READY TO SEND", linkedin_weekly_flat)
+        self.assertIn("NEEDS YOUR DECISION", linkedin_weekly_flat)
+        self.assertIn("manually send it in LinkedIn", linkedin_weekly_flat)
+        self.assertIn("The employee alone performs every LinkedIn action", linkedin_weekly_flat)
+        self.assertIn("Do not sign in to LinkedIn, open or control LinkedIn", linkedin_weekly_flat)
         self.run_cli("remove-pack", kit, expect=1)
         self.run_cli("remove-pack", kit, "--at-checkpoint")
         self.assertFalse(kit.exists())

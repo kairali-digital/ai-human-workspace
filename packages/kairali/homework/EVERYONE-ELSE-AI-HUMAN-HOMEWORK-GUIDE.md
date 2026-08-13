@@ -6,7 +6,7 @@ Use this guide only if you attended the meeting and do not already have a named 
 or homework page.
 
 This homework is part of the protected public
-`kairali-digital/ai-human-workspace` v1.3.0 company kit. The public kit is the clean
+`kairali-digital/ai-human-workspace` v1.4.0 company kit. The public kit is the clean
 setup and update source; it contains no live company work or secrets, so no GitHub
 invitation or collaborator seat is needed. Ask the Setup Helper to obtain and verify
 the kit. Then copy the Email and Drive starters into separate local work folders. Do
@@ -22,15 +22,17 @@ You will make two small workers:
    whether it is brief-only or may safely label and file clearly low-risk mail.
 2. **Drive Index AI Human** - choose a 25-item test or index every connector-visible
    Drive item in checkpointed batches of 25. It does not open file contents or change Drive.
-3. **Optional LinkedIn Draft AI Human** - makes a local draft from facts you supply. It
-   does not open LinkedIn or publish anything.
+3. **Optional Weekly LinkedIn Message Assistant** - at your chosen Saturday time,
+   prepares replies from message text you manually paste. It learns from your supplied
+   prior replies, keeps uncertain drafts for your decision, and never accesses or sends
+   through LinkedIn. You review and manually press **Send**.
 
 An AI human is one folder with one job. Each worker gets a separate folder so their
 instructions, state and proof never mix.
 
 ## The whole loop at a glance
 
-1. Ask the Setup Helper to find the verified public v1.3.0 company kit on your screen.
+1. Ask the Setup Helper to find the verified public v1.4.0 company kit on your screen.
 2. Make an `AI Humans` folder inside Documents.
 3. Copy the Email and Drive starter folders into it.
 4. Open one starter folder as a local project in the ChatGPT desktop app.
@@ -71,7 +73,7 @@ showing another.
 
 # Step 1 - find and open the verified company kit
 
-The preferred file is named `kairali-company-rollout-1.3.0.zip`. If your facilitator
+The preferred file is named `kairali-company-rollout-1.4.0.zip`. If your facilitator
 gave you the smaller homework-only file, it is named
 `EVERYONE-ELSE-AI-HUMAN-HOMEWORK-PACK.zip`. Both routes open this same homework. You
 do not need a GitHub invitation.
@@ -113,7 +115,7 @@ do not need a GitHub invitation.
    **DONE WHEN:** You can see `AI-HUMAN-STARTERS` and this guide.
 
 If the ZIP is not visible, do not search the whole computer. Paste the Setup Helper
-rescue. The helper checks Downloads, obtains the protected public v1.3.0 kit when safe,
+rescue. The helper checks Downloads, obtains the protected public v1.4.0 kit when safe,
 and asks Ambuj only if the approved source or access decision is missing.
 
 # Step 2 - make one home for your AI humans
@@ -366,29 +368,49 @@ Stop when all of these are visible:
 Drive account alone is not completion. The index helps Codex find files later, but
 opening a file later still needs current Drive permission and a new approved task.
 
-# Optional bonus - LinkedIn Draft AI Human
+# Optional bonus — Weekly LinkedIn Message Assistant
 
 Do this only after both required projects pass.
 
-1. Copy `03-LinkedIn-Draft-AI-Human-OPTIONAL` from the untouched starter pack into
+1. Copy `03-LinkedIn-Message-Assistant-OPTIONAL` from the untouched starter pack into
    Documents > AI Humans.
 
    **DONE WHEN:** The optional folder exists beside the other two.
 
 2. Add it as a third, separate local project in Codex.
 
-   **DONE WHEN:** The LinkedIn Draft project is open separately.
+   **DONE WHEN:** The LinkedIn Message Assistant project is open separately.
 
 3. Open `COPY-PASTE-PROMPTS.txt`. Copy everything under **PROMPT 3**. Replace
-   `[TYPE YOUR NAME]` with your name. Paste it and answer one question at a time.
+   `[TYPE YOUR NAME]` with your name. Paste it. Choose your Saturday local time and
+   confirm the time zone, one screen action at a time.
 
-   **DONE WHEN:** Codex uses only the safe facts you supplied.
+   **DONE WHEN:** The reminder card opens only this local project at the approved time.
 
-4. Stop when `LINKEDIN-DRAFTS.md` says `DRAFT - NOT PUBLISHED`, lists your supplied
-   facts, gives three headline choices and one About draft, and says no LinkedIn action
-   occurred.
+4. If you are allowed to keep them locally, paste up to 25 representative earlier
+   incoming-message and sent-reply pairs into `LINKEDIN-TONE-AND-PRECEDENTS.md`. You may
+   remove names or write `NONE YET`.
 
-   **DONE WHEN:** You can show the local draft. Nothing was posted or messaged.
+   **DONE WHEN:** Codex records only evidenced tone and routing rules. If there are no
+   examples, it starts with no high-confidence precedents.
+
+5. For the supervised pilot, you open LinkedIn yourself, check unread conversations in
+   both **Focused** and **Other**, and paste no more than 25 into
+   `LINKEDIN-INBOX-BATCH.md`. Do not paste passwords, codes, suspicious links,
+   attachments, or sensitive information.
+
+   **DONE WHEN:** Codex processes only the text you pasted. The AI never opens LinkedIn.
+
+6. Review `LINKEDIN-REPLY-QUEUE.md`. `READY TO SEND` contains routine drafts backed by
+   an evidenced precedent. `NEEDS YOUR DECISION` contains a stable S.No., sender, date,
+   concise summary, proposed reply, and reason for every uncertain item.
+
+   **DONE WHEN:** You review every draft, manually send any reply you approve in
+   LinkedIn, and return to mark each item `SENT AS WRITTEN`, `EDITED AND SENT`,
+   `SKIPPED`, or `KEEP FOR LATER`. Codex never claims a send without your confirmation.
+
+The weekly reminder works only while the computer is awake, ChatGPT is running and the
+local project remains available. It reminds and drafts; it does not access LinkedIn.
 
 # What to bring back
 
@@ -397,7 +419,8 @@ Bring the laptop or screenshots that show:
 - Email project open with `EMAIL-TRIAGE-REPORT.md`.
 - Drive project open with `DRIVE-INDEX.md` and its saved cursor.
 - The final evidence row and validator pass in each project.
-- Optional: `LINKEDIN-DRAFTS.md` marked `DRAFT - NOT PUBLISHED`.
+- Optional: approved Saturday schedule, tone/precedent file, numbered reply queue,
+  cursor, employee-confirmed outcomes, and validator pass. Do not show message bodies.
 
 Do not bring email bodies, passwords, one-time codes, private HR details, banking
 information, or sensitive Drive content. Show the safe report headings and proof.

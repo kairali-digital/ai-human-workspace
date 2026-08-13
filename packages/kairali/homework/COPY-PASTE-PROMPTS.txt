@@ -154,40 +154,56 @@ update the ledger, register, cursor, today file and evidence log. Then validate 
 workspace.
 
 ============================================================
-PROMPT 3 - LINKEDIN DRAFT AI HUMAN - OPTIONAL BONUS
+PROMPT 3 - WEEKLY LINKEDIN MESSAGE ASSISTANT - OPTIONAL
 Replace [TYPE YOUR NAME] before sending.
 ============================================================
 
-My name is [TYPE YOUR NAME]. I choose the optional task LINKEDIN-BONUS-001.
+My name is [TYPE YOUR NAME]. I choose the optional task LINKEDIN-WEEKLY-001.
 
 Read AGENTS.md, AI-HUMAN.md, PARAMETERS.md, MASTER_CURSOR.md, OPEN_REGISTER.md,
-TODAY.md, TOOLBOX.md, GATES.md and DECISIONS.md.
+TODAY.md, TOOLBOX.md, GATES.md, DECISIONS.md, SATURDAY-REVIEW-PROMPT.md,
+LINKEDIN-TONE-AND-PRECEDENTS.md, LINKEDIN-REPLY-QUEUE.md,
+LINKEDIN-REVIEW-CURSOR.md and LINKEDIN-INBOX-BATCH.md.
 
 First, replace “Kairali employee using this copy” with my name in this project's
-owner fields only. Do not change the worker's name, purpose, task, limits or gates.
+owner fields only. Do not change the worker name, purpose, limits or gates.
 
-Do not open LinkedIn, use a browser, search people, scrape a profile, publish, message,
-connect, comment, follow, apply, or change any account.
+Never sign in to LinkedIn, open or control LinkedIn, use a browser session, read the
+inbox, scrape, search, click a link, open an attachment, send a message, or change my
+account. I will copy in message text and manually send any reply I approve.
 
-Ask me these questions one at a time and wait after each answer:
-1. What is your current role, in your own words?
-2. Who do you help and what kind of work do you help them with?
-3. What real skill or work example are you comfortable making public?
-4. What tone do you want: warm, direct, or formal?
+Show only one setup action at a time and wait after it.
 
-If I do not give a fact, do not guess it. Do not invent a title, employer,
-qualification, certification, number, date, client, result or endorsement. Stop if I
-give medical, dosage, certification, legal, spend, confidential client, personal HR or
-other sensitive material; tell me to choose a safe public fact instead.
+1. Ask exactly: “What local time every Saturday should your LinkedIn message review
+   start? For example, 10:00 AM.”
+2. Detect the device's local time zone, show it in plain words, and ask whether it is
+   correct. Do not guess if it cannot be detected.
+3. Ask me to open LINKEDIN-TONE-AND-PRECEDENTS.md and paste up to 25 representative
+   earlier incoming-message and sent-reply pairs that I am allowed to keep locally.
+   I may remove names or write NONE YET. Never ask for a password, code, private key,
+   confidential attachment, sensitive personal data, or message I am not allowed to
+   store.
+4. Derive only evidenced tone and routing rules. If I supplied no examples, start with
+   no high-confidence precedents; do not invent my voice.
+5. Create a native weekly automation named “Saturday LinkedIn Message Review —
+   [my name]” for my chosen Saturday local time. Its only automated job is to open this
+   local project and present SATURDAY-REVIEW-PROMPT.md. It must never open, read, click,
+   control, or send through LinkedIn. Show the automation card and ask me to approve it
+   before marking it ACTIVE.
+6. Run one supervised pilot. Ask me to open LinkedIn myself, check both Focused and
+   Other, and paste no more than 25 unread conversations into LINKEDIN-INBOX-BATCH.md.
+   I must not paste passwords, codes, sensitive data, suspicious links, or attachments.
+7. Process only what I pasted. Put evidenced, routine replies under READY TO SEND and
+   uncertain or consequential replies under NEEDS YOUR DECISION with a stable S.No.,
+   sender, date, concise summary, proposed reply, and reason. A READY TO SEND item is
+   still a draft. I review it and manually press Send in LinkedIn.
+8. After I act, ask me to mark each item SENT AS WRITTEN, EDITED AND SENT, SKIPPED, or
+   KEEP FOR LATER. Never claim a message was sent without my confirmation. Learn only
+   from confirmed outcomes and keep unresolved items in LINKEDIN-REPLY-QUEUE.md.
 
-Create LINKEDIN-DRAFTS.md with:
-- the heading “DRAFT - NOT PUBLISHED”;
-- the exact safe facts I supplied;
-- three headline options;
-- one short About draft;
-- a checklist of any statement I must verify before public use; and
-- the sentence “No LinkedIn page was opened and nothing was published, messaged,
-  connected, commented, followed, applied or changed.”
+If more than 25 items remain, checkpoint the cursor and offer the next batch only after
+the first batch is recorded. Never weaken the 25-item batch cap.
 
-Read the finished draft back to me. If it passes the task's exit evidence, update the
-ledger, register, cursor, today file and evidence log. Then validate this workspace.
+When the pilot passes, update AUTOMATIONS.md, the ledger, register, cursor, today file,
+and evidence log. Then validate this workspace and show the schedule, pilot counts,
+remaining queue count, and the exact manual-send boundary.

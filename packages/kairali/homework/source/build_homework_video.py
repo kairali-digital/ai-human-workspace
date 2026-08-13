@@ -15,7 +15,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 ROOT = Path(__file__).resolve().parents[1]
 WORKSPACE = ROOT.parents[2]
-TMP = WORKSPACE / "tmp" / "H-36-EMAIL-TRIAGE" / "video-build"
+TMP = WORKSPACE / "tmp" / "H-37-LINKEDIN-MESSAGE" / "video-build"
 OUTPUT = ROOT / "EVERYONE-ELSE-AI-HUMAN-HOMEWORK-VIDEO.mp4"
 TRANSCRIPT = ROOT / "EVERYONE-ELSE-AI-HUMAN-HOMEWORK-VIDEO-TRANSCRIPT.txt"
 SRT = ROOT / "EVERYONE-ELSE-AI-HUMAN-HOMEWORK-VIDEO-CAPTIONS.srt"
@@ -40,9 +40,9 @@ SCENES = [
     {
         "title": "No named homework page? Start here.",
         "label": "WHO THIS IS FOR",
-        "actions": ["Required 01  ·  Email Triage", "Required 02  ·  Drive Inventory", "Optional 03  ·  LinkedIn Draft"],
+        "actions": ["Required 01  ·  Email Triage", "Required 02  ·  Drive Inventory", "Optional 03  ·  Saturday LinkedIn Assistant"],
         "done": "You know which two projects are required.",
-        "narration": "This is the homework for anyone from the meeting who did not receive a named start or homework page. You will build two tiny A I humans. Email Triage is first. Drive Inventory is second. LinkedIn Draft is optional after both are complete.",
+        "narration": "This is the homework for anyone from the meeting who did not receive a named start or homework page. You will build two tiny A I humans. Email Triage is first. Drive Inventory is second. The Saturday LinkedIn Message Assistant is optional after both are complete.",
     },
     {
         "title": "See the whole loop first",
@@ -56,7 +56,7 @@ SCENES = [
         "label": "SAFETY PROMISE",
         "actions": ["No Terminal  ·  No typed commands", "No Full access  ·  No password or one-time code", "No send, delete, attachment or silent Gmail filter change"],
         "done": "Ask for approval remains selected.",
-        "narration": "You do not use Terminal or type commands. Keep Ask for approval. Never choose Full access. Login happens on the provider screen. Never paste a password or one-time code into chat. Email begins with a read-only pilot. Later safe filing needs your approval and never sends, deletes or changes a permanent Gmail filter. Drive stays unchanged and LinkedIn is not opened.",
+        "narration": "You do not use Terminal or type commands. Keep Ask for approval. Never choose Full access. Login happens on the provider screen. Never paste a password or one-time code into chat. Email begins with a read-only pilot. Later safe filing needs your approval and never sends, deletes or changes a permanent Gmail filter. Drive stays unchanged. For LinkedIn, you manually paste message text, review every draft and manually press Send. Codex never opens or controls LinkedIn.",
     },
     {
         "title": "If any screen looks different, stop",
@@ -129,25 +129,32 @@ SCENES = [
         "narration": "The Drive project creates a CSV index, a summary and a saved cursor. Test Twenty Five stops after one batch and says the full Drive was not indexed. Full Drive Index continues in checkpointed batches until every connector-visible scope has no next page. Missing facts say Unknown. Sensitive titles say Human Review. No file content is opened and Drive is not changed.",
     },
     {
-        "title": "Optional: make a LinkedIn draft",
+        "title": "Optional: set up Saturday LinkedIn review",
         "label": "ONLY AFTER BOTH REQUIRED PROJECTS PASS",
-        "actions": ["Copy starter 03  →  open it as a separate project", "Paste PROMPT 3  →  answer one safe question at a time", "Create a local draft only  ·  do not open LinkedIn"],
-        "done": "The local file says DRAFT - NOT PUBLISHED.",
-        "narration": "The LinkedIn project is optional. Do it only after Email and Drive pass. Copy starter zero three, open it separately, and paste Prompt Three. Answer one safe question at a time. Done when the local draft says Draft, Not Published. Do not open LinkedIn.",
+        "actions": ["Copy starter 03  →  open it as a separate project", "Paste PROMPT 3  →  choose Saturday time + confirm time zone", "Supply up to 25 prior reply pairs  ·  or write NONE YET"],
+        "done": "The approved reminder card opens this local project only.",
+        "narration": "The LinkedIn project is optional. Do it only after Email and Drive pass. Copy starter zero three, open it separately, and paste Prompt Three. Choose the local Saturday time and confirm the time zone. You may paste up to twenty-five earlier incoming-message and sent-reply pairs so Codex learns only your evidenced tone. Done when the reminder card opens this local project only.",
+    },
+    {
+        "title": "Run the supervised Saturday review",
+        "label": "YOU ACCESS LINKEDIN  ·  CODEX DRAFTS",
+        "actions": ["You check Focused + Other  →  paste no more than 25", "Codex separates READY TO SEND from NEEDS YOUR DECISION", "You review + manually send  →  confirm every outcome"],
+        "done": "The numbered queue is saved; Codex never accesses or sends through LinkedIn.",
+        "narration": "You open LinkedIn yourself and check unread conversations in both Focused and Other. Paste no more than twenty-five into the local batch file. Codex prepares routine drafts and keeps uncertain replies in a numbered decision queue. You review every draft and manually press Send in LinkedIn. Return and confirm what you sent, edited, skipped or kept. Codex never accesses or sends through LinkedIn.",
     },
     {
         "title": "Bring only safe proof",
         "label": "HOMEWORK COMPLETE",
-        "actions": ["Email report + active daily automation", "Drive index + saved cursor + validator passes", "Optional local LinkedIn draft"],
+        "actions": ["Email report + active daily automation", "Drive index + saved cursor + validator passes", "Optional LinkedIn schedule + queue headings + confirmed outcomes"],
         "done": "The two required workers and their durable proof are ready.",
-        "narration": "Bring the laptop or safe screenshots showing the Email report and active daily automation, plus the Drive index summary, saved cursor, evidence rows and validator passes. Do not expose email bodies, private Drive content, passwords, codes, H R information or banking information. Your two durable workers are the homework.",
+        "narration": "Bring the laptop or safe screenshots showing the Email report and active daily automation, plus the Drive index summary, saved cursor, evidence rows and validator passes. Optional LinkedIn proof shows only the schedule, counts, queue headings and employee-confirmed outcomes, not message bodies. Do not expose email bodies, private Drive content, passwords, codes, H R information or banking information. Your two required durable workers are the homework.",
     },
     {
         "title": "Mission + judgment = you",
         "label": "YOUR AI HUMAN",
-        "actions": ["Codex performs only the approved bounded work", "Start with Email  →  prove the daily brief", "Then build Drive  →  optional LinkedIn comes last"],
+        "actions": ["Codex performs only the approved bounded work", "Start with Email  →  prove the daily brief", "Then build Drive  →  optional human-send LinkedIn comes last"],
         "done": "Bounded work + evidence turns a folder into an AI human.",
-        "narration": "You provide the mission and judgment. Codex performs the approved work inside the boundaries. Start with Email. Prove the pilot and daily automation. Then build Drive.",
+        "narration": "You provide the mission and judgment. Codex performs the approved work inside the boundaries. Start with Email. Prove the pilot and daily automation. Then build Drive. Add the Saturday LinkedIn assistant only if you choose it, with human-only access and sending.",
     },
 ]
 
@@ -249,7 +256,8 @@ def srt_time(seconds: float) -> str:
 
 def build_contact_sheet(frames: list[Path]) -> None:
     thumb_w, thumb_h = 480, 270
-    sheet = Image.new("RGB", (thumb_w * 4, thumb_h * 4), WHITE)
+    rows = (len(frames) + 3) // 4
+    sheet = Image.new("RGB", (thumb_w * 4, thumb_h * rows), WHITE)
     for index, frame in enumerate(frames):
         shot = Image.open(frame).convert("RGB").resize((thumb_w, thumb_h), Image.Resampling.LANCZOS)
         sheet.paste(shot, ((index % 4) * thumb_w, (index // 4) * thumb_h))
@@ -258,7 +266,7 @@ def build_contact_sheet(frames: list[Path]) -> None:
 
 def build() -> None:
     TMP.mkdir(parents=True, exist_ok=True)
-    dependency_dir = WORKSPACE / "tmp" / "H-36-EMAIL-TRIAGE" / "python-deps"
+    dependency_dir = WORKSPACE / "tmp" / "H-37-LINKEDIN-MESSAGE" / "python-deps"
     sys.path.insert(0, str(dependency_dir))
     import imageio_ffmpeg  # type: ignore
 

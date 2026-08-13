@@ -2,6 +2,19 @@
 
 All notable changes are recorded here in plain language.
 
+## [1.4.0] - 2026-08-13
+
+- Replace the optional one-time LinkedIn profile draft with a weekly Saturday message
+  assistant configured at each employee's chosen local time and confirmed time zone.
+- Learn tone and routing only from employee-supplied prior message/reply pairs and
+  employee-confirmed outcomes, in checkpointed batches of no more than 25.
+- Separate routine `READY TO SEND` drafts from a persistent numbered
+  `NEEDS YOUR DECISION` queue and keep unresolved items across sessions.
+- Preserve a strict human gate: the employee manually copies messages, reviews every
+  draft and manually sends. The AI never accesses, controls or sends through LinkedIn.
+- Update all employee prompts, homework, guides, decks, release artifacts and portal
+  downloads to the same v1.4.0 behavior.
+
 ## [1.3.0] - 2026-08-13
 
 - Upgrade Email Triage from a one-time read-only sample into a verified daily Email

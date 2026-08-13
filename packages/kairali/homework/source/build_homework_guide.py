@@ -120,6 +120,19 @@ def set_table_geometry(table, widths_dxa):
             cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER
 
 
+def mark_table_headers(doc):
+    """Expose every designed table's first row to assistive technology."""
+    for table in doc.tables:
+        if not table.rows:
+            continue
+        tr_pr = table.rows[0]._tr.get_or_add_trPr()
+        header = tr_pr.find(qn("w:tblHeader"))
+        if header is None:
+            header = OxmlElement("w:tblHeader")
+            tr_pr.append(header)
+        header.set(qn("w:val"), "true")
+
+
 def add_page_field(paragraph):
     run = paragraph.add_run()
     begin = OxmlElement("w:fldChar")
@@ -318,7 +331,7 @@ def add_title_block(doc):
 
     subtitle = doc.add_paragraph()
     subtitle.paragraph_format.space_after = Pt(18)
-    run = subtitle.add_run("Email Triage + Drive Inventory, with an optional LinkedIn Draft bonus")
+    run = subtitle.add_run("Email Triage + Drive Inventory, with an optional Saturday LinkedIn Message Assistant")
     set_font(run, size=13.5, color=GRAY)
 
     table = doc.add_table(rows=2, cols=2)
@@ -503,6 +516,7 @@ def build():
     doc.core_properties.subject = "Beginner daily Email Triage and Drive Inventory homework"
     doc.core_properties.author = "Kairali AI Method"
     doc.core_properties.keywords = "Codex, AI human, email triage, drive inventory, beginner"
+    mark_table_headers(doc)
     doc.save(OUTPUT)
     print(OUTPUT)
 

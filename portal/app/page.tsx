@@ -15,7 +15,7 @@ type GithubRelease = {
 };
 
 const fallbackRelease: GithubRelease = {
-  tag_name: "v1.3.0",
+  tag_name: "v1.1.0",
   html_url: "https://github.com/kairali-digital/ai-human-workspace/releases/latest",
   published_at: "2026-08-12T00:00:00Z",
   assets: [],
@@ -64,10 +64,10 @@ export default async function Home() {
           <h1>One link for the complete Kairali AI Method.</h1>
           <p className="hero-summary">Open the guide, get the approved files and begin without an account.</p>
           <div className="hero-actions">
-            <a className="button button-primary" href="/downloads/KAIRALI-AI-METHOD-ROLLOUT-v13-PUBLIC-KIT.zip" download>
+            <a className="button button-primary" href="/downloads/KAIRALI-AI-METHOD-ROLLOUT-v14-PUBLIC-KIT.zip" download>
               Download everything
             </a>
-            <a className="button button-secondary" href="/downloads/EMPLOYEE-SETUP-AND-PROOF-GUIDE-v4-PUBLIC-KIT.pdf">
+            <a className="button button-secondary" href="/downloads/EMPLOYEE-SETUP-AND-PROOF-GUIDE-v5-PUBLIC-KIT.pdf">
               Read the start guide
             </a>
           </div>
@@ -86,7 +86,7 @@ export default async function Home() {
       <section className="release-strip" aria-label="Current source status">
         <div>
           <span>Portal review package</span>
-          <strong>v1.3.0</strong>
+          <strong>v1.4.0</strong>
         </div>
         <div>
           <span>Latest approved GitHub release</span>
@@ -109,14 +109,14 @@ export default async function Home() {
           <article className="path path-employee">
             <span>For employees</span>
             <h3>Use the Setup Helper.</h3>
-            <p>No Terminal, Git or command line. Set your daily Email Importance Brief, then complete the full Drive Index.</p>
-            <a href="/downloads/EMPLOYEE-SETUP-AND-PROOF-GUIDE-v4-PUBLIC-KIT.pdf">Open employee guide</a>
+            <p>No Terminal, Git or command line. Set your daily Email Importance Brief, complete the full Drive Index, then optionally add Saturday LinkedIn drafts with human-only access and sending.</p>
+            <a href="/downloads/EMPLOYEE-SETUP-AND-PROOF-GUIDE-v5-PUBLIC-KIT.pdf">Open employee guide</a>
           </article>
           <article className="path path-facilitator">
             <span>For facilitators</span>
             <h3>Prepare once. Share this portal.</h3>
             <p>Use the runbook, main presentation and print checklist. Keep the advanced clinic separate.</p>
-            <a href="/downloads/FACILITATOR-RUNBOOK-v6-PUBLIC-KIT.pdf">Open facilitator runbook</a>
+            <a href="/downloads/FACILITATOR-RUNBOOK-v7-PUBLIC-KIT.pdf">Open facilitator runbook</a>
           </article>
         </div>
       </section>
@@ -183,7 +183,7 @@ export default async function Home() {
 
       <footer>
         <p>This portal is intentionally excluded from search engines. Anyone with the link can open it, so it must contain no confidential information.</p>
-        <a href="/downloads/SETUP-HELPER-CARD-v4-PUBLIC-KIT.pdf">Stuck? Open the Setup Helper card.</a>
+        <a href="/downloads/SETUP-HELPER-CARD-v5-PUBLIC-KIT.pdf">Stuck? Open the Setup Helper card.</a>
       </footer>
     </main>
   );

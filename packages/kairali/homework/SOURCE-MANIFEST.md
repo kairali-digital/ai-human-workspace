@@ -20,7 +20,18 @@
   and follows Abilash's proven separation of briefing, conservative reversible filing
   and false-positive audit. The employee explicitly rules brief-only or safe-filing
   mode; permanent Gmail filters remain human-reviewed and are not silently changed.
-- Protected public `kairali-digital/ai-human-workspace` release v1.3.0 - complete
+- Owner instruction H-37, 13 Aug 2026: the optional LinkedIn worker asks each employee
+  for a Saturday local time, learns tone from employee-supplied prior reply pairs and
+  confirmed outcomes, separates routine drafts from numbered decision holds, and keeps
+  unresolved items for the employee. The reusable company version does not access or
+  control LinkedIn and never sends; the employee manually copies messages and sends
+  approved replies.
+- LinkedIn User Agreement and Help Center, checked 13 Aug 2026: unauthorized bots,
+  scraping and browser automation are prohibited. The company starter therefore uses
+  employee-supplied text and a human-only send gate.
+  Sources: https://www.linkedin.com/legal/user-agreement and
+  https://www.linkedin.com/help/linkedin/answer/a1341387
+- Protected public `kairali-digital/ai-human-workspace` release v1.4.0 - complete
   integrity-checked Kairali reference kit, public distribution boundary, three homework
   starters, all approved people/setup prompts and two explicit role-opt-in skills.
 - `work/MULTI-COMPANY-AI-HUMAN-CORE-001/repo/packages/kairali/README.md` - the public
@@ -61,7 +72,8 @@
   successful run in each new calendar month audits filed mail for false positives.
 - Permanent Gmail filters are never changed by the connector. New sender or query rules
   remain in `EMAIL-RULE-REVIEW.md` until a human rules them.
-- LinkedIn uses only employee-supplied facts and creates a local draft; no browser or
-  account access is granted.
+- LinkedIn uses manually supplied message text in batches of at most 25. The employee
+  chooses the Saturday time, confirms the time zone, reviews all drafts and manually
+  sends. The AI does not open, read, control, scrape, click or send through LinkedIn.
 - The roster and attendee headcount are not supplied; no names or print quantities are
   invented.

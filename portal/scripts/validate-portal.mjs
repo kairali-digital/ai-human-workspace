@@ -6,13 +6,14 @@ const root = path.resolve(import.meta.dirname, "..");
 const manifest = JSON.parse(await readFile(path.join(root, "content", "download-manifest.json"), "utf8"));
 const issues = [];
 const required = new Set([
-  "KAIRALI-AI-METHOD-ROLLOUT-v15-PUBLIC-KIT.zip",
-  "KAIRALI-AI-METHOD-DECK-v15-PUBLIC-KIT.pptx",
-  "KAIRALI-AI-METHOD-ADVANCED-CLI-BONUS-v7-PUBLIC-KIT.pptx",
-  "EMPLOYEE-SETUP-AND-PROOF-GUIDE-v6-PUBLIC-KIT.pdf",
-  "FACILITATOR-RUNBOOK-v8-PUBLIC-KIT.pdf",
+  "KAIRALI-AI-METHOD-ROLLOUT-v151-PUBLIC-KIT.zip",
+  "KAIRALI-AI-METHOD-DECK-v16-PUBLIC-KIT.pptx",
+  "KAIRALI-AI-METHOD-ADVANCED-CLI-BONUS-v8-PUBLIC-KIT.pptx",
+  "EMPLOYEE-SETUP-AND-PROOF-GUIDE-v7-PUBLIC-KIT.pdf",
+  "FACILITATOR-RUNBOOK-v9-PUBLIC-KIT.pdf",
   "EVERYONE-ELSE-AI-HUMAN-HOMEWORK-PACK.zip",
-  "SETUP-HELPER-CARD-v6-PUBLIC-KIT.pdf",
+  "SETUP-HELPER-CARD-v7-PUBLIC-KIT.pdf",
+  "KAIRALI-MANAGED-UPDATE-WORKFLOW.md",
 ]);
 
 const records = new Map(manifest.files.map((file) => [file.name, file]));
@@ -45,7 +46,7 @@ const nextConfig = await readFile(path.join(root, "next.config.ts"), "utf8");
 const robots = await readFile(path.join(root, "app", "robots.ts"), "utf8");
 const visible = `${page}\n${await readFile(path.join(root, "content", "site-data.ts"), "utf8")}`;
 
-for (const phrase of ["Download everything", "Use the Setup Helper", "daily Email Importance Brief", "chosen-time daily email brief", "FULL DRIVE INDEX", "Saturday LinkedIn Message Assistant", "right-level local control", "human-only LinkedIn access and sending", "Available here. Live only after your proof.", "LIVE FOR ME", "TEST 25 proves setup only", "NOT ENABLED BY CHOICE", "@Computer", "YOUR TURN ON LINKEDIN", "The portal cannot grant computer access", "GitHub stays the approved source of truth", "No login required"]) {
+for (const phrase of ["Download everything", "Use the Setup Helper", "daily Email Importance Brief", "chosen-time daily email brief", "FULL DRIVE INDEX", "Saturday LinkedIn Message Assistant", "right-level local control", "human-only LinkedIn access and sending", "Available here. Live only after your proof.", "LIVE FOR ME", "TEST 25 proves setup only", "NOT ENABLED BY CHOICE", "@Computer", "YOUR TURN ON LINKEDIN", "The portal cannot grant computer access", "GitHub stays the approved source of truth", "No login required", "CHECK FOR KAIRALI UPDATE", "UPDATE NOW", "Fetch/Pull", "read-only", "Monitor", "Employee-owned state stays preserved"]) {
   if (!visible.includes(phrase)) issues.push(`visible portal copy lacks: ${phrase}`);
 }
 if (!layout.includes("index: false") || !layout.includes("follow: false")) issues.push("metadata robots are not noindex and nofollow");

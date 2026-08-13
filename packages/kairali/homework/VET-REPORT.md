@@ -1,4 +1,4 @@
-# VET H-39 THREE-WORKER LIVE ALIGNMENT — 13 August 2026
+# VET H-41 MANAGED UPDATE ALIGNMENT — 13 August 2026
 
 **VERDICT: SHIP**
 
@@ -8,10 +8,13 @@
 - Saturday LinkedIn is optional and uses the explicit `LIVE FOR ME, OPTIONAL` or
   `NOT ENABLED BY CHOICE` readback.
 - Availability in the kit is not described as activation in an employee account.
+- `CHECK FOR KAIRALI UPDATE` is read-only; `UPDATE NOW` is required at a safe
+  checkpoint; the receipt, preserved-state result and recovery location are proof.
+- GitHub Desktop Fetch/Pull is explicitly separate from installed-worker lifecycle.
 - Every processing batch remains capped at 25 with a durable checkpoint.
 - All 12 people prompts, checklist, starter files, guide, captions and transcript
   match the governed release copies.
-- The 11-page guide, complete 428.546-second video and 18 ordered captions pass
+- The 12-page guide, complete 428.546-second video and 18 ordered captions pass
   structural, visual and accessibility review.
 - Homework, company, workspace and outer archives are deterministic, path-safe,
   proof-covered and secret-scan clean.

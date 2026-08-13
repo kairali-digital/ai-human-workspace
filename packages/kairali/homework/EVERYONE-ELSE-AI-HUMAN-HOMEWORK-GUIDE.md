@@ -6,7 +6,7 @@ Use this guide only if you attended the meeting and do not already have a named 
 or homework page.
 
 This homework is part of the protected public
-`kairali-digital/ai-human-workspace` v1.5.0 company kit. The public kit is the clean
+`kairali-digital/ai-human-workspace` v1.5.1 company kit. The public kit is the clean
 setup and update source; it contains no live company work or secrets, so no GitHub
 invitation or collaborator seat is needed. Ask the Setup Helper to obtain and verify
 the kit. Then copy the Email and Drive starters into separate local work folders. Do
@@ -47,7 +47,7 @@ choose your times or activate your workers. Open
 
 ## The whole loop at a glance
 
-1. Ask the Setup Helper to find the verified public v1.5.0 company kit on your screen.
+1. Ask the Setup Helper to find the verified public v1.5.1 company kit on your screen.
 2. Make an `AI Humans` folder inside Documents.
 3. Copy the Email and Drive starter folders into it.
 4. Open one starter folder as a local project in the ChatGPT desktop app.
@@ -86,9 +86,29 @@ Do not teach me how the machinery works unless I ask. Start now by checking what
 **DONE WHEN:** The helper shows only one next action, waits, and verifies it before
 showing another.
 
+# When the company announces a new release
+
+1. Open your existing worker in Codex.
+2. Paste `CHECK FOR KAIRALI UPDATE`.
+
+   **DONE WHEN:** The Setup Helper shows the installed and latest versions, affected
+   managed layers and preserved employee-owned files. Nothing has changed.
+
+3. If a task is live, defer the update. At a safe checkpoint, say `UPDATE NOW`.
+
+   **DONE WHEN:** The helper verifies the tagged release and hashes, creates a backup,
+   updates core, reference kit and already-approved skills separately, validates, and
+   shows the new version, receipt, preserved-state result and recovery location.
+
+GitHub Desktop **Fetch origin** and **Pull origin** only synchronize the selected
+shared repository checkout. They do not install or update an employee worker,
+reference kit or skill. Monitor reads version, receipt and evidence for the announced
+batch and reports anything missing, deferred or mismatched; it never rewrites your
+state.
+
 # Step 1 - find and open the verified company kit
 
-The preferred file is named `kairali-company-rollout-1.5.0.zip`. If your facilitator
+The preferred file is named `kairali-company-rollout-1.5.1.zip`. If your facilitator
 gave you the smaller homework-only file, it is named
 `EVERYONE-ELSE-AI-HUMAN-HOMEWORK-PACK.zip`. Both routes open this same homework. You
 do not need a GitHub invitation.
@@ -130,7 +150,7 @@ do not need a GitHub invitation.
    **DONE WHEN:** You can see `AI-HUMAN-STARTERS` and this guide.
 
 If the ZIP is not visible, do not search the whole computer. Paste the Setup Helper
-rescue. The helper checks Downloads, obtains the protected public v1.5.0 kit when safe,
+rescue. The helper checks Downloads, obtains the protected public v1.5.1 kit when safe,
 and asks Ambuj only if the approved source or access decision is missing.
 
 # Step 2 - make one home for your AI humans
@@ -484,6 +504,21 @@ Stop and use the Setup Helper if:
 
 Setup Helper resolves safe setup. Ambuj receives only an unavoidable company-access
 problem. Abilash receives owner decisions and every Gate 0 issue.
+
+# Managed update readback
+
+For an announced release, bring back only this safe proof:
+
+- announced version: ____________________
+- installed version: ____________________
+- update status: `CURRENT`, `UPDATED` or `DEFERRED`: ____________________
+- receipt and validation result: ____________________
+- preserved-state result: ____________________
+- recovery location, if updated: ____________________
+
+Do not paste employee work, secrets or credentials into a public release, portal or
+repository. Monitor reads this proof for the announced batch and reports drift; it
+does not rewrite the worker.
 
 # Official screen references
 

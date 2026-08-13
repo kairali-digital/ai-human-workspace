@@ -2,6 +2,23 @@
 
 All notable changes are recorded here in plain language.
 
+## [1.5.1] - 2026-08-13
+
+- Add one explicit employee update workflow from company announcement through
+  read-only version check, employee approval, checkpointed apply, validation receipt
+  and Monitor coverage proof.
+- Make the automatic/manual boundary exact: session start may check for a newer
+  approved release, but no managed file is overwritten until the employee approves
+  `UPDATE NOW` at a safe checkpoint.
+- Separate GitHub Desktop repository sync from lifecycle install/update. Fetch/Pull
+  updates the selected repository checkout; it does not update an installed worker,
+  reference kit or governed skill.
+- Preserve employee-owned company, role, facts, decisions, cursor, register, today,
+  ledger, evidence, automation, credential and personal files; keep checked backups,
+  rollback receipts and recoverable removal archives.
+- Refresh the beginner guide, Setup Helper, facilitator/technical guidance, decks,
+  release artifacts and stable portal with the same workflow and proof contract.
+
 ## [1.5.0] - 2026-08-13
 
 - Add one zero-knowledge, task-scoped Computer Use setup for the optional LinkedIn

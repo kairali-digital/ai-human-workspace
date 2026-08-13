@@ -36,6 +36,21 @@ Be my Setup Helper.
 Do not teach me how the machinery works unless I ask. Start now by checking what I already have.
 ```
 
+## When Kairali announces a new release
+
+Open the existing worker in Codex, start a new chat and paste the exact `CHECK FOR
+KAIRALI UPDATE` prompt in `packages/kairali/UPDATE-WORKFLOW.md`. The Setup Helper
+reports the installed and latest approved versions without changing files. If an
+update is available, it waits for you to say `UPDATE NOW` at a safe checkpoint.
+
+You never type a command. GitHub Desktop `Fetch origin`/`Pull origin` is used only to
+sync an assigned shared Kairali repository; it does not install or update this managed
+system or the company reference kit.
+
+**DONE WHEN:** the worker reports the approved version, validation `PASS`, a receipt
+location and preserved employee-state result. If a live task exists, DONE means the
+update is recorded and deferred instead.
+
 ## What the helper does
 
 The helper checks what is already installed, downloads the latest public release,

@@ -14,6 +14,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 CLI = ROOT / "scripts/ai_human.py"
+CURRENT_VERSION = (ROOT / "core/VERSION").read_text(encoding="utf-8").strip()
 SPEC = importlib.util.spec_from_file_location("ai_human_lifecycle", CLI)
 AI_HUMAN = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(AI_HUMAN)
@@ -82,7 +83,7 @@ class LifecycleTests(unittest.TestCase):
         worker = self.base / "Company Folder" / "Employee Workspace"
         result = self.install(worker)
         self.assertIn("AI-HUMAN INSTALL: PASS", result.stdout)
-        self.assertEqual((worker / ".ai-human/VERSION").read_text().strip(), "1.5.0")
+        self.assertEqual((worker / ".ai-human/VERSION").read_text().strip(), CURRENT_VERSION)
         self.assertIn("Example Holdings", (worker / "COMPANY.md").read_text())
         self.assertNotIn("{{", (worker / "PARAMETERS.md").read_text())
         self.assertEqual(self.run_cli("validate", worker).returncode, 0)
@@ -167,16 +168,16 @@ class LifecycleTests(unittest.TestCase):
         self.assertIn("Release-test marker", (worker / ".ai-human/system/AGENT-RULES.md").read_text())
 
         before_rollback_state = state_hashes(worker)
-        rolled_back = self.run_cli("rollback", worker, "--version", "1.5.0")
+        rolled_back = self.run_cli("rollback", worker, "--version", CURRENT_VERSION)
         self.assertIn("AI-HUMAN ROLLBACK: PASS", rolled_back.stdout)
-        self.assertEqual((worker / ".ai-human/VERSION").read_text().strip(), "1.5.0")
+        self.assertEqual((worker / ".ai-human/VERSION").read_text().strip(), CURRENT_VERSION)
         self.assertEqual(state_hashes(worker), before_rollback_state)
         self.assertNotIn("Release-test marker", (worker / ".ai-human/system/AGENT-RULES.md").read_text())
 
         repeated = self.run_cli("update", worker, "--source", new_release, "--at-checkpoint")
         self.assertIn("AI-HUMAN UPDATE: PASS", repeated.stdout)
         self.assertEqual((worker / ".ai-human/VERSION").read_text().strip(), "1.6.0")
-        matching_backups = list((worker / ".ai-human/backups").glob("1.5.0-before-1.6.0-*"))
+        matching_backups = list((worker / ".ai-human/backups").glob(f"{CURRENT_VERSION}-before-1.6.0-*"))
         self.assertEqual(len(matching_backups), 2)
 
     def test_component_catalog_skill_install_upgrade_and_remove(self):

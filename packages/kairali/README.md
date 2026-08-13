@@ -46,6 +46,15 @@ the installed kit to a timestamped recoverable folder and deletes nothing.
 Live homework worker folders are employee state. Removing the reference homework pack
 does not remove a worker that the employee has already created from it.
 
+For every new release, follow [`UPDATE-WORKFLOW.md`](UPDATE-WORKFLOW.md). The company
+notice starts a read-only version check. The employee approves `UPDATE NOW`; the Setup
+Helper applies the core, reference pack and any named opt-in skill separately at a safe
+checkpoint. GitHub Desktop Fetch/Pull synchronizes an assigned repository only and is
+not the install/update mechanism.
+
+Completion requires the installed version, validation receipt, preserved-state result
+and recovery location. Employee-owned state and copied workers remain preserved.
+
 This kit is the public setup/reference layer, not the live specialist operations
 project. A named Shopify, FMS, Web or Monitor prompt may tell the Setup Helper to attach
 that employee's approved private project, where the corresponding `agents/` brief and

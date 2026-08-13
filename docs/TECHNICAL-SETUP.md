@@ -3,6 +3,10 @@
 Technical employees may use Git, GitHub Desktop or an IDE. The repository and release
 rules are identical regardless of client.
 
+GitHub Desktop `Fetch origin`/`Pull origin` updates only the selected checkout. It does
+not install or update `.ai-human` in another worker, the company reference kit, or an
+opt-in skill. Use the lifecycle below after the release is tagged and checked.
+
 ## Install a new worker from a checked-out release
 
 ```bash
@@ -27,6 +31,19 @@ python3 scripts/ai_human.py check "/absolute/worker/folder"
 python3 scripts/ai_human.py update "/absolute/worker/folder" --latest --at-checkpoint
 python3 scripts/ai_human.py rollback "/absolute/worker/folder" --version 1.0.0
 python3 scripts/ai_human.py uninstall "/absolute/worker/folder" --at-checkpoint
+```
+
+`check` is read-only. Run `update` only after the employee approves `UPDATE NOW` and a
+real checkpoint exists. For an installed Kairali reference kit, compare its
+`.ai-human-component.json` version with the latest catalog, then upgrade separately:
+
+Completion proof is the installed version, validation `PASS`, update receipt,
+preserved-state result and recovery location. A fetched or pulled commit is not this
+proof.
+
+```bash
+python3 scripts/ai_human.py install-pack kairali-company-rollout \
+  "/absolute/reference-kit/folder" --latest --upgrade --at-checkpoint
 ```
 
 ## Optional company components

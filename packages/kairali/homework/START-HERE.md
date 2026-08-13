@@ -6,8 +6,8 @@ homework page.
 ## Where this pack comes from
 
 The preferred source is the protected public
-`kairali-digital/ai-human-workspace` release v1.5.0. The complete
-`kairali-company-rollout-1.5.0.zip` contains this homework, all approved people/setup
+`kairali-digital/ai-human-workspace` release v1.5.1. The complete
+`kairali-company-rollout-1.5.1.zip` contains this homework, all approved people/setup
 prompts and the two governed role skills. Public access needs no invitation or
 collaborator seat, and the kit contains no live company work or secrets.
 
@@ -26,8 +26,13 @@ the public distribution repository.
 Each is a separate standalone local project. The employee does not use Terminal,
 PowerShell, Command Prompt, Python, a CLI, Git or GitHub Desktop.
 
-Future kit updates happen only at a safe checkpoint. Updating or removing the
-reference kit does not modify or delete the employee's copied homework workers.
+When the company announces a new release, open the existing worker and paste
+`CHECK FOR KAIRALI UPDATE`. The check is read-only. If a task is live, defer. At a
+safe checkpoint, say `UPDATE NOW`; the Setup Helper backs up, verifies hashes,
+updates managed layers separately, validates and shows the version and receipt.
+Updating or removing the reference kit does not modify or delete the employee's
+copied homework workers or their employee-owned state. GitHub Desktop Fetch/Pull
+only synchronizes a selected repository checkout; it is not the worker update.
 
 ## Available is not live
 

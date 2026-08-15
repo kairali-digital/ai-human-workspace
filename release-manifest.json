@@ -1,5 +1,5 @@
 {
-  "approval_status": "LOCAL_BUILD_ONLY",
+  "approval_status": "APPROVED_BY_OWNER",
   "automatic_update_eligible": false,
   "compatibility": {
     "classification": "BACKWARD_COMPATIBLE",
@@ -82,7 +82,7 @@
     "browser sessions",
     "personal files"
   ],
-  "release_status": "LOCAL_BUILD_ONLY",
+  "release_status": "RELEASED",
   "repository": "kairali-digital/ai-human-workspace",
   "schema": "ai-human.workspace-release/v1",
   "version": "2.0.2"

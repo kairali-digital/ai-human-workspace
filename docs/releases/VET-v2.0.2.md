@@ -1,13 +1,13 @@
 # Verification evidence and trust record: v2.0.2
 
-## Candidate identity
+## Release identity
 
 - Version: `2.0.2`
-- Lane: `LOCAL_BUILD_ONLY` / `LOCAL_BUILD_ONLY`
+- Lane: `APPROVED_BY_OWNER` / `RELEASED`
 - Compatibility: backward-compatible from configured v2.0.0 and held v2.0.1 workers
 - Automatic update eligible: no
-- Publication condition: all deterministic, behavioral, package, security, protected
-  GitHub, production and independent Monitor gates must pass
+- Publication condition: owner authorization and independent Monitor SHIP are complete;
+  protected GitHub, production and distribution verification still gate each channel
 
 ## Why v2.0.1 was held
 
@@ -30,7 +30,7 @@ auditability and is not the stable install path.
 - Any preparation, commit or validation failure releases only the caller's own lease
   and reports failure without claiming task success.
 
-## Candidate evidence
+## Verification evidence
 
 - Python syntax and targeted lifecycle regressions: PASS.
 - Forced concurrent task starts: PASS, exactly one winner and one refusal; winner state
@@ -50,6 +50,10 @@ auditability and is not the stable install path.
   `1177afb021317620d1e488d8b1e756c5cf20f8b9ff43af9e35f1456195aac212`.
 - Kairali candidate SHA-256:
   `f9307ba86eb93cdc4cf97df598e612197a87524315ed1f208ea4804881531bd6`.
+- Reusable public-edition SHA-256:
+  `946e8db54f03fc32b270f7a276b3bd3bdf14ed00806b8b1eb580a10a6f76f0f6`.
+- Kairali public-edition SHA-256:
+  `1eff6396ff9ef19907653e3156c1eae97bbaf77a318bdd55c5b974e71fad3e29`.
 - Claude full-permission read-only run: PASS in 13.4 seconds and 4 turns; exact source
   answer, no file diff, validator PASS and zero web-search/fetch requests.
 - Corrected Claude full-permission local artifact run: PASS in 51.5 seconds and 17
@@ -64,13 +68,25 @@ auditability and is not the stable install path.
 - Portal TypeScript, direct Next.js 16.3.0 optimized build and production dependency
   audit: PASS; zero vulnerabilities. The local host was Node 24, while the repository
   remains pinned to Node 22 for protected CI and production verification.
-- Candidate production portal gate: expected FAIL CLOSED because the manifests remain
-  `LOCAL_BUILD_ONLY` and no v2.0.2 public-edition assets exist.
-- Independent Monitor rereview: PENDING.
+- Before promotion, the candidate production portal gate failed closed as expected
+  because its manifests were `LOCAL_BUILD_ONLY` and no v2.0.2 public-edition assets
+  existed.
+- Independent Monitor rereview: PASS across Gates 0–5; verdict `SHIP`. Ten real-process
+  task-start races and ten task-completion races each produced exactly one winner and
+  one clean refusal with no state loss, abandoned lease or validator failure.
+- Promoted public-lane lifecycle suite: PASS, 63 tests in one continuous run.
+- Public release validator and production portal gate: PASS.
+- Portal manifest, TypeScript and Next.js production build: PASS across 31 verified
+  downloads; production dependency audit reports zero vulnerabilities.
+- Both public-edition checksum files and ZIP extraction tests: PASS.
+- Zero-knowledge beginner rollout gate: PASS across all 11 role prompts and the full
+  Mac/Windows setup and recovery material.
+- Full-history secret scan: PASS across 32 commits. Offline recipient addresses have
+  zero exact matches in tracked public repository text.
 
 ## Current decision
 
-`DO NOT PUBLISH YET`. This record describes a local correction candidate. It becomes a
-release record only after the remaining gates pass, the independent Monitor returns
-SHIP, the manifests are owner-approved/released, and protected publication and live
-verification complete.
+`APPROVED FOR THE PROTECTED PUBLICATION WORKFLOW`. Owner authorization, independent
+Monitor SHIP and owner-approved/released manifests are complete. This decision is not
+proof that GitHub, the stable portal or recipient distribution has already completed;
+each requires its own protected checks and post-publication verification.

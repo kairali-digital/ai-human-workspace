@@ -1,11 +1,12 @@
 # Governed capabilities and fleet updates
 
 This document describes the v2 control plane, introduced in v2.0.0 and retained in the
-v2.0.2 correction candidate. v2.0.1 is held after a post-publication concurrency
-finding. v2.0.2 is backward-compatible from configured v2.0.0 and v2.0.1 workers; a
-pre-v2 worker still needs the exact-scope setup migration. Automatic update selection
-remains disabled. Pre-release builds use `LOCAL_BUILD_ONLY`, and the lifecycle refuses
-to install them.
+current owner-approved v2.0.2 correction. v2.0.1 is held after a post-publication
+concurrency finding. v2.0.2 is backward-compatible from configured v2.0.0 and v2.0.1
+workers; a pre-v2 worker still needs the exact-scope setup migration. Automatic update
+selection remains disabled. The v2.0.2 manifests are `APPROVED_BY_OWNER` / `RELEASED`;
+unapproved pre-release builds use `LOCAL_BUILD_ONLY`, and the lifecycle refuses to
+install them.
 
 ## One live task, one writer
 

@@ -3,6 +3,7 @@ import { readdir, readFile, stat } from "node:fs/promises";
 import path from "node:path";
 
 const root = path.resolve(import.meta.dirname, "..");
+const repositoryRoot = path.resolve(root, "..");
 const manifest = JSON.parse(await readFile(path.join(root, "content", "download-manifest.json"), "utf8"));
 const packageManifest = JSON.parse(await readFile(path.join(root, "package.json"), "utf8"));
 const packageLock = JSON.parse(await readFile(path.join(root, "package-lock.json"), "utf8"));
@@ -28,6 +29,13 @@ const required = new Set([
   "KAIRALI-MANAGED-UPDATE-WORKFLOW.md",
 ]);
 
+const homeworkMirrors = [
+  "EVERYONE-ELSE-AI-HUMAN-HOMEWORK-GUIDE.docx",
+  "EVERYONE-ELSE-AI-HUMAN-HOMEWORK-GUIDE.pdf",
+  "EVERYONE-ELSE-AI-HUMAN-HOMEWORK-PACK.sha256",
+  "EVERYONE-ELSE-AI-HUMAN-HOMEWORK-PACK.zip",
+];
+
 const records = new Map(manifest.files.map((file) => [file.name, file]));
 for (const name of required) {
   if (!records.has(name)) issues.push(`manifest lacks required download: ${name}`);
@@ -49,6 +57,21 @@ for (const [name, record] of records) {
     if (details.size > 50 * 1024 * 1024) issues.push(`download exceeds 50 MB portal cap: ${name}`);
   } catch {
     issues.push(`missing download: ${name}`);
+  }
+}
+
+for (const name of homeworkMirrors) {
+  const source = path.join(repositoryRoot, "packages", "kairali", "homework", name);
+  const mirror = path.join(downloads, name);
+  try {
+    const [sourceBytes, mirrorBytes] = await Promise.all([readFile(source), readFile(mirror)]);
+    const sourceDigest = createHash("sha256").update(sourceBytes).digest("hex");
+    const mirrorDigest = createHash("sha256").update(mirrorBytes).digest("hex");
+    if (sourceDigest !== mirrorDigest) {
+      issues.push(`portal homework mirror differs from the released source: ${name}`);
+    }
+  } catch {
+    issues.push(`portal homework mirror is missing: ${name}`);
   }
 }
 
@@ -108,6 +131,7 @@ if (issues.length) {
 
 console.log("PORTAL VALIDATION: PASS");
 console.log(`- downloads verified: ${records.size}`);
+console.log("- standalone homework downloads byte-match the released sources");
 console.log("- indexable metadata, canonical URL, robots.txt and sitemap present");
 console.log("- download assets retain a scoped noindex response header");
 console.log("- no personal absolute path or long dash in visible source");

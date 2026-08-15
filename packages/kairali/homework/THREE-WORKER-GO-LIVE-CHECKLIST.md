@@ -45,6 +45,11 @@ Mark **LIVE FOR ME** only when all are visible:
 `TEST 25` proves that setup works. It does not complete the company homework and must
 not be described as a full Drive index.
 
+The weekly refresh is optional. It is **ACTIVE** only after you confirm the day/time
+window and time zone, see the exact ChatGPT desktop task card and next run, say
+`ACTIVATE WEEKLY REFRESH`, and one bounded pilot passes. Sunday night is suggested, not
+assumed. The computer must be on, ChatGPT desktop running and the project available.
+
 ## 3. Saturday LinkedIn Message Assistant — optional
 
 If you choose it, mark **LIVE FOR ME, OPTIONAL** only when all are visible:

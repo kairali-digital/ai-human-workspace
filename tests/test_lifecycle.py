@@ -2,6 +2,7 @@
 """End-to-end lifecycle tests for the AI-Human workspace."""
 
 import ast
+import csv
 import hashlib
 import importlib.util
 import json
@@ -1359,6 +1360,181 @@ class LifecycleTests(unittest.TestCase):
             self.assertFalse((worker / adapter).exists(), adapter)
             self.assertTrue((removed[0] / "local-adapters" / adapter).is_file(), adapter)
         self.run_cli("verify-state", worker, "--expect", "UNINSTALLED")
+
+    def test_drive_register_validator_reconciles_ai_human_and_sheet_proof(self):
+        root = self.base / "drive-register"
+        root.mkdir()
+        generation = "drive-20260816T210000Z"
+        fields = (
+            "item_id", "name", "file_type", "owned_or_created_by_me", "shared_with_me",
+            "shared_by_me", "modified_time", "parent_or_location", "sharing_status",
+            "web_link", "source_scope", "first_indexed_at_utc", "last_seen_at_utc",
+            "indexed_at_utc", "generation_id", "review_note",
+        )
+        records = [
+            {
+                "item_id": "id-1", "name": "=UNTRUSTED()", "file_type": "document",
+                "owned_or_created_by_me": True, "shared_with_me": False,
+                "shared_by_me": "UNKNOWN", "modified_time": "2026-08-15T10:00:00Z",
+                "parent_or_location": "My Drive", "sharing_status": "private",
+                "web_link": "https://drive.google.com/file/d/id-1", "source_scope": "owned",
+                "first_indexed_at_utc": "2026-08-16T20:00:00Z",
+                "last_seen_at_utc": "2026-08-16T21:00:00Z",
+                "indexed_at_utc": "2026-08-16T21:00:00Z", "generation_id": generation,
+                "review_note": "HUMAN REVIEW",
+            },
+            {
+                "item_id": "id-2", "name": "Campaign plan", "file_type": "sheet",
+                "owned_or_created_by_me": True, "shared_with_me": True,
+                "shared_by_me": False, "modified_time": "2026-08-16T11:00:00Z",
+                "parent_or_location": "Marketing", "sharing_status": "shared",
+                "web_link": "https://docs.google.com/spreadsheets/d/id-2",
+                "source_scope": "shared_with_me",
+                "first_indexed_at_utc": "2026-08-16T21:00:00Z",
+                "last_seen_at_utc": "2026-08-16T21:00:00Z",
+                "indexed_at_utc": "2026-08-16T21:00:00Z", "generation_id": generation,
+                "review_note": "NONE",
+            },
+        ]
+        (root / "DRIVE-INDEX.jsonl").write_text(
+            "".join(json.dumps(record, sort_keys=True) + "\n" for record in records),
+            encoding="utf-8",
+        )
+        with (root / "DRIVE-REGISTER.csv").open("w", encoding="utf-8", newline="") as stream:
+            writer = csv.DictWriter(stream, fieldnames=fields)
+            writer.writeheader()
+            for record in records:
+                row = dict(record)
+                row["name"] = "'" + row["name"] if row["name"].startswith("=") else row["name"]
+                for field in ("owned_or_created_by_me", "shared_with_me", "shared_by_me"):
+                    row[field] = (
+                        "TRUE" if record[field] is True else
+                        "FALSE" if record[field] is False else "UNKNOWN"
+                    )
+                writer.writerow(row)
+        receipt = {
+            "generation_id": generation, "mode": "FULL DRIVE INDEX",
+            "status": "FULL DRIVE INDEX COMPLETE", "human_register": "GOOGLE_SHEET",
+            "google_sheet_url": "https://docs.google.com/spreadsheets/d/example",
+            "google_sheet_generation_id": generation, "google_sheet_row_count": 2,
+            "human_register_verified_utc": "2026-08-16T21:01:00Z",
+            "last_successful_refresh_utc": "2026-08-16T21:01:00Z",
+            "counts": {
+                "owned_or_created_by_me": 2, "shared_with_me": 1, "shared_by_me": 0,
+                "relationship_overlap_items": 1, "relationship_unknown_items": 1,
+                "unique_items": 2,
+            },
+            "source_scopes": {
+                "owned_or_created_by_me": "END", "shared_with_me": "END",
+                "shared_by_me": "UNKNOWN — CONNECTOR COVERAGE GAP", "shared_drives": "END",
+            },
+        }
+        (root / "DRIVE-INDEX-RECEIPT.json").write_text(
+            json.dumps(receipt, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        )
+        (root / "DRIVE-INDEX-CURSOR.json").write_text(
+            json.dumps({
+                "generation_id": generation, "mode": "FULL DRIVE INDEX",
+                "unique_items": 2, "last_successful_refresh_utc": "2026-08-16T21:01:00Z",
+                "next_page_state": None, "next_action": "Offer weekly refresh",
+            }, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        (root / "DRIVE-INDEX.md").write_text(
+            "# Drive index\n\nGeneration: " + generation +
+            "\nMode: FULL DRIVE INDEX\nUnique items: 2\n"
+            "Owned or created by me: 2\nShared with me: 1\nShared by me: 0\n"
+            "Relationship overlap items: 1\nRelationship unknown items: 1\n\n"
+            "No Drive file content was opened or downloaded, and no Drive item was created, "
+            "edited, renamed, moved, shared, unshared, deleted or organized.\n",
+            encoding="utf-8",
+        )
+        validator = (
+            ROOT / "packages/kairali/homework/AI-HUMAN-STARTERS/"
+            "02-Drive-Inventory-AI-Human/validate_drive_register.py"
+        )
+        passed = subprocess.run(
+            [sys.executable, str(validator), str(root)], text=True, capture_output=True, check=False
+        )
+        self.assertEqual(passed.returncode, 0, passed.stdout + passed.stderr)
+        self.assertIn("DRIVE REGISTER VALIDATION: PASS", passed.stdout)
+
+        receipt["counts"]["unique_items"] = 99
+        (root / "DRIVE-INDEX-RECEIPT.json").write_text(
+            json.dumps(receipt, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        )
+        failed = subprocess.run(
+            [sys.executable, str(validator), str(root)], text=True, capture_output=True, check=False
+        )
+        self.assertEqual(failed.returncode, 1)
+        self.assertIn("receipt count disagrees: unique_items", failed.stdout)
+
+        receipt["counts"]["unique_items"] = 2
+        receipt["mode"] = "TEST 25"
+        receipt["status"] = "TEST 25 COMPLETE — FULL DRIVE NOT INDEXED"
+        (root / "DRIVE-INDEX-RECEIPT.json").write_text(
+            json.dumps(receipt, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        )
+        cursor = json.loads((root / "DRIVE-INDEX-CURSOR.json").read_text(encoding="utf-8"))
+        cursor["mode"] = "TEST 25"
+        cursor["next_action"] = "Choose whether to run FULL DRIVE INDEX"
+        (root / "DRIVE-INDEX-CURSOR.json").write_text(
+            json.dumps(cursor, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        )
+        (root / "DRIVE-INDEX.md").write_text(
+            "# Drive index\n\nGeneration: " + generation +
+            "\nMode: TEST 25\nUnique items: 2\n"
+            "Owned or created by me: 2\nShared with me: 1\nShared by me: 0\n"
+            "Relationship overlap items: 1\nRelationship unknown items: 1\n\n"
+            "No Drive file content was opened or downloaded, and no Drive item was created, "
+            "edited, renamed, moved, shared, unshared, deleted or organized.\n",
+            encoding="utf-8",
+        )
+        test_25_passed = subprocess.run(
+            [sys.executable, str(validator), str(root)], text=True, capture_output=True, check=False
+        )
+        self.assertEqual(
+            test_25_passed.returncode, 0, test_25_passed.stdout + test_25_passed.stderr
+        )
+
+        summary_path = root / "DRIVE-INDEX.md"
+        valid_summary = summary_path.read_text(encoding="utf-8")
+        summary_path.write_text(
+            valid_summary.replace("Shared with me: 1", "Shared with me: 99"),
+            encoding="utf-8",
+        )
+        summary_count_failed = subprocess.run(
+            [sys.executable, str(validator), str(root)], text=True, capture_output=True, check=False
+        )
+        self.assertEqual(summary_count_failed.returncode, 1)
+        self.assertIn("summary lacks required readback: Shared with me: 1", summary_count_failed.stdout)
+        summary_path.write_text(valid_summary, encoding="utf-8")
+
+        receipt["status"] = "TEST 25 COMPLETE"
+        (root / "DRIVE-INDEX-RECEIPT.json").write_text(
+            json.dumps(receipt, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        )
+        incomplete_label_failed = subprocess.run(
+            [sys.executable, str(validator), str(root)], text=True, capture_output=True, check=False
+        )
+        self.assertEqual(incomplete_label_failed.returncode, 1)
+        self.assertIn("lacks the incomplete-full-drive label", incomplete_label_failed.stdout)
+
+        jsonl_path = root / "DRIVE-INDEX.jsonl"
+        valid_jsonl = jsonl_path.read_text(encoding="utf-8")
+        jsonl_path.write_text(
+            valid_jsonl.replace(
+                '"item_id": "id-1"',
+                '"item_id": "id-1", "item_id": "duplicate"',
+                1,
+            ),
+            encoding="utf-8",
+        )
+        duplicate_key_failed = subprocess.run(
+            [sys.executable, str(validator), str(root)], text=True, capture_output=True, check=False
+        )
+        self.assertEqual(duplicate_key_failed.returncode, 1)
+        self.assertIn("duplicate JSON key", duplicate_key_failed.stdout)
 
     def test_reusable_and_kairali_editions_are_separate_complete_downloads(self):
         downloads = ROOT / "portal/public/downloads"

@@ -448,13 +448,29 @@ Stop when all of these are visible:
   advance the last-success cursor.
 - The workspace validator passed.
 
-**DONE WHEN:** You can show the index summary and cursor on your screen. A connected
-Drive account alone is not completion. The index helps Codex find files later, but
-opening a file later still needs current Drive permission and a new approved task.
+**DONE WHEN:** You can show the human register, AI register, summary, receipt and cursor
+on your screen. A connected Drive account alone is not completion. The JSONL helps
+Codex or Claude find metadata later only when this worker is named as an approved
+source; it is not permission for personal profiling. Opening a file later still needs
+current Drive permission and a new approved task.
 
 For company homework, stop after `TEST 25` only if setup is blocked and record that
 blocker. The Drive worker is marked **LIVE FOR ME** only after `FULL DRIVE INDEX`
 finishes every supported scope and the final validator passes.
+
+## Optional weekly Drive refresh
+
+After full mode passes, Codex asks whether you want a weekly refresh. Say No to leave
+it off. If Yes, choose the day and local-time window—Sunday night is suggested, or pick
+another convenient time—then confirm the time zone. Review the exact approved Drive
+account, project folder, schedule and metadata-only prompt. Say `ACTIVATE WEEKLY
+REFRESH` only when all are correct.
+
+**DONE WHEN:** ChatGPT desktop Scheduled shows the exact card and next run, and one
+bounded pilot refresh adds or updates by stable item ID and passes both validators. The
+computer must be on, ChatGPT desktop running and this project available. A missed or
+approval-blocked run does not pretend to have updated the register. You can pause, edit
+or delete the scheduled task without deleting the registers.
 
 # Optional bonus — Weekly LinkedIn Message Assistant
 
@@ -585,9 +601,7 @@ does not rewrite the worker.
 
 # Official screen references
 
-- ChatGPT quickstart: https://learn.chatgpt.com/docs/quickstart
-- ChatGPT desktop app: https://learn.chatgpt.com/docs/app
-- Projects and chats: https://learn.chatgpt.com/docs/projects
-- Apps: https://help.openai.com/en/articles/11487775-connectors-in-chatgpt
-- Email inbox use case: https://learn.chatgpt.com/use-cases/manage-your-inbox
-- Computer Use with Codex: https://learn.chatgpt.com/use-cases/use-your-computer-with-codex
+- Setup, desktop and projects: https://learn.chatgpt.com/docs/quickstart ·
+  https://learn.chatgpt.com/docs/app · https://learn.chatgpt.com/docs/projects
+- Apps and scheduled tasks: https://help.openai.com/en/articles/11487775-connectors-in-chatgpt ·
+  https://learn.chatgpt.com/docs/automations?surface=app

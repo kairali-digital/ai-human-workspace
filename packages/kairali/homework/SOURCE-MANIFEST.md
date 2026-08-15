@@ -15,6 +15,11 @@
 - Owner instruction H-35, 12 Aug 2026: employees may choose `TEST 25` or a full
   connector-visible Drive metadata index; full mode continues in batches of at most 25
   with a durable checkpoint after each batch and never opens or changes Drive files.
+- Owner instruction H-48, 16 Aug 2026: the Drive worker must visibly create and reopen
+  a 25-item test or complete full register, report unique owned/created, shared-with,
+  shared-by, overlap and unknown counts, keep one fast AI-readable register and one
+  matching human Sheet-or-CSV view, then optionally refresh new files weekly on Sunday
+  night or another employee-chosen schedule.
 - Owner instruction H-36, 13 Aug 2026: Email Triage asks each employee for a preferred
   daily local time, produces a concise importance brief through the Gmail connector,
   and follows Abhilash's proven separation of briefing, conservative reversible filing
@@ -96,6 +101,9 @@
   click, type and navigate approved Mac/Windows apps with permission prompts and human
   review; use `@Computer` for local computer work and `@Chrome` for signed-in browser
   work, with a pause before send, submit or another important change.
+- https://learn.chatgpt.com/docs/automations?surface=app - project-scoped scheduled
+  tasks can run from ChatGPT desktop; local runs require the computer on, the app
+  running and the folder available; prompts should be tested before scheduling.
 
 ## Locked scope choices
 

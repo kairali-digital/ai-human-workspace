@@ -74,6 +74,8 @@ accounts or schedules.
   unique/relationship/overlap/unknown/refresh totals agree with summary and cursor;
   the weekly refresh is card-verified or declined; and the validator passes.
   `TEST 25` proves setup only; it is not the completed company homework.
+  Weekly refresh remains optional and is active only after the employee confirms the
+  schedule/time zone and its first bounded pilot passes.
 - **LinkedIn — LIVE FOR ME, OPTIONAL:** you chose it; the Saturday schedule, scoped
   local-control proof, `YOUR TURN ON LINKEDIN` handoff, manually supplied pilot, queue
   and cursor pass. Otherwise record **NOT ENABLED BY CHOICE**.

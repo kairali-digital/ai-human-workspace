@@ -4,7 +4,15 @@ import path from "node:path";
 
 const root = path.resolve(import.meta.dirname, "..");
 const manifest = JSON.parse(await readFile(path.join(root, "content", "download-manifest.json"), "utf8"));
+const packageManifest = JSON.parse(await readFile(path.join(root, "package.json"), "utf8"));
+const packageLock = JSON.parse(await readFile(path.join(root, "package-lock.json"), "utf8"));
 const issues = [];
+if (packageManifest.engines?.node !== "22.x") {
+  issues.push("portal Node runtime must remain pinned to the tested 22.x line");
+}
+if (packageLock.packages?.[""]?.engines?.node !== packageManifest.engines?.node) {
+  issues.push("package-lock root Node runtime does not match package.json");
+}
 const required = new Set([
   "AI-HUMAN-v200-REUSABLE-EDITION-PUBLIC-KIT.zip",
   "AI-HUMAN-v200-REUSABLE-EDITION-PUBLIC-KIT.zip.sha256",

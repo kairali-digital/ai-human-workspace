@@ -401,6 +401,172 @@ class LifecycleTests(unittest.TestCase):
         )
         self.assertEqual(self.run_cli("validate", worker).returncode, 0)
 
+    def test_explanatory_pass_result_is_normalized_without_hiding_other_failures(self):
+        worker = self.base / "normalized-pass"
+        self.install(worker)
+        (worker / "COMPLETED_LEDGER.md").write_text(
+            "# COMPLETED LEDGER\n\n"
+            "| ID | Task | Closed UTC | Before | After | Evidence refs | Undo |\n"
+            "|---|---|---|---|---|---|---|\n"
+            "| DONE-1 | Safe local draft | 2026-08-15T00:00:00Z | Draft absent | Draft stored | EVIDENCE_LOG.md DONE-1 | Delete the synthetic draft file |\n",
+            encoding="utf-8",
+        )
+        (worker / "EVIDENCE_LOG.md").write_text(
+            "# EVIDENCE LOG\n\n"
+            "| Task ID | Timestamp UTC | Before state | After state | Verification | Result | Artifact or readback | Undo |\n"
+            "|---|---|---|---|---|---|---|---|\n"
+            "| DONE-1 | 2026-08-15T00:00:00Z | Draft absent | Draft stored | Compared the stored draft with all requested headings | PASS — safe local draft created | CAMPAIGN-DRAFT.md read back with all requested headings | Delete the synthetic draft file |\n",
+            encoding="utf-8",
+        )
+        self.assertEqual(self.run_cli("validate", worker).returncode, 0)
+
+        (worker / "TODAY.md").write_text(
+            "# TODAY\n\n| ID | Task | Bounded batch | Next action | Status |\n"
+            "|---|---|---|---|---|\n"
+            "| DONE-1 | Safe local draft | One artifact | None | CLOSED |\n",
+            encoding="utf-8",
+        )
+        failed = self.run_cli("validate", worker, expect=1)
+        self.assertIn("completed task remains in TODAY.md: DONE-1", failed.stdout)
+
+    def test_local_reversible_task_path_is_atomic_proportional_and_parser_safe(self):
+        worker = self.base / "local-fast-path"
+        self.install(worker)
+        toolbox_before = (worker / "TOOLBOX.md").read_text(encoding="utf-8")
+        facts_before = (worker / "FACTS.md").read_text(encoding="utf-8")
+        decisions_before = (worker / "DECISIONS.md").read_text(encoding="utf-8")
+        receipts_before = set((worker / ".ai-human/control/receipts").glob("*.json"))
+
+        started = self.run_cli(
+            "task-start", worker,
+            "--title", "Create `ACTION-LIST.md` for A | B",
+            "--source", "Current owner request and `SOURCE-NOTES.md`",
+        )
+        task_id = self.output_value(started.stdout, "task id")
+        self.assertEqual(task_id, "LOCAL-001")
+        self.assertEqual(AI_HUMAN.live_task_id(worker), task_id)
+        self.assertNotIn("expected-state hash", started.stdout)
+        self.assertNotIn("receipt", started.stdout.casefold())
+        register_row = next(
+            row for row in AI_HUMAN.parse_table_rows(worker / "OPEN_REGISTER.md")
+            if row[0] == task_id
+        )
+        today_row = next(
+            row for row in AI_HUMAN.parse_table_rows(worker / "TODAY.md")
+            if row[0] == task_id
+        )
+        self.assertEqual(len(register_row), 7)
+        self.assertEqual(len(today_row), 5)
+        self.assertEqual(register_row[2], "Create `ACTION-LIST.md` for A | B")
+        self.assertEqual(today_row[1], "Create `ACTION-LIST.md` for A | B")
+        self.assertNotIn("No live work.", (worker / "TODAY.md").read_text(encoding="utf-8"))
+        self.assertIn("Worker-local reversible artifact write", toolbox_before)
+
+        (worker / "ACTION-LIST.md").write_text(
+            "# Action list\n\n1. Confirm owner.\n2. Prepare draft.\n3. Read it back.\n",
+            encoding="utf-8",
+        )
+        completed = self.run_cli(
+            "task-complete", worker,
+            "--task-id", task_id,
+            "--artifact", "ACTION-LIST.md",
+            "--outcome", "ACTION-LIST.md contains the three requested action rows",
+            "--verification", "Read back all three numbered rows and compared them with the owner request",
+            "--undo", "Delete ACTION-LIST.md to remove the local reversible result",
+        )
+        self.assertIn("AI-HUMAN TASK COMPLETE: PASS", completed.stdout)
+        self.assertIn("response guidance: return the requested result only", completed.stdout)
+        self.assertNotIn("task id:", completed.stdout.casefold())
+        self.assertNotIn("artifact readback:", completed.stdout.casefold())
+        self.assertNotIn("final worker validation:", completed.stdout.casefold())
+        self.assertNotIn("state hash", completed.stdout.casefold())
+        self.assertNotIn("receipt", completed.stdout.casefold())
+        self.assertEqual(AI_HUMAN.live_task_id(worker), "")
+        self.assertNotIn(task_id, AI_HUMAN.parse_table_ids(worker / "OPEN_REGISTER.md"))
+        self.assertNotIn(task_id, AI_HUMAN.parse_table_ids(worker / "TODAY.md"))
+        self.assertIn("No live work.", (worker / "TODAY.md").read_text(encoding="utf-8"))
+        self.assertIn(task_id, AI_HUMAN.parse_table_ids(worker / "COMPLETED_LEDGER.md"))
+        ledger_row = next(
+            row for row in AI_HUMAN.parse_table_rows(worker / "COMPLETED_LEDGER.md")
+            if row[0] == task_id
+        )
+        self.assertEqual(len(ledger_row), 7)
+        self.assertEqual(ledger_row[1], "Create `ACTION-LIST.md` for A | B")
+        evidence_rows = [
+            row for row in AI_HUMAN.parse_table_rows(worker / "EVIDENCE_LOG.md")
+            if row[0] == task_id
+        ]
+        self.assertEqual(len(evidence_rows), 1)
+        self.assertEqual(evidence_rows[0][5], "PASS")
+        self.assertEqual(self.run_cli("validate", worker).returncode, 0)
+        self.assertEqual((worker / "TOOLBOX.md").read_text(encoding="utf-8"), toolbox_before)
+        self.assertEqual((worker / "FACTS.md").read_text(encoding="utf-8"), facts_before)
+        self.assertEqual((worker / "DECISIONS.md").read_text(encoding="utf-8"), decisions_before)
+        receipts_after = set((worker / ".ai-human/control/receipts").glob("*.json"))
+        self.assertEqual(len(receipts_after - receipts_before), 2)
+        self.assertFalse((worker / ".ai-human/control/session-lease.json").exists())
+
+    def test_local_task_close_failure_stays_open_and_truthful(self):
+        worker = self.base / "local-fast-path-failure"
+        self.install(worker)
+        started = self.run_cli(
+            "task-start", worker, "--title", "Create one local campaign draft"
+        )
+        task_id = self.output_value(started.stdout, "task id")
+        before = state_hashes(worker)
+        failed = self.run_cli(
+            "task-complete", worker,
+            "--task-id", task_id,
+            "--artifact", "MISSING-DRAFT.md",
+            "--outcome", "Campaign draft contains the requested safe local structure",
+            "--verification", "Read back every requested section from the local campaign draft",
+            "--undo", "Delete MISSING-DRAFT.md to remove the local reversible result",
+            expect=1,
+        )
+        self.assertIn("local artifact does not exist", failed.stderr)
+        self.assertEqual(state_hashes(worker), before)
+        self.assertEqual(AI_HUMAN.live_task_id(worker), task_id)
+        self.assertNotIn(task_id, AI_HUMAN.parse_table_ids(worker / "COMPLETED_LEDGER.md"))
+        self.assertEqual(self.run_cli("validate", worker).returncode, 0)
+        self.assertFalse((worker / ".ai-human/control/session-lease.json").exists())
+
+    def test_local_task_close_rejects_false_no_other_files_undo_claim(self):
+        worker = self.base / "local-fast-path-false-undo"
+        self.install(worker)
+        started = self.run_cli(
+            "task-start", worker, "--title", "Create one local review draft"
+        )
+        task_id = self.output_value(started.stdout, "task id")
+        (worker / "REVIEW-DRAFT.md").write_text(
+            "# Review draft\n\nSafe local review content.\n", encoding="utf-8"
+        )
+        before = state_hashes(worker)
+        failed = self.run_cli(
+            "task-complete", worker,
+            "--task-id", task_id,
+            "--artifact", "REVIEW-DRAFT.md",
+            "--outcome", "Created the requested safe local review draft",
+            "--verification", "Read back the review heading and safe local content",
+            "--undo", "Delete REVIEW-DRAFT.md to revert; no other files touched",
+            expect=1,
+        )
+        self.assertIn("lifecycle state and internal receipts change by design", failed.stderr)
+        self.assertEqual(state_hashes(worker), before)
+        self.assertEqual(AI_HUMAN.live_task_id(worker), task_id)
+        self.assertNotIn(task_id, AI_HUMAN.parse_table_ids(worker / "COMPLETED_LEDGER.md"))
+        self.assertEqual(self.run_cli("validate", worker).returncode, 0)
+
+        completed = self.run_cli(
+            "task-complete", worker,
+            "--task-id", task_id,
+            "--artifact", "REVIEW-DRAFT.md",
+            "--outcome", "Created the requested safe local review draft",
+            "--verification", "Read back the review heading and safe local content",
+            "--undo", "Delete REVIEW-DRAFT.md to remove the requested local artifact",
+        )
+        self.assertIn("AI-HUMAN TASK COMPLETE: PASS", completed.stdout)
+        self.assertEqual(self.run_cli("validate", worker).returncode, 0)
+
     def test_weak_completion_evidence_placeholders_are_rejected(self):
         for weak_value in (
             "done", "Done!", "done.", "changed", "ok", "OK.", "ok!", "yes",
@@ -663,6 +829,12 @@ class LifecycleTests(unittest.TestCase):
         candidate_manifest = json.loads(
             (ROOT / "release-manifest.json").read_text(encoding="utf-8")
         )
+        candidate_manifest["compatibility"] = {
+            "classification": "SETUP_MIGRATION_REQUIRED",
+            "migration": "Configure the exact local Gate 0 profile at a safe checkpoint.",
+            "minimum_supported_version": "1.5.1",
+            "preserves_user_state": True,
+        }
         candidate_manifest["automatic_update_eligible"] = True
         eligible, reason = AI_HUMAN.automatic_release_eligible(candidate_manifest, "1.5.1")
         self.assertFalse(eligible)
@@ -957,15 +1129,18 @@ class LifecycleTests(unittest.TestCase):
 
     def test_reusable_and_kairali_editions_are_separate_complete_downloads(self):
         downloads = ROOT / "portal/public/downloads"
-        reusable = downloads / "AI-HUMAN-v200-REUSABLE-EDITION-PUBLIC-KIT.zip"
-        kairali = downloads / "KAIRALI-AI-HUMAN-v200-EMPLOYEE-EDITION-PUBLIC-KIT.zip"
+        manifest = json.loads((ROOT / "release-manifest.json").read_text(encoding="utf-8"))
+        lane = "PUBLIC-KIT" if manifest["release_status"] == "RELEASED" else "LOCAL-CANDIDATE"
+        version_token = "v" + CURRENT_VERSION.replace(".", "")
+        reusable = downloads / ("AI-HUMAN-" + version_token + "-REUSABLE-EDITION-" + lane + ".zip")
+        kairali = downloads / ("KAIRALI-AI-HUMAN-" + version_token + "-EMPLOYEE-EDITION-" + lane + ".zip")
         forbidden = ("kairali", "abhilash", "ambuj")
 
         with zipfile.ZipFile(reusable) as archive:
             names = archive.namelist()
             edition = json.loads(archive.read("AI-HUMAN-REUSABLE-EDITION/EDITION.json"))
-            self.assertEqual(edition["approval_status"], "APPROVED_BY_OWNER")
-            self.assertEqual(edition["release_status"], "RELEASED")
+            self.assertEqual(edition["approval_status"], manifest["approval_status"])
+            self.assertEqual(edition["release_status"], manifest["release_status"])
             self.assertIn("AI-HUMAN-REUSABLE-EDITION/START-HERE.md", names)
             self.assertIn("AI-HUMAN-REUSABLE-EDITION/INSTALL-DISABLE-REMOVE.md", names)
             self.assertIn("AI-HUMAN-REUSABLE-EDITION/workspace/scripts/ai_human.py", names)
@@ -983,8 +1158,8 @@ class LifecycleTests(unittest.TestCase):
         with zipfile.ZipFile(kairali) as archive:
             names = archive.namelist()
             edition = json.loads(archive.read("KAIRALI-EMPLOYEE-EDITION/EDITION.json"))
-            self.assertEqual(edition["approval_status"], "APPROVED_BY_OWNER")
-            self.assertEqual(edition["release_status"], "RELEASED")
+            self.assertEqual(edition["approval_status"], manifest["approval_status"])
+            self.assertEqual(edition["release_status"], manifest["release_status"])
             self.assertIn("KAIRALI-EMPLOYEE-EDITION/START-HERE.md", names)
             self.assertIn("KAIRALI-EMPLOYEE-EDITION/INSTALL-DISABLE-REMOVE.md", names)
             self.assertIn(
@@ -999,15 +1174,18 @@ class LifecycleTests(unittest.TestCase):
 
     def test_public_edition_archives_install_and_validate_after_extraction(self):
         downloads = ROOT / "portal/public/downloads"
+        manifest = json.loads((ROOT / "release-manifest.json").read_text(encoding="utf-8"))
+        lane = "PUBLIC-KIT" if manifest["release_status"] == "RELEASED" else "LOCAL-CANDIDATE"
+        version_token = "v" + CURRENT_VERSION.replace(".", "")
         editions = (
             (
-                downloads / "AI-HUMAN-v200-REUSABLE-EDITION-PUBLIC-KIT.zip",
+                downloads / ("AI-HUMAN-" + version_token + "-REUSABLE-EDITION-" + lane + ".zip"),
                 "AI-HUMAN-REUSABLE-EDITION",
                 "standalone-local/ai-human-workspace",
                 "reusable-archive-worker",
             ),
             (
-                downloads / "KAIRALI-AI-HUMAN-v200-EMPLOYEE-EDITION-PUBLIC-KIT.zip",
+                downloads / ("KAIRALI-AI-HUMAN-" + version_token + "-EMPLOYEE-EDITION-" + lane + ".zip"),
                 "KAIRALI-EMPLOYEE-EDITION",
                 "kairali-digital/ai-human-workspace",
                 "kairali-archive-worker",
@@ -1020,6 +1198,15 @@ class LifecycleTests(unittest.TestCase):
                 AI_HUMAN.safe_extract(archive, extracted)
                 source = extracted / edition_root / "workspace"
                 worker = self.base / worker_name
+                if manifest["release_status"] == "LOCAL_BUILD_ONLY":
+                    rejected = self.run_cli(
+                        "install", worker, "--source", source,
+                        *self.required_install_arguments(),
+                        "--worker-id", worker_name, "--timezone", "Asia/Kolkata",
+                        "--supervisor", "Supervisor One", expect=1,
+                    )
+                    self.assertIn("local candidate", rejected.stderr)
+                    continue
                 self.install(worker, release=source, worker_id=worker_name)
                 self.assertEqual(self.run_cli("validate", worker).returncode, 0)
                 metadata = json.loads(
@@ -1070,7 +1257,13 @@ class LifecycleTests(unittest.TestCase):
             cwd=ROOT, text=True, capture_output=True, check=False,
         )
         self.assertEqual(public_root.returncode, 0, public_root.stdout + public_root.stderr)
-        self.assertIn("PUBLIC RELEASE VALIDATION: PASS", public_root.stdout)
+        root_manifest = json.loads((ROOT / "release-manifest.json").read_text(encoding="utf-8"))
+        expected_root_lane = (
+            "LOCAL CANDIDATE VALIDATION: PASS"
+            if root_manifest["release_status"] == "LOCAL_BUILD_ONLY"
+            else "PUBLIC RELEASE VALIDATION: PASS"
+        )
+        self.assertIn(expected_root_lane, public_root.stdout)
 
         self.build_release_proof()
         public = subprocess.run(
@@ -1316,7 +1509,11 @@ class LifecycleTests(unittest.TestCase):
             [sys.executable, str(guard), str(ROOT)], cwd=ROOT,
             text=True, capture_output=True, check=False,
         )
-        self.assertEqual(allowed_root.returncode, 0, allowed_root.stdout + allowed_root.stderr)
+        if json.loads((ROOT / "release-manifest.json").read_text(encoding="utf-8"))["release_status"] == "RELEASED":
+            self.assertEqual(allowed_root.returncode, 0, allowed_root.stdout + allowed_root.stderr)
+        else:
+            self.assertEqual(allowed_root.returncode, 1, allowed_root.stdout + allowed_root.stderr)
+            self.assertIn("LOCAL_BUILD_ONLY", allowed_root.stdout)
 
         blocked_candidate = self.base / "blocked-candidate-portal"
         (blocked_candidate / "portal/app").mkdir(parents=True)
@@ -1373,8 +1570,22 @@ class LifecycleTests(unittest.TestCase):
 
         worker = self.base / "setup-migration-worker"
         self.install(worker, release=old_release, automatic=True, worker_id="migration-001")
+        migration_release = self.base / "setup-migration-release"
+        shutil.copytree(self.release, migration_release)
+        migration_manifest_path = migration_release / "release-manifest.json"
+        migration_manifest = json.loads(migration_manifest_path.read_text(encoding="utf-8"))
+        migration_manifest["automatic_update_eligible"] = False
+        migration_manifest["compatibility"] = {
+            "classification": "SETUP_MIGRATION_REQUIRED",
+            "migration": "Configure the exact local Gate 0 profile at a safe checkpoint.",
+            "minimum_supported_version": "1.5.1",
+            "preserves_user_state": True,
+        }
+        migration_manifest_path.write_text(
+            json.dumps(migration_manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        )
         result = self.run_cli(
-            "automatic-update", worker, "--source", self.release,
+            "automatic-update", worker, "--source", migration_release,
             "--now-local", "2026-09-01T10:00:00+05:30",
         )
         self.assertIn("AUTOMATIC UPDATE: DEFERRED", result.stdout)

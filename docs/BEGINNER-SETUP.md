@@ -88,6 +88,19 @@ system or the company reference kit.
 location and preserved employee-state result. If a live task exists, DONE means the
 update is recorded and deferred instead.
 
+## When a reusable user receives a new release
+
+Open the existing worker in Codex, start a new chat and paste `CHECK FOR AI-HUMAN
+UPDATE`. The exact full prompt is in the Reusable Edition's `START-HERE.md`. The check
+is read-only. If a compatible update is available and no task is live, say `UPDATE NOW`
+at a safe checkpoint. A configured v2.0.0 worker can take the v2.0.1 patch while its
+company, Gate 0 profile and user state stay preserved. A pre-v2 worker first follows
+the guided exact-scope Gate 0 migration.
+
+**DONE WHEN:** the worker shows version `2.0.1`, validator `PASS`, the update receipt,
+preserved-state result and recovery location. If a task is live, DONE for this session
+means the update is visibly deferred without changing the worker.
+
 ## What the helper does
 
 The helper checks what is already installed and uses the extracted edition source copy

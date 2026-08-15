@@ -45,8 +45,6 @@ REQUIRED_FILES = {
     "docs/GOVERNED-CAPABILITIES-AND-FLEET.md",
     "docs/MULTI-COMPANY-ROLLOUT.md",
     "docs/RELEASE-PROCESS.md",
-    "docs/releases/RELEASE-NOTES-v2.0.0.md",
-    "docs/releases/VET-v2.0.0.md",
     "docs/SECURITY-AND-DATA-BOUNDARIES.md",
     "docs/TECHNICAL-SETUP.md",
     "docs/THREE-WORKER-GO-LIVE.md",
@@ -568,6 +566,14 @@ def validate(root, candidate=False):
     control_plane_version = bool(SEMVER.fullmatch(version)) and tuple(int(part) for part in version.split(".")) >= (1, 6, 0)
     if not SEMVER.fullmatch(version):
         failures.append("manifest version is not semantic: " + repr(version))
+    else:
+        for relative in (
+            "docs/releases/RELEASE-NOTES-v" + version + ".md",
+            "docs/releases/VET-v" + version + ".md",
+        ):
+            path = root / relative
+            if not path.is_file() or path.stat().st_size == 0:
+                failures.append("missing or empty current-version release evidence: " + relative)
     version_path = root / "core/VERSION"
     if version_path.is_file() and version_path.read_text(encoding="utf-8").strip() != version:
         failures.append("core/VERSION does not match the manifest")

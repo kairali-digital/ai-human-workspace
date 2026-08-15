@@ -2,24 +2,23 @@
   "approval_status": "APPROVED_BY_OWNER",
   "automatic_update_eligible": false,
   "compatibility": {
-    "classification": "SETUP_MIGRATION_REQUIRED",
-    "migration": "Configure and validate the exact local Gate 0 profile at a safe checkpoint before applying the managed update.",
-    "minimum_supported_version": "1.5.1",
+    "classification": "BACKWARD_COMPATIBLE",
+    "minimum_supported_version": "2.0.0",
     "preserves_user_state": true
   },
   "managed_files": [
     {
-      "sha256": "e92a4105df7c8a524cff01ab385fe7ae7094583fa4cde84f32aeda617f97b44f",
+      "sha256": "5901bcc6b8cfa5ee4501738de5093247d4aa287e8c0ed968fbb14dfa79e75532",
       "source": "core/AI-HUMAN.md",
       "target": ".ai-human/system/AI-HUMAN.md"
     },
     {
-      "sha256": "074caa6d28104ad5f6bdb2bcf0316c134efdd7a257ed4dda26afa399d9ab6228",
+      "sha256": "0114c6b06fcc12e3f9b1299647c1ba97aabdad5c6b7206e5af1c8ccb528ce456",
       "source": "core/AGENT-RULES.md",
       "target": ".ai-human/system/AGENT-RULES.md"
     },
     {
-      "sha256": "5ea0db0ce0aa663c0f8f9b6de72b02e7705b8ed8b13b293f30117b648403cf72",
+      "sha256": "730b41d7bf757464cc555c16fbe919b6031912376643334085d952e05fa61027",
       "source": "core/OPERATING-LOOP.md",
       "target": ".ai-human/system/OPERATING-LOOP.md"
     },
@@ -29,27 +28,27 @@
       "target": ".ai-human/system/GATES-SHARED.md"
     },
     {
-      "sha256": "d180dd6a897b5cd360349b646a2d0c89ed127476249430f1e307b85641a4e605",
+      "sha256": "d8e1f73ab955f6697f2d4b7bcd6abc5a454c19214bf81642f9d47d3baf78b013",
       "source": "core/SESSION-START.md",
       "target": ".ai-human/system/SESSION-START.md"
     },
     {
-      "sha256": "256be7d49524a6db4c86b417ce55465b0ffe64646fef6aa3176278aa603a5c7f",
+      "sha256": "01ce7615ea9899c68ea8291dbe03ecaefa61e86db31e402c77a3634e47192e07",
       "source": "core/SESSION-END.md",
       "target": ".ai-human/system/SESSION-END.md"
     },
     {
-      "sha256": "b0ead077389da28d0cf50c8949fd7f37fccac3806f37fb0dafdccd1513f29862",
+      "sha256": "9fe92fd3727310b2c1490613c760147f8f72c625291ab83ecf490bdee68bca6c",
       "source": "core/TOOLBOX-TEMPLATE.md",
       "target": ".ai-human/system/TOOLBOX-TEMPLATE.md"
     },
     {
-      "sha256": "c28fcca53637bc88e124af1725df13cb98c69dedefd62fb3cdbe1cdb6b760624",
+      "sha256": "fe840f52fb5578d3f77eb497115eb02c6036601c3a53e60df7995c7276baa77a",
       "source": "core/VERSION",
       "target": ".ai-human/VERSION"
     },
     {
-      "sha256": "07d9069dddc76ddcc5780f19dbad44688035f415cec77e69e4b5155fb111ccbb",
+      "sha256": "88a72542b3383a17a7153963771d542582545e44eb072e8b916cfbf3fe2ef431",
       "source": "scripts/ai_human.py",
       "target": ".ai-human/bin/ai_human.py"
     }
@@ -86,5 +85,5 @@
   "release_status": "RELEASED",
   "repository": "kairali-digital/ai-human-workspace",
   "schema": "ai-human.workspace-release/v1",
-  "version": "2.0.0"
+  "version": "2.0.1"
 }

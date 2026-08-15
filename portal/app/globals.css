@@ -194,7 +194,7 @@ h1 {
 .release-strip a { color: var(--amber); font-weight: 700; }
 .release-fallback { font-size: 0.78rem; grid-column: 1 / -1; margin: 0; }
 
-.start-paths, .install-flow, .gate-profile, .file-ownership, .lifecycle-control, .troubleshooting, .workers, .update-flow, .access-boundary, .downloads, .technical, .update-policy {
+.start-paths, .install-flow, .achievement-path, .gate-profile, .file-ownership, .lifecycle-control, .troubleshooting, .workers, .update-flow, .access-boundary, .downloads, .technical, .update-policy {
   margin: 0 auto;
   max-width: 1400px;
   padding: clamp(88px, 11vw, 150px) 32px;
@@ -240,6 +240,8 @@ h2 {
 
 .install-flow { background: var(--surface-raised); }
 .install-flow h2 { max-width: 15ch; }
+.achievement-path { background: var(--surface-warm); }
+.achievement-path h2 { max-width: 19ch; }
 .five-steps {
   display: grid;
   gap: 14px;
@@ -530,7 +532,7 @@ footer a { flex: 0 0 auto; font-weight: 750; }
   .hero-actions { align-items: stretch; flex-direction: column; }
   .button { width: 100%; }
   .release-strip { grid-template-columns: 1fr; padding: 24px 20px; }
-  .start-paths, .install-flow, .gate-profile, .file-ownership, .lifecycle-control, .troubleshooting, .workers, .update-flow, .access-boundary, .downloads, .technical, .update-policy { padding: 76px 20px; }
+  .start-paths, .install-flow, .achievement-path, .gate-profile, .file-ownership, .lifecycle-control, .troubleshooting, .workers, .update-flow, .access-boundary, .downloads, .technical, .update-policy { padding: 76px 20px; }
   .proof-banner { align-items: flex-start; flex-direction: column; }
   .path-grid, .download-grid { grid-template-columns: 1fr; }
   .download-group-featured { grid-column: auto; }

@@ -60,6 +60,18 @@ mission and offers the nearest compliant next step or approval path. It must not
 lecture or turn a narrow rule into a broad ban. This pattern is off when the system is
 verified `SUSPENDED`.
 
+## Already using an older version?
+
+Open the existing employee worker in Codex, start a new chat and paste `CHECK FOR
+KAIRALI UPDATE`. Use the complete checked prompt in
+`workspace/packages/kairali/UPDATE-WORKFLOW.md`. The check changes nothing. If the
+worker is configured v2.0.0 and idle, say `UPDATE NOW` to apply v2.0.1 with a backup,
+managed-file-only update and validation. A pre-v2 worker first completes the guided
+exact-scope Gate 0 migration.
+
+**DONE WHEN:** the installed version is `2.0.1`, validation is `PASS`, employee state
+is preserved and a recovery location is shown.
+
 ## If anything fails
 
 Paste the full Setup Helper message again and add the exact visible error. Do not use

@@ -2,6 +2,44 @@
 
 All notable changes are recorded here in plain language.
 
+## [2.0.1] - 2026-08-15
+
+- Add three proportional execution paths. Read-only requests answer directly without
+  task-state changes; ordinary reversible local work uses standing task-scoped local
+  read/write permissions; consequential, external and Gate 0 work retains the full
+  approval, source, lease, evidence and rollback controls.
+- Add deterministic `task-start` and `task-complete` lifecycle commands. They
+  auto-generate a task ID when the user supplied none, own cursor/register/today/
+  ledger/evidence formatting, acquire and release the writer lease internally, commit
+  state atomically and refuse to report completion until final validation passes.
+- Give fresh workers standing permission to read worker-local sources and create or
+  edit the bounded reversible artifact explicitly requested by the user. The permission
+  excludes controlled state, `.ai-human/`, secrets, external effects, deletion,
+  unrecoverable overwrites, accounts and security changes, so routine work no longer
+  creates one-off tool, fact or decision rows.
+- Parse live task IDs only from an explicit `Task ID:` field or the leading legacy ID,
+  never from a later backticked filename in the task description. Parse escaped table
+  separators without corrupting a title or proof row.
+- Normalize a leading explanatory `PASS` result while keeping the explanation in the
+  verification field. Deterministic close removes the completed ID from both open and
+  today state in the same validated transaction, preventing the v2.0.0 false-completion
+  case.
+- Keep the artifact/assignment distinction unchanged: a complete file with 150 embedded
+  entries remains one intact unit, while 150 separately executed items or remote writes
+  remain checkpointed in batches of no more than 25.
+- Keep a mixed request on the fast local path when its gated part is withheld. The
+  worker reads the exact company profile, completes the safe artifact and does not add
+  a redundant manual writer lease.
+- Require a complete non-claim note or no reference when content is withheld. Created
+  artifacts paraphrase the blocked category instead of reproducing unsupported wording
+  or leaving a dangling section reference.
+- Reject literally false undo evidence such as “no other files changed”; task closure
+  stays open until the proof distinguishes the requested artifact from lifecycle state
+  and internal receipts.
+- Classify the patch as backward-compatible for an already configured v2.0.0 worker.
+  A pre-v2 worker still needs the existing guided exact-scope Gate 0 migration before
+  entering the v2 line; automatic update eligibility remains off.
+
 ## [2.0.0] - 2026-08-15
 
 - Replace the incorrect universal company Gate 0 with a confirmed local profile bound

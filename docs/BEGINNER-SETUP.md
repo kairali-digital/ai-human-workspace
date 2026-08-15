@@ -94,11 +94,10 @@ Open the existing worker in Codex, start a new chat and paste `CHECK FOR AI-HUMA
 UPDATE`. The exact full prompt is in the Reusable Edition's `START-HERE.md`. The check
 is read-only. If a compatible update is available and no task is live, say `UPDATE NOW`
 at a safe checkpoint. A configured v2.0.0 worker or held v2.0.1 worker can take the
-v2.1.0 release, including the concurrency correction, while its company, Gate 0 profile
-and user state stay preserved. A
+v2.2.0 release while its company, Gate 0 profile and user state stay preserved. A
 pre-v2 worker first follows the guided exact-scope Gate 0 migration.
 
-**DONE WHEN:** the worker shows version `2.1.0`, validator `PASS`, the update receipt,
+**DONE WHEN:** the worker shows version `2.2.0`, validator `PASS`, the update receipt,
 preserved-state result and recovery location. If a task is live, DONE for this session
 means the update is visibly deferred without changing the worker.
 
@@ -116,10 +115,10 @@ worker folders.
 
 For Kairali, the helper also opens the approved role prompt. If the attendee has no
 named plan, it installs the universal homework reference kit and creates separate Email
-Triage and Drive Index worker folders; Drive offers `TEST 25` or a resumable full
-metadata register with every batch capped at 25, one AI JSONL file of record and one
-matching human CSV or approved Sheet mirror. After full proof it may offer a
-user-confirmed weekly refresh. The Weekly LinkedIn Message Assistant
+Triage and Drive Master Index worker folders; Email builds employee-controlled sourced
+work memory and a fixed-time EA brief. Drive offers `TEST 25` or a resumable full
+metadata index with every batch capped at 25, a JSONL file of record, one reconciled
+Sheet-or-CSV human register and an optional owner-confirmed weekly refresh. The Weekly LinkedIn Message Assistant
 stays optional: it may use task-scoped Computer control inside its local worker and
 Chrome on an approved non-LinkedIn setup page, but stops all tools and shows `YOUR TURN
 ON LINKEDIN` before the employee opens LinkedIn. The employee manually pastes up to 25
@@ -135,12 +134,12 @@ accounts or schedule. Use the complete
 [`THREE-WORKER-GO-LIVE-CHECKLIST.md`](../packages/kairali/homework/THREE-WORKER-GO-LIVE-CHECKLIST.md)
 after setup.
 
-- Daily Email is required and becomes **LIVE FOR ME** only after its account, chosen
-  schedule, pilot, mode, automation and validator agree.
+- Personal Memory + Daily Email EA is required and becomes **LIVE FOR ME** only after
+  its account, sourced memory and controls, chosen schedule, pilot, mode, report,
+  automation and validator agree.
 - Full Drive Index is required and becomes **LIVE FOR ME** only after full supported
-  scope coverage, AI and human registers, relationship counts, receipt, final cursor
-  and validators agree. `TEST 25` is setup proof only. Weekly refresh is optional and
-  needs a confirmed schedule/time zone plus a passing pilot.
+  scope coverage, both registers' generation/count readback, final cursor, schedule
+  decision and validator agree. `TEST 25` is setup proof only.
 - Saturday LinkedIn is optional. It becomes **LIVE FOR ME, OPTIONAL** only after its
   schedule, scoped local-control handoff, manually supplied pilot, queue and validator
   agree. Otherwise record **NOT ENABLED BY CHOICE**.

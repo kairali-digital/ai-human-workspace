@@ -6,7 +6,7 @@ Use this guide only if you attended the meeting and do not already have a named 
 or homework page.
 
 This homework is part of the protected public
-`kairali-digital/ai-human-workspace` v2.1.0 Kairali Employee Edition. The public kit is the clean
+`kairali-digital/ai-human-workspace` v2.2.0 company kit. The public kit is the clean
 setup and update source; it contains no live company work or secrets, so no GitHub
 invitation or collaborator seat is needed. Ask the Setup Helper to obtain and verify
 the kit. Then copy the Email and Drive starters into separate local work folders. Do
@@ -17,13 +17,18 @@ not use the public distribution repository as a work project.
 
 You will set up two required workers and may choose a third:
 
-1. **Daily Email Triage AI Human** - asks what local time you want the brief, proves a
-   read-only 25-message pilot, then runs a concise daily importance report. You choose
-   whether it is brief-only or may safely label and file clearly low-risk mail.
-2. **Drive Index AI Human** - choose a 25-item test or index every connector-visible
-   Drive item in checkpointed batches of 25. It creates a fast AI JSONL register and a
-   matching human CSV or approved Google Sheet mirror without opening file contents or
-   changing Drive. After full proof, you may choose a weekly refresh.
+1. **Personal Work Memory + Daily Email EA** - asks once for a fixed local time,
+   proves a read-only 25-message pilot, builds a supervised source-backed understanding
+   of your role, priorities, important people, preferences and commitments, then shows
+   a neat daily notification with proposed replies marked `NOT SENT`. You can inspect,
+   correct, exclude or forget memory. You choose whether the EA is brief-only or may
+   safely label and file clearly low-risk mail.
+2. **Drive Master Index AI Human** - choose a 25-item test or index every
+   connector-visible Drive item in checkpointed batches of 25. It maintains a
+   normalized JSONL AI file of record and one generated Google Sheet-or-CSV human
+   register, reopens both, and verifies their shared generation and all counts. After
+   full proof, it offers an employee-chosen weekly refresh. It does not open file
+   contents or change Drive, except an explicitly approved register Sheet.
 3. **Optional Weekly LinkedIn Message Assistant** - at your chosen Saturday time,
    uses task-scoped Computer control in its local folder, then stops all Computer and
    Chrome control before LinkedIn appears. It prepares replies from message text you
@@ -39,27 +44,30 @@ The kit makes all three starter folders available. It does not connect your acco
 choose your times or activate your workers. Open
 `THREE-WORKER-GO-LIVE-CHECKLIST.md` and keep it beside this guide.
 
-- Email is required and is live for you only after its account, schedule, pilot,
-  filing-mode ruling, automation and validator agree.
+- Personal Memory + Email EA is required and is live for you only after its account,
+  sourced memory baseline and controls, fixed schedule, pilot, filing-mode ruling,
+  automation and validator agree.
 - Full Drive Index is required and is live for you only after every supported scope,
-  AI and human registers, relationship counts, receipt, final cursor and validators
-  agree. `TEST 25` proves setup only. Weekly refresh is optional and separate.
+  both reconciled registers, final cursor, schedule decision and validator agree.
+  `TEST 25` proves setup only.
 - Saturday LinkedIn is optional. If you choose it, its schedule, scoped local-control
   handoff, manually supplied pilot, queue and validator must agree. If you decline it,
   record `NOT ENABLED BY CHOICE`.
 
 ## The whole loop at a glance
 
-1. Ask the Setup Helper to find the verified public v2.1.0 Kairali Employee Edition on your screen.
+1. Ask the Setup Helper to find the verified public v2.2.0 company kit on your screen.
 2. Make an `AI Humans` folder inside Documents.
 3. Copy the Email and Drive starter folders into it.
 4. Open one starter folder as a local project in the ChatGPT desktop app.
 5. Connect only the app that project needs.
 6. Paste the exact prompt.
-7. For Email, choose your daily local time, review the read-only pilot, choose the
-   filing mode and verify the active automation.
+7. For Email, choose your fixed daily local time, review the read-only pilot, approve
+   the supervised memory baseline, choose the filing mode and verify the active EA
+   automation.
 8. Stop at the visible `DONE WHEN` result.
-9. Repeat with the second folder.
+9. Repeat with the second folder, reconcile both Drive registers and choose or decline
+   its offered weekly refresh.
 
 This is a standalone local-project path. It does not need GitHub or GitHub Desktop.
 
@@ -113,7 +121,7 @@ state.
 
 # Step 1 - find and open the verified company kit
 
-The preferred file is named `KAIRALI-AI-HUMAN-v210-EMPLOYEE-EDITION-PUBLIC-KIT.zip`. If your facilitator
+The preferred file is named `kairali-company-rollout-2.2.0.zip`. If your facilitator
 gave you the smaller homework-only file, it is named
 `EVERYONE-ELSE-AI-HUMAN-HOMEWORK-PACK.zip`. Both routes open this same homework. You
 do not need a GitHub invitation.
@@ -155,7 +163,7 @@ do not need a GitHub invitation.
    **DONE WHEN:** You can see `AI-HUMAN-STARTERS` and this guide.
 
 If the ZIP is not visible, do not search the whole computer. Paste the Setup Helper
-rescue. The helper checks Downloads, obtains the protected public v2.1.0 kit when safe,
+rescue. The helper checks Downloads, obtains the protected public v2.2.0 kit when safe,
 and asks Ambuj only if the approved source or access decision is missing.
 
 # Step 2 - make one home for your AI humans
@@ -307,16 +315,23 @@ blocker; it does not ask for your secret information or choose a broader account
 Open `COPY-PASTE-PROMPTS.txt`. Copy everything under **PROMPT 1**. Replace
 `[TYPE YOUR NAME]` with your name. Paste it into the Email project chat and send it.
 
-**DONE WHEN:** Codex says the live task is `EMAIL-HW-001`, asks what local time you
-want the daily brief and starts the read-only pilot with no more than 25 Inbox messages.
+**DONE WHEN:** Codex says the live task is `EMAIL-HW-001`, asks what fixed local time
+you want the daily brief and starts the read-only pilot with no more than 25 Inbox
+messages.
 
 The full prompt is also printed in the Email starter's `START-HERE.md`. Do not shorten
 it: the last lines prove the pilot before scheduling and protect your mailbox.
 
-After the pilot, Codex reads the report and the exact safe-filing rules to you. Choose
+After the pilot, Codex reads the EA report and exact safe-filing rules to you. Choose
 `BRIEF ONLY` or `BRIEF + SAFE FILING`. Safe filing is limited to the approved AI labels
-and clearly low-risk mail. It never deletes, sends, unsubscribes or changes a permanent
-Gmail filter.
+and clearly low-risk mail. Proposed replies remain local and `NOT SENT`. Sending,
+unsubscribe and permanent-filter actions need separate approval for the exact action.
+
+Codex then asks you to choose `RECENT WORK 25` or `CHOOSE WORK PERIOD`. It uses only the
+approved company Inbox and Sent work-mail scope, in batches of no more than 25, to
+propose concise memory about your role, priorities, people, preferences, recurring work
+and commitments. You confirm, correct, keep as observed, exclude, forget or reject each
+candidate. It never copies a whole mailbox or full conversation into memory.
 
 **DONE WHEN:** The daily automation card shows your approved local time and time zone,
 uses this exact Email project and tells the job to follow `DAILY-TRIAGE-PROMPT.md`.
@@ -330,10 +345,18 @@ Stop when all of these are visible:
 
 - `EMAIL-TRIAGE-REPORT.md` exists.
 - It shows the pilot selection rule and no more than 25 reviewed messages.
-- It uses NEEDS ACTION, WAITING / FOLLOW UP, WORTH READING, HUMAN REVIEW, FILTER HEALTH
-  and RUN SUMMARY.
+- It uses TODAY AT A GLANCE, NEEDS ACTION, PROPOSED REPLIES, WAITING / FOLLOW UP,
+  WORTH READING, HUMAN REVIEW, NEWSLETTERS TO REVIEW, MEMORY LEARNED OR NEEDS
+  CONFIRMATION, FILTER HEALTH and RUN SUMMARY.
+- Every proposed reply says `NOT SENT`.
+- `PERSONAL-WORK-MEMORY.md` contains only sourced, dated `CONFIRMED` or
+  `OBSERVED — VERIFY` items.
+- `MEMORY-SOURCES.md` shows exact approved scope, coverage and freshness.
+- You can use `SHOW MY MEMORY`, `CORRECT MEMORY <ID>`, `FORGET <ID>`,
+  `EXCLUDE <topic or person>` and `REFRESH MEMORY`.
 - Sensitive messages are not quoted.
-- The pilot says Gmail was unchanged and no permanent Gmail filter was changed.
+- The pilot says Gmail was unchanged; no send, unsubscribe or permanent-filter action
+  occurred without separate exact approval and recovery proof.
 - `PARAMETERS.md` shows your approved daily time, time zone and filing mode.
 - The daily automation card and `AUTOMATIONS.md` show the same schedule and project.
 - The workspace validator passed.
@@ -341,7 +364,7 @@ Stop when all of these are visible:
 **DONE WHEN:** You can show the report and active daily automation on your screen. A
 connected Gmail account alone is not completion.
 
-# Project 2 - Drive Inventory AI Human
+# Project 2 - Drive Master Index AI Human
 
 ## Step 7 - open the Drive folder as a separate local project
 
@@ -387,26 +410,43 @@ AI humans from mixing memory or state.
 Open `COPY-PASTE-PROMPTS.txt`. Copy everything under **PROMPT 2**. Replace
 `[TYPE YOUR NAME]` with your name. Paste it into the Drive project chat and send it.
 
-**DONE WHEN:** Codex says the live task is `DRIVE-HW-001`, asks you to choose `TEST 25`
-or `FULL DRIVE INDEX`, and never processes more than 25 items before a checkpoint.
+**DONE WHEN:** Codex says the live task is `DRIVE-HW-001`, visibly asks you to choose
+`TEST 25` or `FULL DRIVE INDEX`, and never processes more than 25 items before a
+checkpoint.
+
+If you chose `FULL DRIVE INDEX` and both registers reconcile, Codex asks whether to
+`SET WEEKLY REFRESH` or choose `NOT NOW`. If you set it, give the day, exact local time
+within your preferred window and time zone. Sunday night may be suggested, but Codex
+must not invent a time. Verify the visible automation card. If you decline, Codex
+records `NOT ENABLED BY CHOICE`; you may add it later.
+
+**DONE WHEN:** The card's day, time, time zone, Drive project and
+`WEEKLY-DRIVE-REFRESH-PROMPT.md` agree, or the decline is visible.
 
 ## Drive proof
 
 Stop when all of these are visible:
 
-- `DRIVE-INDEX.jsonl`, `DRIVE-REGISTER.csv`, `DRIVE-INDEX.md`,
-  `DRIVE-INDEX-RECEIPT.json` and `DRIVE-INDEX-CURSOR.json` exist and reopen.
-- One generation ID and unique-item count match in every output. Unique owned/created,
-  shared-with, shared-by, overlap and unknown counts recalculate correctly.
-- If you approved a Google Sheet mirror, its URL, generation ID and data-row count were
-  read back. If Sheets was not connected or you said No, the CSV is the human register.
+- `DRIVE-INDEX.jsonl`, `DRIVE-INDEX.md`, `DRIVE-INDEX-RECEIPT.json`,
+  `DRIVE-INDEX-CURSOR.json` and exactly one human
+  register exist: an explicitly approved Google Sheet or otherwise
+  `DRIVE-REGISTER.csv`.
+- JSONL and the human register were reopened; their generation ID, JSONL
+  object/unique-ID count, human data-row count, and unique, owned-or-created,
+  shared-with, shared-by, overlap, unknown and refresh totals agree with summary and
+  cursor.
 - Every batch is no more than 25 items and has a durable checkpoint.
 - `TEST 25` says the full Drive was not indexed. `FULL DRIVE INDEX` shows each
   connector-visible source scope has no next page, or names the coverage gap.
 - Stable item IDs prevent duplicate rows and let a new session resume.
 - Missing fields say UNKNOWN; sensitive titles say HUMAN REVIEW.
 - It says no Drive file content was opened or downloaded and no Drive item was created,
-  edited, renamed, moved, shared, unshared, deleted or organized.
+  edited, renamed, moved, shared, unshared, deleted or organized, except an explicitly
+  approved human-register Sheet.
+- After full proof, the optional weekly refresh has a verified employee-chosen day,
+  exact local time and time zone, or the decision says `NOT ENABLED BY CHOICE`.
+- Pause, edit, remove and missed-run recovery are visible; a failed refresh does not
+  advance the last-success cursor.
 - `validate_drive_register.py` and the workspace validator passed.
 
 **DONE WHEN:** You can show the human register, AI register, summary, receipt and cursor
@@ -492,6 +532,15 @@ Do this only after both required projects pass.
    LinkedIn, and return to mark each item `SENT AS WRITTEN`, `EDITED AND SENT`,
    `SKIPPED`, or `KEEP FOR LATER`. Codex never claims a send without your confirmation.
 
+9. Review the optional concise learning proposed from your manually supplied examples
+   and confirmed outcomes. Approve only useful work relationship or tone context before
+   it enters `CONFIRMED-LINKEDIN-LEARNINGS.md`. Reject private, sensitive or inferred
+   traits. You may say `CORRECT LINKEDIN LEARNING <ID>` or `FORGET LINKEDIN LEARNING
+   <ID>` at any time.
+
+   **DONE WHEN:** Every saved learning has an ID, source, date and your explicit
+   confirmation; full conversations and hidden profiling are absent.
+
 The weekly reminder works only while the computer is awake, ChatGPT is running and the
 local project remains available. It may control the approved local worker, then it
 stops. It does not access LinkedIn.
@@ -500,15 +549,17 @@ stops. It does not access LinkedIn.
 
 Bring the laptop or screenshots that show:
 
-- Email project open with `EMAIL-TRIAGE-REPORT.md`.
-- Drive project open with its human register, `DRIVE-INDEX.md`, receipt and saved
-  cursor; optional weekly card only if the employee activated it.
+- Email project open with `EMAIL-TRIAGE-REPORT.md`, `PERSONAL-WORK-MEMORY.md` and the
+  visible show/correct/exclude/forget controls.
+- Drive project open with `DRIVE-INDEX.md`, its saved cursor, the shared generation ID
+  and the reconciled JSONL-versus-human-register counts.
 - The final evidence row and validator pass in each project.
 - Optional: approved Saturday schedule, tone/precedent file, numbered reply queue,
-  cursor, employee-confirmed outcomes, and validator pass. Do not show message bodies.
-- The three-line final readback from `THREE-WORKER-GO-LIVE-CHECKLIST.md`: Email and
-  Drive are `LIVE FOR ME` or show an exact blocker; LinkedIn is `LIVE FOR ME,
-  OPTIONAL`, `NOT ENABLED BY CHOICE`, or shows an exact blocker.
+  cursor, employee-confirmed outcomes, confirmed learning IDs and validator pass. Do
+  not show message bodies.
+- The three-line final readback from `THREE-WORKER-GO-LIVE-CHECKLIST.md`: Personal
+  Memory + Email EA and Drive are `LIVE FOR ME` or show an exact blocker; LinkedIn is
+  `LIVE FOR ME, OPTIONAL`, `NOT ENABLED BY CHOICE`, or shows an exact blocker.
 
 Do not bring email bodies, passwords, one-time codes, private HR details, banking
 information, or sensitive Drive content. Show the safe report headings and proof.

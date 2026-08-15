@@ -2,30 +2,47 @@
 
 All notable changes are recorded here in plain language.
 
+## [2.2.0] - 2026-08-16
+
+- Upgrade the required Email worker into a fixed-time Personal Work Memory + Daily
+  Email EA. Its neat brief shows priorities, follow-ups, useful reading, newsletter and
+  filter proposals, and concise local replies visibly marked `NOT SENT`.
+- Add employee-owned, source-backed work memory for role, priorities, people,
+  communication preferences, recurring work and commitments. Memory distinguishes
+  `CONFIRMED` from `OBSERVED — VERIFY` and supports visible show, correct, exclude,
+  forget and refresh controls without copying a mailbox or inferring sensitive traits.
+- Make `DRIVE-INDEX.jsonl` the Drive worker's normalized AI-readable file of record.
+  Generate exactly one human register from it: an explicitly approved Google Sheet or
+  otherwise `DRIVE-REGISTER.csv`.
+- Fail Drive completion closed unless JSONL, the human register, summary and cursor
+  reopen under one generation ID and agree on object/data-row, unique, relationship,
+  overlap, unknown and refresh counts. A failed reconciliation never advances the
+  last-success cursor.
+- Offer, but never silently activate, a weekly Drive refresh only after full-index
+  proof. The employee confirms day, exact local time and time zone or records `NOT
+  ENABLED BY CHOICE`; missed-run, pause, edit and removal paths stay visible.
+- Let optional manually supplied LinkedIn work contribute only concise reusable tone
+  or work-context learning that the employee explicitly confirms, can correct and can
+  forget. LinkedIn remains entirely human-accessed and human-sent.
+- Carry forward the v2.0.2 lifecycle correction: task start and completion acquire the
+  exclusive lease before reading or preparing state, and forced two-caller races prove
+  one winner, one clean refusal and no state loss.
+- Refresh the beginner guide, DOCX, PDF, video, captions, prompts, component bundle,
+  edition downloads, validators and portal under one governed v2.2.0 release.
+
 ## [2.1.0] - 2026-08-16
 
 - Upgrade Drive Inventory so `TEST 25` and `FULL DRIVE INDEX` cannot pass until the
   generated registers reopen and reconcile. Keep one normalized `DRIVE-INDEX.jsonl` as
-  the AI-readable metadata file of record and generate a formula-safe
-  `DRIVE-REGISTER.csv` human view from the same stable-ID records.
+  the AI-readable metadata file of record and validate the selected human register
+  from the same stable-ID records.
 - When Google Sheets is already connected and the employee explicitly approves the
-  resolved write, allow one human-facing Sheet mirror. Require its URL, generation ID
-  and row count to be read back; otherwise keep CSV as the human register. Never create
-  a replacement Sheet silently.
-- Report unique total, owned-or-created, shared-with, shared-by, relationship-overlap
-  and relationship-unknown counts without adding overlapping categories into a false
-  total. Require one generation ID across JSONL, CSV, optional Sheet, summary, receipt
-  and cursor.
-- Add `validate_drive_register.py` and synthetic regressions for formula-injection
-  neutralization, Sheet proof and count mismatch. Missing/empty output or any
-  generation/count disagreement fails closed.
-- After a verified full index, offer an optional weekly incremental refresh. Sunday
-  night is suggested or the employee chooses another convenient time; activation
-  requires confirmed day/time window, time zone, exact task card and a bounded pilot.
-  Missed or approval-blocked runs do not advance the successful cursor.
+  resolved write, allow it as the human register. Require its URL, generation ID and
+  row count to be read back; otherwise keep a formula-safe CSV as the human register.
+- Add receipt, cursor and validator proof for unique and relationship counts, plus an
+  optional employee-confirmed weekly refresh after full-index proof.
 - Retain the v2.0.2 lease-order correction and its forced concurrent-start and
-  concurrent-completion regressions. v2.1.0 supersedes held v2.0.1 and the unpublished
-  v2.0.2 correction candidate without weakening Gate 0 or the 25-item batch cap.
+  concurrent-completion regressions without weakening Gate 0 or the 25-item batch cap.
 
 ## [2.0.2] - 2026-08-16
 

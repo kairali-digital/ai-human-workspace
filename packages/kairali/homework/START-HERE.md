@@ -6,8 +6,8 @@ homework page.
 ## Where this pack comes from
 
 The preferred source is the protected public
-`kairali-digital/ai-human-workspace` release v2.1.0. The complete Kairali Employee
-Edition contains this homework, all approved people/setup
+`kairali-digital/ai-human-workspace` release v2.2.0. The complete
+`kairali-company-rollout-2.2.0.zip` contains this homework, all approved people/setup
 prompts and the two governed role skills. Public access needs no invitation or
 collaborator seat, and the kit contains no live company work or secrets.
 
@@ -18,7 +18,8 @@ the public distribution repository.
 
 ## What they do
 
-1. Required: `01-Email-Triage-AI-Human`.
+1. Required: `01-Email-Triage-AI-Human`; build the supervised personal work-memory
+   baseline and fixed-time daily Email EA.
 2. Required: `02-Drive-Inventory-AI-Human`; run `FULL DRIVE INDEX` for company
    completion. `TEST 25` proves setup only.
 3. Optional after both: `03-LinkedIn-Message-Assistant-OPTIONAL`.
@@ -60,14 +61,18 @@ account choice or permission. Never ask for a password or one-time code.
 
 ## Acceptance proof
 
-- Email: the read-only 25-message pilot report, employee-approved daily time and time
-  zone, ruled `BRIEF ONLY` or `BRIEF + SAFE FILING` mode, active daily automation and
-  unchanged permanent Gmail filters.
+- Email and memory: the read-only 25-message pilot report; employee-controlled sourced
+  memory baseline; visible show/correct/exclude/forget controls; employee-approved
+  fixed daily time and time zone; ruled `BRIEF ONLY` or `BRIEF + SAFE FILING` mode;
+  active daily EA automation; proposed replies marked NOT SENT; and no unapproved send,
+  unsubscribe or permanent-filter change.
 - Drive: `FULL DRIVE INDEX` reaches the end of every connector-supported scope; every
-  batch is at most 25 and checkpointed; AI JSONL, human CSV or approved Sheet mirror,
-  summary, receipt, final cursor and scope coverage share one generation ID and count;
-  Drive is unchanged. `TEST 25` alone is not completion. Weekly refresh is optional
-  and becomes active only after the employee confirms its schedule and pilot.
+  batch is at most 25 and checkpointed; `DRIVE-INDEX.jsonl` and one approved Google
+  Sheet or otherwise `DRIVE-REGISTER.csv` reopen; their generation ID, unique/data-row,
+  relationship, overlap, unknown and refresh counts agree with summary/cursor; scope
+  coverage is visible; Drive is unchanged except the explicitly approved Sheet; and
+  the weekly refresh is card-verified or `NOT ENABLED BY CHOICE`. `TEST 25` alone is
+  not completion.
 - Optional LinkedIn: approved Saturday time and time zone, reminder-only automation,
   task-scoped Computer control proven in the local worker, the exact `YOUR TURN ON
   LINKEDIN` stop/handoff, one manually supplied batch of at most 25, a numbered reply

@@ -55,7 +55,7 @@ Read AGENTS.md, AI-HUMAN.md, PARAMETERS.md, MASTER_CURSOR.md, OPEN_REGISTER.md,
 TODAY.md, TOOLBOX.md, GATES.md, WORK-GATES.md, DECISIONS.md, SATURDAY-REVIEW-PROMPT.md,
 LINKEDIN-TONE-AND-PRECEDENTS.md, LINKEDIN-REPLY-QUEUE.md,
 LINKEDIN-REVIEW-CURSOR.md, LINKEDIN-INBOX-BATCH.md and
-LINKEDIN-CONTROL-HANDOFF.md.
+LINKEDIN-CONTROL-HANDOFF.md and CONFIRMED-LINKEDIN-LEARNINGS.md.
 
 First, replace “Kairali employee using this copy” with my name in this project's
 owner fields only. Do not change the worker name, purpose, limits or gates.
@@ -108,6 +108,9 @@ Show only one setup action at a time and wait after it.
    ask me to mark each item SENT AS WRITTEN, EDITED AND SENT, SKIPPED, or
    KEEP FOR LATER. Never claim a message was sent without my confirmation. Learn only
    from confirmed outcomes and keep unresolved items in LINKEDIN-REPLY-QUEUE.md.
+11. Ask before saving any reusable tone, person or work-context learning. Save only a
+   concise employee-confirmed row in CONFIRMED-LINKEDIN-LEARNINGS.md, never a full
+   conversation or sensitive/private inference. Show how I can correct or forget it.
 
 If more than 25 items remain, checkpoint the cursor and offer the next batch only after
 the first batch is recorded. Never weaken the 25-item batch cap.
@@ -129,6 +132,8 @@ remaining queue count, and the exact manual-send boundary.
 - A supervised batch of no more than 25 pasted conversations has been processed.
 - `LINKEDIN-REPLY-QUEUE.md` separates `READY TO SEND` from `NEEDS YOUR DECISION`.
 - Every sent status is supported by the employee's confirmation.
+- `CONFIRMED-LINKEDIN-LEARNINGS.md` contains only explicitly approved concise rows,
+  and the employee can correct or forget each learning ID.
 - Codex says the workspace validator passed.
 
 This assistant may control the approved local worker, then stops. The employee alone

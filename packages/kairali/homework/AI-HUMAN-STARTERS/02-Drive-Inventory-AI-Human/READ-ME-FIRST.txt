@@ -3,8 +3,8 @@ DRIVE INVENTORY AI HUMAN - FIRST SCREEN
 1. Open START-HERE.md.
 2. Follow only one numbered action at a time.
 3. Choose TEST 25 for setup proof or FULL DRIVE INDEX for completed company homework.
-4. LIVE FOR ME only when full scope coverage, DRIVE-INDEX.jsonl, DRIVE-REGISTER.csv or the approved Google Sheet mirror, the summary, receipt, final cursor and validators agree and Codex says Drive was unchanged.
-5. A weekly refresh is optional and is not active until you confirm its day/time window, time zone, exact card and first pilot.
+4. LIVE FOR ME only when full scope coverage, DRIVE-INDEX.jsonl, one Google Sheet-or-DRIVE-REGISTER.csv human register, DRIVE-INDEX.md, final cursor, generation/count readback and validator agree and Codex says Drive was unchanged.
+5. After full proof, choose and verify a weekly refresh schedule or record NOT ENABLED BY CHOICE.
 
 You do not need Terminal, PowerShell, Command Prompt, Python, Git, GitHub or VS Code.
 

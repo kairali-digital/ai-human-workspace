@@ -6,16 +6,20 @@ connect your accounts, choose your times or activate your workers.
 Work on one separate project at a time. Downloaded, installed or connected alone does
 not mean live.
 
-## 1. Daily Email Triage — required
+## 1. Personal Work Memory + Daily Email EA — required
 
 Mark **LIVE FOR ME** only when all are visible:
 
 - the approved Gmail company account is connected;
 - your chosen daily local time and confirmed time zone match;
 - the read-only pilot reviewed no more than 25 Inbox messages;
+- the supervised memory baseline is sourced and dated, distinguishes `CONFIRMED` from
+  `OBSERVED — VERIFY`, and contains no copied mailbox or sensitive inference;
+- you can visibly show, correct, exclude or forget a memory item;
 - you chose `BRIEF ONLY` or `BRIEF + SAFE FILING`;
 - the automation card uses this Email project and `DAILY-TRIAGE-PROMPT.md`;
-- permanent Gmail filters are unchanged; and
+- proposed replies are marked `NOT SENT` and every send, unsubscribe or filter action
+  requires separate exact approval; and
 - the report, evidence row and validator pass.
 
 ## 2. Full Drive Index — required
@@ -25,12 +29,17 @@ Mark **LIVE FOR ME** only when all are visible:
 - the approved Google Drive company account is connected;
 - `FULL DRIVE INDEX` reached the end of every connector-supported scope through
   checkpointed batches no larger than 25;
-- `DRIVE-INDEX.jsonl`, `DRIVE-REGISTER.csv`, the summary, receipt and final cursor
-  reopen with one generation ID and unique-item count;
-- owned-or-created, shared-with, shared-by, overlap and unknown counts recalculate;
-- any approved Google Sheet mirror has the same generation ID and data-row count;
+- the non-empty `DRIVE-INDEX.jsonl` AI file of record and one approved Google Sheet or
+  otherwise `DRIVE-REGISTER.csv` human register were reopened;
+- JSONL object/unique-ID count and Sheet-or-CSV data-row count agree with the summary
+  and final cursor under the same generation ID;
+- unique, owned/created, shared-with, shared-by, overlap, unknown and refresh totals
+  reconcile;
 - unsupported scopes are named instead of guessed;
-- no file content was opened and Drive was not changed; and
+- no file content was opened and Drive was not changed, except an explicitly approved
+  human-register Sheet;
+- the optional weekly refresh has a verified employee-chosen day/time/time zone and
+  matching card, or says `NOT ENABLED BY CHOICE`; and
 - the evidence row and validator pass.
 
 `TEST 25` proves that setup works. It does not complete the company homework and must
@@ -51,6 +60,8 @@ If you choose it, mark **LIVE FOR ME, OPTIONAL** only when all are visible:
 - Computer and Chrome stop before the exact `YOUR TURN ON LINKEDIN` handoff;
 - you manually supplied one batch no larger than 25 after closing LinkedIn;
 - the numbered reply queue, cursor and employee-confirmed outcomes pass; and
+- any reusable tone or work-context learning was explicitly approved in
+  `CONFIRMED-LINKEDIN-LEARNINGS.md` and can be corrected or forgotten; and
 - the AI took no action on LinkedIn and you manually reviewed and sent every reply.
 
 If you do not choose this optional worker, record **NOT ENABLED BY CHOICE**. That is not
@@ -60,7 +71,7 @@ a failed rollout.
 
 Show these three lines before the facilitator marks the setup complete:
 
-- Email: `LIVE FOR ME` or the exact blocker.
+- Personal Memory + Email EA: `LIVE FOR ME` or the exact blocker.
 - Drive: `LIVE FOR ME` or the exact blocker.
 - LinkedIn: `LIVE FOR ME, OPTIONAL`, `NOT ENABLED BY CHOICE`, or the exact blocker.
 

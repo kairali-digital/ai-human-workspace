@@ -32,3 +32,17 @@ then archive and mark read. Preserve all existing labels. Never delete the messa
 No new sender, search query or permanent Gmail filter becomes active automatically.
 Record the evidence and proposed action in `EMAIL-RULE-REVIEW.md`; a human approves or
 rejects it first.
+
+## EA learning
+
+- Add concise candidate learning to `MEMORY-REVIEW-QUEUE.md`; do not copy full email
+  text into memory.
+- Learn tone only from replies the employee confirms as sent or approved.
+- Learn importance, follow-up, filing and newsletter relevance only from explicit
+  employee decisions, corrected outcomes or repeated source-backed observations.
+- A proposed reply is local, clearly marked `NOT SENT`, and never becomes a Gmail
+  draft or sent message without a separate approved action.
+- Recommend unsubscribe only after repeated evidence shows a newsletter is not useful
+  to the employee, company or role. Never unsubscribe automatically.
+- Confirmed learning moves to `PERSONAL-WORK-MEMORY.md` with a source and date.
+  Observed-only learning must remain labelled `OBSERVED — VERIFY`.

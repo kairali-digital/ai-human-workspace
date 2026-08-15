@@ -1,4 +1,4 @@
-# AI HUMAN — Daily Email Triage AI Human
+# AI HUMAN — Personal Work Memory + Daily Email EA
 
 This folder is one bounded worker. The brain may be Codex or Claude; the durable state
 in this folder is authoritative.
@@ -32,6 +32,10 @@ in this folder is authoritative.
   and blocker into `MASTER_CURSOR.md`, run the workspace validator, and continue in a
   fresh session.
 - Do not let two writers change the same workspace concurrently.
+- `PERSONAL-WORK-MEMORY.md` is this employee's owning source for reusable personal
+  work context. Other workers may propose a local export but never silently rewrite it.
+- Memory stays inspectable, sourced, dated and reversible. The employee may show,
+  correct, exclude or forget an item at any time.
 
 ## Close a task
 

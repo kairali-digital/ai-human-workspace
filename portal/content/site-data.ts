@@ -21,25 +21,25 @@ export const downloadGroups: DownloadGroup[] = [
       {
         label: "Kairali employee edition",
         description: "Workspace, Kairali Setup Helper, role prompts, homework workers, opt-in skills and lifecycle controls.",
-        file: "KAIRALI-AI-HUMAN-v210-EMPLOYEE-EDITION-PUBLIC-KIT.zip",
+        file: "KAIRALI-AI-HUMAN-v220-EMPLOYEE-EDITION-PUBLIC-KIT.zip",
         format: "ZIP",
       },
       {
         label: "Kairali edition checksum",
         description: "Use this when the Setup Helper or IT verifies the exact employee-edition download.",
-        file: "KAIRALI-AI-HUMAN-v210-EMPLOYEE-EDITION-PUBLIC-KIT.zip.sha256",
+        file: "KAIRALI-AI-HUMAN-v220-EMPLOYEE-EDITION-PUBLIC-KIT.zip.sha256",
         format: "SHA-256",
       },
       {
         label: "Reusable edition",
         description: "Company-neutral workspace, generic Setup Helper and lifecycle controls with no Kairali employee content.",
-        file: "AI-HUMAN-v210-REUSABLE-EDITION-PUBLIC-KIT.zip",
+        file: "AI-HUMAN-v220-REUSABLE-EDITION-PUBLIC-KIT.zip",
         format: "ZIP",
       },
       {
         label: "Reusable edition checksum",
         description: "Use this when the Setup Helper verifies the exact company-neutral download.",
-        file: "AI-HUMAN-v210-REUSABLE-EDITION-PUBLIC-KIT.zip.sha256",
+        file: "AI-HUMAN-v220-REUSABLE-EDITION-PUBLIC-KIT.zip.sha256",
         format: "SHA-256",
       },
     ],
@@ -88,11 +88,11 @@ export const downloadGroups: DownloadGroup[] = [
   },
   {
     title: "Homework",
-    description: "Daily Email and Full Drive Index are required. TEST 25 proves Drive setup only. The full Drive worker creates matching AI and human registers; its weekly refresh is optional. Saturday LinkedIn is optional after both pass.",
+    description: "Personal Work Memory + Daily Email EA and Full Drive Index are required. TEST 25 proves Drive setup only. Saturday LinkedIn is optional after both pass.",
     items: [
       {
         label: "Homework pack",
-        description: "Guide, prompts, video, captions, go-live checklist and three starters: chosen-time daily email brief; resumable FULL DRIVE INDEX with AI JSONL, human CSV or approved Sheet mirror and optional user-confirmed weekly refresh; plus optional Saturday LinkedIn drafts with task-scoped local control and human-only LinkedIn access and sending.",
+        description: "Guide, prompts, video, captions, go-live checklist and three starters: sourced/correctable memory with a fixed-time Email EA, reconciled JSONL plus Sheet-or-CSV FULL DRIVE INDEX with optional weekly refresh, and optional Saturday LinkedIn drafts with confirmed learning and human-only LinkedIn access and sending.",
         file: "EVERYONE-ELSE-AI-HUMAN-HOMEWORK-PACK.zip",
         format: "ZIP",
       },

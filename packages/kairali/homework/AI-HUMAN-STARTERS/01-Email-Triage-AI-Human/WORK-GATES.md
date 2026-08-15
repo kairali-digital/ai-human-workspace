@@ -27,8 +27,11 @@ replace or weaken the local Gate 0 profile.
 - If a message crosses any active gate ID in `GATES.md`, or contains credentials,
   banking, personal HR or other highly sensitive content, write `HUMAN REVIEW` with
   sender, subject and date only. Do not advise, rewrite or quote it.
-- Never send, reply, forward, draft, delete, Trash, mark spam, unsubscribe or change a
-  Gmail setting or permanent filter.
+- Never send, reply, forward, delete, Trash, mark spam or automatically unsubscribe.
+  Proposed replies may be written only in the local report and must say `NOT SENT`.
+- The unattended daily run never creates a Gmail draft or creates, edits or deletes a
+  permanent Gmail filter. An exact filter or unsubscribe action requires a separate
+  visible proposal, explicit employee approval, target readback and undo evidence.
 - Label, archive and mark read only when `PARAMETERS.md` says
   `BRIEF + SAFE FILING`, the matching `AUTOMATIONS.md` row is `ACTIVE` and the message
   matches an exact approved low-risk rule in `EMAIL-TRIAGE-RULES.md`.
@@ -36,6 +39,11 @@ replace or weaken the local Gate 0 profile.
   sensitive, consequential, financial, security, receipt, invoice, order, travel,
   calendar, deadline, access-request or failed-system mail.
 - A new sender or rule stays in `EMAIL-RULE-REVIEW.md` until a human rules it.
+- Memory is concise, source-backed and dated. Never copy a complete mailbox, full
+  conversation, attachment or sensitive personal content into memory.
+- Never infer sensitive traits, private relationships, authority or intent. Silence is
+  not a confirmed preference. The employee may inspect, correct, exclude or forget any
+  memory item.
 - A failed or partial run does not advance the last-success cursor.
 
 ## Verification

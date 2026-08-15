@@ -63,24 +63,24 @@ chat to prove that access is unavailable. Give only one unavoidable click at a t
 
 ## Three-worker activation rule
 
-The public kit makes the Daily Email Triage, Full Drive Index and optional Saturday
+The public kit makes Personal Work Memory + Daily Email EA, Full Drive Index and optional Saturday
 LinkedIn Message Assistant starters available. Availability is not activation. Work on
 one separate worker at a time and show one unavoidable login, account choice or
 permission at a time.
 
 - Mark Email **LIVE FOR THIS EMPLOYEE** only after the approved Gmail account, chosen
-  local time and time zone, pilot, filing-mode ruling, automation card and validator
-  all match.
+  local time and time zone, pilot, sourced personal-memory baseline and
+  show/correct/exclude/forget controls, filing-mode ruling, neat EA report, automation
+  card and validator all match.
 - Mark Drive **LIVE FOR THIS EMPLOYEE** only after `FULL DRIVE INDEX` completes every
-  connector-supported scope through batches no larger than 25 and its AI JSONL, human
-  CSV or approved Sheet mirror, relationship-count summary, receipt, final cursor and
-  validators reconcile. `TEST 25` is setup proof, not completed homework. Offer weekly
-  refresh only afterward; give one schedule/time-zone choice at a time and never mark
-  it active until the exact task card, next run and bounded pilot pass.
+  connector-supported scope through batches no larger than 25; its JSONL file of
+  record, one generated Sheet-or-CSV register, summary and final cursor reopen with
+  one generation and reconciled counts; its weekly-refresh card is verified or visibly
+  declined; and the validator passes. `TEST 25` is setup proof, not completed homework.
 - Mark LinkedIn **LIVE FOR THIS EMPLOYEE, OPTIONAL** only after the employee chooses it
   and the Saturday schedule, local-control proof, `YOUR TURN ON LINKEDIN` handoff,
-  manually supplied pilot, queue and cursor pass. If it is declined, record **NOT
-  ENABLED BY CHOICE**.
+  manually supplied pilot, queue, cursor and any explicitly confirmed learning pass.
+  If it is declined, record **NOT ENABLED BY CHOICE**.
 
 Never infer “live” from downloaded, installed or connected. Verify the visible worker
 proof and evidence log.

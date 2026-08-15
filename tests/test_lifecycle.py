@@ -907,9 +907,12 @@ class LifecycleTests(unittest.TestCase):
         )
         shutil.copytree(source, worker)
         purpose = (
-            "Deliver a concise daily company-email importance brief and, only when "
-            "explicitly approved, file clearly low-risk mail under reversible rules "
-            "with a monthly false-positive audit"
+            "Save the employee time by building a durable, employee-controlled "
+            "understanding of their role, priorities, people, communication "
+            "preferences, recurring work, commitments and confirmed decisions; "
+            "deliver a neat fixed-time daily email EA brief; and, only when explicitly "
+            "approved, file clearly low-risk mail under reversible rules with a "
+            "monthly false-positive audit"
         )
         before_work_gates = (worker / "WORK-GATES.md").read_text(encoding="utf-8")
         self.install(
@@ -1000,14 +1003,14 @@ class LifecycleTests(unittest.TestCase):
         worker = self.base / "worker"
         self.install(worker)
 
-        new_release = self.base / "release-2.2.0"
+        new_release = self.base / "release-2.3.0"
         shutil.copytree(self.release, new_release, ignore=shutil.ignore_patterns(".git", "__pycache__", "release-proof.json", "portal"))
         agent_rules = new_release / "core/AGENT-RULES.md"
         agent_rules.write_text(
-            agent_rules.read_text(encoding="utf-8") + "\nRelease-test marker 2.2.0.\n",
+            agent_rules.read_text(encoding="utf-8") + "\nRelease-test marker 2.3.0.\n",
             encoding="utf-8",
         )
-        refresh_release(new_release, "2.2.0")
+        refresh_release(new_release, "2.3.0")
 
         cursor = worker / "MASTER_CURSOR.md"
         cursor.write_text("# Master Cursor\n\n## LIVE TASK\n`TEST-1` — test checkpoint\n", encoding="utf-8")
@@ -1032,14 +1035,14 @@ class LifecycleTests(unittest.TestCase):
             (worker / ".ai-human/VERSION").read_text(encoding="utf-8"),
             before_defer_version,
         )
-        self.assertIn("CORE-UPDATE-2.2.0", register.read_text(encoding="utf-8"))
+        self.assertIn("CORE-UPDATE-2.3.0", register.read_text(encoding="utf-8"))
 
         before_update_state = state_hashes(worker)
         updated = self.run_cli("update", worker, "--source", new_release, "--at-checkpoint")
         self.assertIn("AI-HUMAN UPDATE: PASS", updated.stdout)
         self.assertEqual(
             (worker / ".ai-human/VERSION").read_text(encoding="utf-8").strip(),
-            "2.2.0",
+            "2.3.0",
         )
         self.assertEqual(state_hashes(worker), before_update_state)
         self.assertIn(
@@ -1064,9 +1067,9 @@ class LifecycleTests(unittest.TestCase):
         self.assertIn("AI-HUMAN UPDATE: PASS", repeated.stdout)
         self.assertEqual(
             (worker / ".ai-human/VERSION").read_text(encoding="utf-8").strip(),
-            "2.2.0",
+            "2.3.0",
         )
-        matching_backups = list((worker / ".ai-human/backups").glob(f"{CURRENT_VERSION}-before-2.2.0-*"))
+        matching_backups = list((worker / ".ai-human/backups").glob(f"{CURRENT_VERSION}-before-2.3.0-*"))
         self.assertEqual(len(matching_backups), 2)
 
     def test_component_catalog_skill_install_upgrade_and_remove(self):
@@ -1124,23 +1127,34 @@ class LifecycleTests(unittest.TestCase):
         self.assertIn("FULL DRIVE INDEX", drive_start)
         self.assertIn("DRIVE-INDEX.jsonl", drive_start)
         self.assertIn("DRIVE-REGISTER.csv", drive_start)
+        self.assertIn("generation ID", drive_start)
+        self.assertIn("SET WEEKLY REFRESH", drive_start)
+        self.assertIn("WEEKLY-DRIVE-REFRESH-PROMPT.md", drive_start)
+        self.assertIn("DRIVE-INDEX-RECEIPT.json", drive_start)
         self.assertIn("DRIVE-INDEX-CURSOR.json", drive_start)
-        self.assertIn("WEEKLY-DRIVE-REFRESH.md", drive_start)
+        self.assertIn("DRIVE-REGISTER-SCHEMA.md", drive_start)
+        self.assertIn("validate_drive_register.py", drive_start)
         self.assertIn("Use batches", drive_start)
         self.assertIn("no more than 25 items", drive_start)
         email_start = (starters / "01-Email-Triage-AI-Human/START-HERE.md").read_text(encoding="utf-8")
         email_daily = (starters / "01-Email-Triage-AI-Human/DAILY-TRIAGE-PROMPT.md").read_text(encoding="utf-8")
-        self.assertIn("What local time should your daily email brief", email_start)
+        email_daily_flat = " ".join(email_daily.split())
+        self.assertIn("What fixed local time should your daily email brief", email_start)
         self.assertIn("BRIEF + SAFE FILING", email_start)
         self.assertIn("Daily Email Importance Brief", email_start)
+        self.assertIn("PERSONAL-WORK-MEMORY.md", email_start)
+        self.assertIn("SHOW MY MEMORY", email_start)
+        self.assertIn("PROPOSED REPLIES", email_start)
+        self.assertIn("NOT SENT", email_start)
         self.assertIn("batches of no more than 25", email_daily)
         self.assertIn("EMAIL-RULE-REVIEW.md", email_daily)
-        self.assertIn("Do not change a permanent Gmail filter", email_daily)
+        self.assertIn("Do not unsubscribe or create/change a permanent Gmail filter", email_daily_flat)
         linkedin = starters / "03-LinkedIn-Message-Assistant-OPTIONAL"
         for name in (
             "SATURDAY-REVIEW-PROMPT.md", "LINKEDIN-TONE-AND-PRECEDENTS.md",
             "LINKEDIN-REPLY-QUEUE.md", "LINKEDIN-REVIEW-CURSOR.md",
             "LINKEDIN-INBOX-BATCH.md", "LINKEDIN-CONTROL-HANDOFF.md",
+            "CONFIRMED-LINKEDIN-LEARNINGS.md",
         ):
             self.assertTrue((linkedin / name).is_file(), name)
         linkedin_start = (linkedin / "START-HERE.md").read_text(encoding="utf-8")
@@ -1156,6 +1170,8 @@ class LifecycleTests(unittest.TestCase):
         self.assertIn("The employee alone performs every LinkedIn action", linkedin_weekly_flat)
         self.assertIn("YOUR TURN ON LINKEDIN", linkedin_weekly_flat)
         self.assertIn("stop every computer/browser tool", linkedin_weekly_flat)
+        self.assertIn("explicitly approves it for future reuse", linkedin_weekly_flat)
+        self.assertIn("correct or forget a learning row", linkedin_weekly_flat)
         handoff = (linkedin / "LINKEDIN-CONTROL-HANDOFF.md").read_text(encoding="utf-8")
         self.assertIn("@Computer", handoff)
         self.assertIn("@Chrome", handoff)
@@ -1166,6 +1182,68 @@ class LifecycleTests(unittest.TestCase):
         self.assertFalse(kit.exists())
         removed = list(self.base.glob(".ai-human-component-archive/kairali-company-rollout-removed-*"))
         self.assertEqual(len(removed), 1)
+
+    def test_personal_assistant_homework_contract_covers_adversarial_paths(self):
+        starters = ROOT / "packages/kairali/homework/AI-HUMAN-STARTERS"
+        email_root = starters / "01-Email-Triage-AI-Human"
+        drive_root = starters / "02-Drive-Inventory-AI-Human"
+        linkedin_root = starters / "03-LinkedIn-Message-Assistant-OPTIONAL"
+
+        email = "\n".join(
+            path.read_text(encoding="utf-8") for path in sorted(email_root.iterdir())
+            if path.is_file()
+        )
+        email_flat = " ".join(email.split()).casefold()
+        email_scenarios = {
+            "ordinary neat brief": ("TODAY AT A GLANCE", "PROPOSED REPLIES", "NOT SENT"),
+            "empty inbox": ("No action required",),
+            "high volume": ("batches of no more than 25", "checkpoint"),
+            "stale memory": ("Stale or contradicted items", "OBSERVED — VERIFY"),
+            "conflicting memory": ("CORRECT MEMORY <ID>", "FORGET <ID>"),
+            "privacy": ("Never copy a complete mailbox", "Never infer sensitive traits"),
+            "gate zero": ("HUMAN REVIEW", "sender, subject and date only"),
+            "newsletter": ("Never unsubscribe automatically",),
+            "filter": ("permanent Gmail filter", "separate explicit employee approval"),
+            "reply": ("local proposed-reply text", "never represented as sent"),
+            "recovery": ("failed or partial run does not advance",),
+        }
+        for scenario, phrases in email_scenarios.items():
+            with self.subTest(worker="email", scenario=scenario):
+                for phrase in phrases:
+                    self.assertIn(phrase.casefold(), email_flat)
+
+        drive = "\n".join(
+            path.read_text(encoding="utf-8") for path in sorted(drive_root.iterdir())
+            if path.is_file()
+        )
+        drive_flat = " ".join(drive.split()).casefold()
+        drive_scenarios = {
+            "mode choice": ("TEST 25", "FULL DRIVE INDEX"),
+            "dual register": ("DRIVE-INDEX.jsonl", "DRIVE-REGISTER.csv", "GOOGLE SHEET"),
+            "generation reconciliation": ("generation ID", "reopen", "fails closed"),
+            "malformed output": ("malformed JSON", "duplicate IDs"),
+            "overlap": ("owned_or_created_by_me", "shared_with_me", "shared_by_me"),
+            "temporary invisibility": ("NOT SEEN THIS RUN — VERIFY",),
+            "weekly schedule": ("Sunday night", "exact local time", "time zone"),
+            "missed run": ("RUN DRIVE REFRESH NOW", "last successful cursor"),
+            "privacy": ("never a whole-life profile", "Never open or download file contents"),
+        }
+        for scenario, phrases in drive_scenarios.items():
+            with self.subTest(worker="drive", scenario=scenario):
+                for phrase in phrases:
+                    self.assertIn(phrase.casefold(), drive_flat)
+
+        linkedin = "\n".join(
+            path.read_text(encoding="utf-8") for path in sorted(linkedin_root.iterdir())
+            if path.is_file()
+        )
+        linkedin_flat = " ".join(linkedin.split()).casefold()
+        for phrase in (
+            "CONFIRMED-LINKEDIN-LEARNINGS.md", "explicitly approves it for future reuse",
+            "CORRECT LINKEDIN LEARNING <ID>", "FORGET LINKEDIN LEARNING <ID>",
+            "Never copy the full conversation", "employee alone performs every LinkedIn action",
+        ):
+            self.assertIn(phrase.casefold(), linkedin_flat)
 
     def test_tampered_component_release_is_rejected(self):
         corrupt = self.base / "corrupt-components"
@@ -1291,18 +1369,21 @@ class LifecycleTests(unittest.TestCase):
         root.mkdir()
         generation = "drive-20260816T210000Z"
         fields = (
-            "item_id", "name", "file_type", "owned_or_created_by_me", "shared_with_me",
-            "shared_by_me", "modified_time", "parent_or_location", "sharing_status",
-            "web_link", "source_scope", "first_indexed_at_utc", "last_seen_at_utc",
+            "item_id", "name", "file_type", "owner_or_relationship",
+            "owned_or_created_by_me", "shared_with_me", "shared_by_me", "modified_time",
+            "parent_or_location", "sharing_status", "web_link", "source_scope",
+            "visibility_status", "first_indexed_at_utc", "last_seen_at_utc",
             "indexed_at_utc", "generation_id", "review_note",
         )
         records = [
             {
                 "item_id": "id-1", "name": "=UNTRUSTED()", "file_type": "document",
+                "owner_or_relationship": "Owned by me",
                 "owned_or_created_by_me": True, "shared_with_me": False,
                 "shared_by_me": "UNKNOWN", "modified_time": "2026-08-15T10:00:00Z",
                 "parent_or_location": "My Drive", "sharing_status": "private",
                 "web_link": "https://drive.google.com/file/d/id-1", "source_scope": "owned",
+                "visibility_status": "SEEN THIS RUN",
                 "first_indexed_at_utc": "2026-08-16T20:00:00Z",
                 "last_seen_at_utc": "2026-08-16T21:00:00Z",
                 "indexed_at_utc": "2026-08-16T21:00:00Z", "generation_id": generation,
@@ -1310,11 +1391,13 @@ class LifecycleTests(unittest.TestCase):
             },
             {
                 "item_id": "id-2", "name": "Campaign plan", "file_type": "sheet",
+                "owner_or_relationship": "Shared with me",
                 "owned_or_created_by_me": True, "shared_with_me": True,
                 "shared_by_me": False, "modified_time": "2026-08-16T11:00:00Z",
                 "parent_or_location": "Marketing", "sharing_status": "shared",
                 "web_link": "https://docs.google.com/spreadsheets/d/id-2",
                 "source_scope": "shared_with_me",
+                "visibility_status": "SEEN THIS RUN",
                 "first_indexed_at_utc": "2026-08-16T21:00:00Z",
                 "last_seen_at_utc": "2026-08-16T21:00:00Z",
                 "indexed_at_utc": "2026-08-16T21:00:00Z", "generation_id": generation,
@@ -1339,15 +1422,16 @@ class LifecycleTests(unittest.TestCase):
                 writer.writerow(row)
         receipt = {
             "generation_id": generation, "mode": "FULL DRIVE INDEX",
-            "status": "FULL DRIVE INDEX COMPLETE", "human_register": "GOOGLE_SHEET",
-            "google_sheet_url": "https://docs.google.com/spreadsheets/d/example",
-            "google_sheet_generation_id": generation, "google_sheet_row_count": 2,
+            "status": "FULL DRIVE INDEX COMPLETE", "human_register": "CSV",
+            "human_register_locator": "DRIVE-REGISTER.csv",
+            "human_register_generation_id": generation, "human_register_row_count": 2,
             "human_register_verified_utc": "2026-08-16T21:01:00Z",
             "last_successful_refresh_utc": "2026-08-16T21:01:00Z",
             "counts": {
                 "owned_or_created_by_me": 2, "shared_with_me": 1, "shared_by_me": 0,
                 "relationship_overlap_items": 1, "relationship_unknown_items": 1,
-                "unique_items": 2,
+                "unique_items": 2, "added_items": 2, "updated_items": 0,
+                "unchanged_items": 0, "unknown_items": 1,
             },
             "source_scopes": {
                 "owned_or_created_by_me": "END", "shared_with_me": "END",
@@ -1360,16 +1444,18 @@ class LifecycleTests(unittest.TestCase):
         (root / "DRIVE-INDEX-CURSOR.json").write_text(
             json.dumps({
                 "generation_id": generation, "mode": "FULL DRIVE INDEX",
-                "unique_items": 2, "last_successful_refresh_utc": "2026-08-16T21:01:00Z",
+                "counts": receipt["counts"],
+                "last_successful_refresh_utc": "2026-08-16T21:01:00Z",
                 "next_page_state": None, "next_action": "Offer weekly refresh",
             }, indent=2, sort_keys=True) + "\n",
             encoding="utf-8",
         )
         (root / "DRIVE-INDEX.md").write_text(
             "# Drive index\n\nGeneration: " + generation +
-            "\nMode: FULL DRIVE INDEX\nUnique items: 2\n"
+            "\nMode: FULL DRIVE INDEX\nHuman register: CSV\nUnique items: 2\n"
             "Owned or created by me: 2\nShared with me: 1\nShared by me: 0\n"
-            "Relationship overlap items: 1\nRelationship unknown items: 1\n\n"
+            "Relationship overlap items: 1\nRelationship unknown items: 1\n"
+            "Added items: 2\nUpdated items: 0\nUnchanged items: 0\nUnknown items: 1\n\n"
             "No Drive file content was opened or downloaded, and no Drive item was created, "
             "edited, renamed, moved, shared, unshared, deleted or organized.\n",
             encoding="utf-8",
@@ -1383,6 +1469,39 @@ class LifecycleTests(unittest.TestCase):
         )
         self.assertEqual(passed.returncode, 0, passed.stdout + passed.stderr)
         self.assertIn("DRIVE REGISTER VALIDATION: PASS", passed.stdout)
+
+        csv_path = root / "DRIVE-REGISTER.csv"
+        csv_text = csv_path.read_text(encoding="utf-8")
+        summary_path = root / "DRIVE-INDEX.md"
+        csv_summary = summary_path.read_text(encoding="utf-8")
+        csv_path.unlink()
+        receipt["human_register"] = "GOOGLE_SHEET"
+        receipt["human_register_locator"] = "https://docs.google.com/spreadsheets/d/example"
+        (root / "DRIVE-INDEX-RECEIPT.json").write_text(
+            json.dumps(receipt, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        )
+        summary_path.write_text(
+            csv_summary.replace("Human register: CSV", "Human register: GOOGLE_SHEET"),
+            encoding="utf-8",
+        )
+        sheet_passed = subprocess.run(
+            [sys.executable, str(validator), str(root)], text=True, capture_output=True, check=False
+        )
+        self.assertEqual(sheet_passed.returncode, 0, sheet_passed.stdout + sheet_passed.stderr)
+
+        csv_path.write_text(csv_text, encoding="utf-8")
+        duplicate_human_register = subprocess.run(
+            [sys.executable, str(validator), str(root)], text=True, capture_output=True, check=False
+        )
+        self.assertEqual(duplicate_human_register.returncode, 1)
+        self.assertIn("exactly one human register", duplicate_human_register.stdout)
+
+        receipt["human_register"] = "CSV"
+        receipt["human_register_locator"] = "DRIVE-REGISTER.csv"
+        (root / "DRIVE-INDEX-RECEIPT.json").write_text(
+            json.dumps(receipt, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        )
+        summary_path.write_text(csv_summary, encoding="utf-8")
 
         receipt["counts"]["unique_items"] = 99
         (root / "DRIVE-INDEX-RECEIPT.json").write_text(
@@ -1408,9 +1527,10 @@ class LifecycleTests(unittest.TestCase):
         )
         (root / "DRIVE-INDEX.md").write_text(
             "# Drive index\n\nGeneration: " + generation +
-            "\nMode: TEST 25\nUnique items: 2\n"
+            "\nMode: TEST 25\nHuman register: CSV\nUnique items: 2\n"
             "Owned or created by me: 2\nShared with me: 1\nShared by me: 0\n"
-            "Relationship overlap items: 1\nRelationship unknown items: 1\n\n"
+            "Relationship overlap items: 1\nRelationship unknown items: 1\n"
+            "Added items: 2\nUpdated items: 0\nUnchanged items: 0\nUnknown items: 1\n\n"
             "No Drive file content was opened or downloaded, and no Drive item was created, "
             "edited, renamed, moved, shared, unshared, deleted or organized.\n",
             encoding="utf-8",
@@ -2195,11 +2315,11 @@ class LifecycleTests(unittest.TestCase):
                     self.assertNotIn("employee", path.read_text(encoding="utf-8").casefold(), str(path))
 
     def test_monthly_automatic_update_runs_at_ten_local_and_defers_live_task(self):
-        new_release = self.base / "release-2.2.0-auto"
+        new_release = self.base / "release-2.3.0-auto"
         shutil.copytree(self.release, new_release)
         rules = new_release / "core/AGENT-RULES.md"
         rules.write_text(rules.read_text(encoding="utf-8") + "\nAutomatic update marker.\n", encoding="utf-8")
-        refresh_release(new_release, "2.2.0")
+        refresh_release(new_release, "2.3.0")
         approve_test_release(new_release, automatic=True)
 
         idle = self.base / "idle-worker"
@@ -2211,7 +2331,7 @@ class LifecycleTests(unittest.TestCase):
         )
         self.assertIn("AUTOMATIC UPDATE: UPDATED", updated.stdout)
         self.assertEqual(
-            (idle / ".ai-human/VERSION").read_text(encoding="utf-8").strip(), "2.2.0"
+            (idle / ".ai-human/VERSION").read_text(encoding="utf-8").strip(), "2.3.0"
         )
         self.assertEqual(state_hashes(idle), before_state)
         updated_metadata = json.loads((idle / ".ai-human/install.json").read_text(encoding="utf-8"))
@@ -2241,11 +2361,11 @@ class LifecycleTests(unittest.TestCase):
         )
 
     def test_suspended_worker_defers_direct_and_fleet_automatic_updates(self):
-        new_release = self.base / "release-2.2.0-suspended"
+        new_release = self.base / "release-2.3.0-suspended"
         shutil.copytree(self.release, new_release)
         rules = new_release / "core/AGENT-RULES.md"
         rules.write_text(rules.read_text(encoding="utf-8") + "\nSuspended update marker.\n", encoding="utf-8")
-        refresh_release(new_release, "2.2.0")
+        refresh_release(new_release, "2.3.0")
         approve_test_release(new_release, automatic=True)
 
         suspended = self.base / "suspended-worker"
@@ -2295,11 +2415,11 @@ class LifecycleTests(unittest.TestCase):
         self.assertEqual(preserved_work_hashes(suspended), before)
 
     def test_fleet_pilots_email_then_isolates_a_general_worker_failure(self):
-        new_release = self.base / "release-2.2.0-fleet"
+        new_release = self.base / "release-2.3.0-fleet"
         shutil.copytree(self.release, new_release)
         rules = new_release / "core/AGENT-RULES.md"
         rules.write_text(rules.read_text(encoding="utf-8") + "\nFleet update marker.\n", encoding="utf-8")
-        refresh_release(new_release, "2.2.0")
+        refresh_release(new_release, "2.3.0")
         approve_test_release(new_release, automatic=True)
         pilot = self.base / "pilot"
         broken = self.base / "broken"
@@ -2334,7 +2454,7 @@ class LifecycleTests(unittest.TestCase):
         self.assertIn("general-001: MISMATCH", result.stdout)
         self.assertIn("general-002: UPDATED", result.stdout)
         self.assertEqual(
-            (safe / ".ai-human/VERSION").read_text(encoding="utf-8").strip(), "2.2.0"
+            (safe / ".ai-human/VERSION").read_text(encoding="utf-8").strip(), "2.3.0"
         )
         self.assertEqual(
             (broken / ".ai-human/VERSION").read_text(encoding="utf-8").strip(),
@@ -2346,11 +2466,11 @@ class LifecycleTests(unittest.TestCase):
         self.install(worker, automatic=True, worker_id="rollback-001")
         before_state = state_hashes(worker)
         before_rules = (worker / ".ai-human/system/AGENT-RULES.md").read_text(encoding="utf-8")
-        new_release = self.base / "release-2.2.0-rollback"
+        new_release = self.base / "release-2.3.0-rollback"
         shutil.copytree(self.release, new_release)
         rules = new_release / "core/AGENT-RULES.md"
         rules.write_text(rules.read_text(encoding="utf-8") + "\nMust roll back.\n", encoding="utf-8")
-        refresh_release(new_release, "2.2.0")
+        refresh_release(new_release, "2.3.0")
         approve_test_release(new_release, automatic=True)
         manifest = json.loads((new_release / "release-manifest.json").read_text(encoding="utf-8"))
         with mock.patch.object(
@@ -2442,11 +2562,11 @@ class LifecycleTests(unittest.TestCase):
     def test_update_refuses_a_symlinked_managed_parent_without_writing_outside(self):
         worker = self.base / "symlink-update-worker"
         self.install(worker)
-        new_release = self.base / "release-2.2.0-symlink"
+        new_release = self.base / "release-2.3.0-symlink"
         shutil.copytree(self.release, new_release)
         rules = new_release / "core/AGENT-RULES.md"
         rules.write_text(rules.read_text(encoding="utf-8") + "\nSymlink attack marker.\n", encoding="utf-8")
-        refresh_release(new_release, "2.2.0")
+        refresh_release(new_release, "2.3.0")
 
         outside_system = self.base / "outside-system"
         shutil.copytree(worker / ".ai-human/system", outside_system)

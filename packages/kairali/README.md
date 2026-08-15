@@ -8,14 +8,17 @@ Drive content or private evidence.
 
 - `people/` — the approved common, named-role, intern and Setup Helper start prompts;
 - `homework/` — the complete fallback homework for any attendee without a named plan;
-- the Email Triage and Drive Index workers as required, separate read-only projects;
+- the Personal Work Memory + Daily Email EA and Drive Index workers as required,
+  separate governed projects;
+- sourced, dated, employee-controlled work memory with visible show, correct, exclude
+  and forget controls, plus a fixed-time daily notification and proposed replies that
+  remain unsent;
 - a `TEST 25` or resumable `FULL DRIVE INDEX` choice; full mode enumerates all
-  connector-visible metadata in checkpointed batches of at most 25 and creates one
-  AI-readable JSONL file of record, a matching human CSV or approved Google Sheet
-  mirror, summary, receipt and cursor without opening or changing Drive files;
-- after a verified full index, an optional employee-confirmed weekly refresh (Sunday
-  night suggested or another convenient time) that reconciles generation IDs and
-  counts before advancing the register;
+  connector-visible metadata in checkpointed batches of at most 25 and maintains
+  `DRIVE-INDEX.jsonl` as the AI-readable file of record plus one approved Google Sheet
+  or otherwise `DRIVE-REGISTER.csv` human register; completion requires reopening both
+  registers and reconciling their generation, unique/data-row, relationship, overlap,
+  unknown and refresh totals, then verifying or declining the offered weekly refresh;
 - the optional Weekly LinkedIn Message Assistant: employee-chosen Saturday time,
   task-scoped Computer control in its local worker, Chrome only on approved
   non-LinkedIn pages, a forced `YOUR TURN ON LINKEDIN` control handoff, manually

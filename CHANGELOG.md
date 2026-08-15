@@ -2,6 +2,24 @@
 
 All notable changes are recorded here in plain language.
 
+## [2.0.2] - 2026-08-16
+
+- Hold v2.0.1 after an independent post-publication Monitor test found that two task
+  lifecycle calls prepared from the same pre-lease state could both report success
+  while the later write silently replaced the earlier live task.
+- Move every task-start and task-complete state read, live-task check, ID allocation,
+  artifact check and multi-file render inside the exclusive worker lease. Recheck the
+  leased state hash immediately before the atomic commit.
+- Add forced concurrent start and completion regressions. Each race must produce one
+  winner and one clean refusal, preserve the winner's exact state and receipt, leave no
+  duplicate ledger/evidence rows or abandoned lease, and finish with validator PASS.
+- Preserve the proportional v2.0.1 work model: direct read-only answers, reversible
+  local achievement, narrow Gate 0 withholding, and the distinction between one intact
+  assignment artifact and separately executed actions capped at 25.
+- Support checkpointed recovery from configured v2.0.0 workers and held v2.0.1 workers
+  while keeping automatic update eligibility off. Pre-v2 workers still require the
+  guided exact-scope Gate 0 setup migration.
+
 ## [2.0.1] - 2026-08-15
 
 - Add three proportional execution paths. Read-only requests answer directly without

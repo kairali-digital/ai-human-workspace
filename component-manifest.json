@@ -1,5 +1,5 @@
 {
-  "approval_status": "APPROVED_BY_OWNER",
+  "approval_status": "LOCAL_BUILD_ONLY",
   "components": [
     {
       "description": "Complete Kairali people, homework and governed-skill reference kit",
@@ -29,8 +29,8 @@
       "type": "skill"
     }
   ],
-  "release_status": "RELEASED",
+  "release_status": "LOCAL_BUILD_ONLY",
   "repository": "kairali-digital/ai-human-workspace",
   "schema": "ai-human.component-release/v1",
-  "version": "2.0.1"
+  "version": "2.0.2"
 }

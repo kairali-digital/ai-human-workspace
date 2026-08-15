@@ -40,27 +40,28 @@ for (const [name, record] of records) {
   }
 }
 
-const page = await readFile(path.join(root, "app", "page.tsx"), "utf8");
+const route = await readFile(path.join(root, "app", "route.ts"), "utf8");
 const layout = await readFile(path.join(root, "app", "layout.tsx"), "utf8");
 const nextConfig = await readFile(path.join(root, "next.config.ts"), "utf8");
 const robots = await readFile(path.join(root, "app", "robots.ts"), "utf8");
-const visible = `${page}\n${await readFile(path.join(root, "content", "site-data.ts"), "utf8")}`;
+const siteData = await readFile(path.join(root, "content", "site-data.ts"), "utf8");
+const downloadLinkSources = siteData;
+const redirectTarget = "https://abhilashkr.com/#ai-human-workspace";
 
-for (const phrase of ["Download everything", "Use the Setup Helper", "daily Email Importance Brief", "chosen-time daily email brief", "FULL DRIVE INDEX", "Saturday LinkedIn Message Assistant", "right-level local control", "human-only LinkedIn access and sending", "Available here. Live only after your proof.", "LIVE FOR ME", "TEST 25 proves setup only", "NOT ENABLED BY CHOICE", "@Computer", "YOUR TURN ON LINKEDIN", "The portal cannot grant computer access", "GitHub stays the approved source of truth", "No login required", "CHECK FOR KAIRALI UPDATE", "UPDATE NOW", "Fetch/Pull", "read-only", "Monitor", "Employee-owned state stays preserved"]) {
-  if (!visible.includes(phrase)) issues.push(`visible portal copy lacks: ${phrase}`);
-}
+if (!route.includes(redirectTarget) || !route.includes("status: 308") || !route.includes("Location: canonicalOverview")) issues.push(`root route does not emit a 308 redirect to: ${redirectTarget}`);
+if (!route.includes('"X-Robots-Tag": noindexPolicy') || !route.includes("noindex")) issues.push("root redirect does not retain the X-Robots-Tag noindex policy");
 if (!layout.includes("index: false") || !layout.includes("follow: false")) issues.push("metadata robots are not noindex and nofollow");
 if (!nextConfig.includes("X-Robots-Tag") || !nextConfig.includes("noindex")) issues.push("X-Robots-Tag noindex header is missing");
 if (!robots.includes('disallow: "/"')) issues.push("robots.txt does not disallow all crawling");
-if (visible.includes("—") || visible.includes("–")) issues.push("visible copy contains a prohibited long dash");
+if (downloadLinkSources.includes("—") || downloadLinkSources.includes("–")) issues.push("portal source contains a prohibited long dash");
 
-const hrefFiles = [...visible.matchAll(/(?:href:|href=)[{]?`?\"?\/downloads\/([^`\"}]+?)(?:`|\"|})/g)].map((match) => decodeURIComponent(match[1]));
+const hrefFiles = [...downloadLinkSources.matchAll(/(?:href:|href=)[{]?`?\"?\/downloads\/([^`\"}]+?)(?:`|\"|})/g)].map((match) => decodeURIComponent(match[1]));
 for (const file of hrefFiles) {
   if (!records.has(file)) issues.push(`page links to an unmanifested download: ${file}`);
 }
 
 const personalPath = /(?:\/Users\/[^/\s]+\/|\/home\/[^/\s]+\/|[A-Za-z]:[\\]Users[\\][^\\\s]+[\\])/;
-for (const candidate of [page, layout, nextConfig, robots, visible, JSON.stringify(manifest)]) {
+for (const candidate of [route, layout, nextConfig, robots, downloadLinkSources, JSON.stringify(manifest)]) {
   if (personalPath.test(candidate)) issues.push("portal source exposes a personal absolute path");
 }
 
@@ -72,5 +73,6 @@ if (issues.length) {
 
 console.log("PORTAL VALIDATION: PASS");
 console.log(`- downloads verified: ${records.size}`);
+console.log(`- root 308 redirect verified: ${redirectTarget}`);
 console.log("- noindex metadata, response header and robots.txt present");
-console.log("- no personal absolute path or long dash in visible source");
+console.log("- no personal absolute path or long dash in portal source");

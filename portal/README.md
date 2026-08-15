@@ -1,6 +1,6 @@
-# Kairali AI Method portal
+# Kairali AI Method compatibility portal
 
-This is the stable, no-login delivery page for approved Kairali AI Method material.
+This deployment is compatibility and download infrastructure, not the public overview. Its root permanently redirects to the [AI-Human Workspace overview](https://abhilashkr.com/#ai-human-workspace), while existing `/downloads/*` links remain available at their original URLs.
 
 ## Important boundary
 
@@ -23,6 +23,6 @@ npm run build
 4. Run `npm run refresh-downloads` to update the committed hash manifest.
 5. Run the portal and repository gates.
 6. Push a branch and review its Vercel preview.
-7. Merge only the approved change to the production branch. Vercel then updates the stable portal URL.
+7. Merge only the approved change to the production branch. Vercel then updates the compatibility deployment while the stable download URLs remain unchanged.
 
 Do not edit only the website label when the downloadable file also changed. A change is complete only when the source, generated artifact, download manifest and portal agree.

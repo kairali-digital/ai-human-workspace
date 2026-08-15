@@ -39,9 +39,34 @@ auditability and is not the stable install path.
   ledger row, one evidence row and one completion receipt; final validator PASS.
 - Existing local reversible success, failed-close truthfulness and false-undo rejection
   regressions: PASS.
-- Complete lifecycle suite, release validator, extracted edition checks, Claude
-  full-permission behavioral reruns, portal checks and independent Monitor rereview:
-  PENDING in the local candidate lane.
+- First v2.0.2 Claude mixed-draft run correctly withheld Gate 0 content but inferred
+  three missing brief fields. The candidate was not promoted; explicit missing-source
+  guidance and a regression were added.
+- Complete local-candidate lifecycle suite: PASS, 63 tests in one continuous run.
+- Local candidate release validator: PASS, including secret and absolute-path scans.
+- Separate reusable and Kairali candidate archives: PASS, including extraction,
+  candidate-lane install refusal and company-content isolation.
+- Reusable candidate SHA-256:
+  `1177afb021317620d1e488d8b1e756c5cf20f8b9ff43af9e35f1456195aac212`.
+- Kairali candidate SHA-256:
+  `f9307ba86eb93cdc4cf97df598e612197a87524315ed1f208ea4804881531bd6`.
+- Claude full-permission read-only run: PASS in 13.4 seconds and 4 turns; exact source
+  answer, no file diff, validator PASS and zero web-search/fetch requests.
+- Corrected Claude full-permission local artifact run: PASS in 51.5 seconds and 17
+  turns; missing due dates stayed `Not provided in source`, task start preceded the
+  write, task completion followed readback, exactly two receipts and validator PASS.
+- Corrected Claude full-permission mixed Gate 0 run: PASS in 70.6 seconds and 22 turns;
+  all missing brief fields stayed `Not provided in source`, only the unsupported claim
+  was withheld, its exact wording was absent from the artifact, the approval path was
+  correct, exactly two receipts and validator PASS.
+- All Claude behavioral runs had zero permission denials and zero web-search/fetch
+  requests. No browser, account, message, publication or external action was allowed.
+- Portal TypeScript, direct Next.js 16.3.0 optimized build and production dependency
+  audit: PASS; zero vulnerabilities. The local host was Node 24, while the repository
+  remains pinned to Node 22 for protected CI and production verification.
+- Candidate production portal gate: expected FAIL CLOSED because the manifests remain
+  `LOCAL_BUILD_ONLY` and no v2.0.2 public-edition assets exist.
+- Independent Monitor rereview: PENDING.
 
 ## Current decision
 

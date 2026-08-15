@@ -13,6 +13,9 @@ All notable changes are recorded here in plain language.
 - Add forced concurrent start and completion regressions. Each race must produce one
   winner and one clean refusal, preserve the winner's exact state and receipt, leave no
   duplicate ledger/evidence rows or abandoned lease, and finish with validator PASS.
+- Make source truth explicit for generated artifacts: a field absent from the named
+  source stays `Not provided in source` or a labelled placeholder instead of being
+  inferred from context.
 - Preserve the proportional v2.0.1 work model: direct read-only answers, reversible
   local achievement, narrow Gate 0 withholding, and the distinction between one intact
   assignment artifact and separately executed actions capped at 25.

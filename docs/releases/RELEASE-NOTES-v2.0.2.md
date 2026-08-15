@@ -14,6 +14,9 @@ each other's task state.
 - Forced two-caller regressions require exactly one winner and one clean refusal for
   both start and completion. The winner's task, receipt, ledger and evidence remain
   intact, the lease is cleared and the final validator passes.
+- Requested artifact fields missing from the named source stay visibly not provided or
+  use a labelled placeholder; the assistant does not infer audience, objective,
+  channel, date, claim or owner facts from context.
 
 ## What remains proportionate
 

@@ -38,6 +38,18 @@
   only after validation. The shared kit being available must not be confused with an
   employee worker being activated. Email and Full Drive are required; `TEST 25` is
   Drive setup proof only; Saturday LinkedIn remains optional.
+- Owner instructions H-48/H-49, 16 Aug 2026: Drive must visibly create and reopen
+  normalized `DRIVE-INDEX.jsonl` plus one generated Google Sheet-or-CSV human register;
+  every output carries the same generation ID and reconciled unique/data-row,
+  relationship/overlap/unknown and refresh counts. After full proof it offers, but
+  never silently activates, an employee-confirmed weekly refresh. The
+  homework's main outcome is an employee-controlled personal work memory and fixed-time
+  Email EA that learns sourced context about role, priorities, people, preferences and
+  commitments; presents neat notifications and proposed replies; and supports later
+  questions from approved memory, email and manually supplied conversation sources.
+  Memory must be inspectable, correctable, excludable and forgettable. Sending,
+  unsubscribe and permanent-filter actions remain exact-approval-only; hidden
+  whole-mailbox profiling and sensitive inference are prohibited.
 - Owner instruction H-44, 15 Aug 2026: supersede the portal-wide noindex choice. The
   portal source is indexable with a canonical URL, robots.txt and sitemap; download
   binaries retain a scoped noindex header. Indexability is not release approval, and
@@ -53,7 +65,7 @@
   Sources: https://www.linkedin.com/legal/user-agreement and
   https://www.linkedin.com/help/linkedin/answer/a1341387 and
   https://www.linkedin.com/help/linkedin/answer/a1340567
-- Protected public `kairali-digital/ai-human-workspace` release v1.5.1 - complete
+- Protected public `kairali-digital/ai-human-workspace` release v2.1.0 - complete
   integrity-checked Kairali reference kit, public distribution boundary, three homework
   starters, all approved people/setup prompts and two explicit role-opt-in skills.
 - `work/MULTI-COMPANY-AI-HUMAN-CORE-001/repo/packages/kairali/README.md` - the public
@@ -94,7 +106,10 @@
   did not provide.
 - For the company homework completion readback, `TEST 25` proves connector and cursor
   setup only. `FULL DRIVE INDEX` must finish every supported scope before the Drive
-  worker is marked live for that employee.
+  worker is marked live for that employee. The JSONL master is the owning metadata
+  source; one Sheet-or-CSV register is generated from it; both must reopen and
+  reconcile before the cursor advances. The weekly schedule needs an employee-chosen
+  day, exact local time and time zone, or a visible `NOT ENABLED BY CHOICE` decision.
 - Email first records the employee's daily local time and time zone, then reads no more
   than 25 Inbox messages and changes nothing. After the pilot passes, the employee
   chooses `BRIEF ONLY` or `BRIEF + SAFE FILING`; every later batch remains no larger than 25, and the first

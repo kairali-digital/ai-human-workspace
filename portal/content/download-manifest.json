@@ -32,6 +32,16 @@
       "size": 112
     },
     {
+      "name": "AI-HUMAN-v210-REUSABLE-EDITION-PUBLIC-KIT.zip",
+      "sha256": "7869447592446b69c591983719a84c7ac65aa21ddcf1b77d0be62d259d323db9",
+      "size": 68704
+    },
+    {
+      "name": "AI-HUMAN-v210-REUSABLE-EDITION-PUBLIC-KIT.zip.sha256",
+      "sha256": "651fd64a6da4c25b7abdacd560b33d1240efddee4f24a0d5982b7b3d814eff0c",
+      "size": 112
+    },
+    {
       "name": "EMPLOYEE-SETUP-AND-PROOF-GUIDE-v7-PUBLIC-KIT.docx",
       "sha256": "71285bdb986099c9993c8b5acbd3a5b45792cf91ef1c992d6a17290939e0e31a",
       "size": 45710
@@ -43,23 +53,23 @@
     },
     {
       "name": "EVERYONE-ELSE-AI-HUMAN-HOMEWORK-GUIDE.docx",
-      "sha256": "c20df3696a150872eb9aac3db0fcb1a019b2f218d9393beb507c1ba2cb57d9c5",
-      "size": 50136
+      "sha256": "ada27351143f3587c2b7e441f874a8572a02df941edb7a7c8fcfefe5ab73bc20",
+      "size": 51983
     },
     {
       "name": "EVERYONE-ELSE-AI-HUMAN-HOMEWORK-GUIDE.pdf",
-      "sha256": "3d272adbc33ace1128ebe29cc4238d62836dd3fcf8dbac7e99234067292fa575",
-      "size": 253015
+      "sha256": "46eb7b66ddf5e3de96f5cbd1daaa17728ad5146cb52f183b6d7220a9ef77a30f",
+      "size": 266058
     },
     {
       "name": "EVERYONE-ELSE-AI-HUMAN-HOMEWORK-PACK.sha256",
-      "sha256": "1be2e792dc0595f3017706ef3bfd293f9004cfc66adda40f6cd02a3b87036489",
+      "sha256": "a2788e7e8b7628f3eb6988bb4c51fc2a9951e9bfb9a2fc515ffe584e5fbd6e9a",
       "size": 107
     },
     {
       "name": "EVERYONE-ELSE-AI-HUMAN-HOMEWORK-PACK.zip",
-      "sha256": "0ce78aa0096da0be1ccc44d92ace4aaac6a947dbae3cf7f09a215a7e1bb10329",
-      "size": 10572409
+      "sha256": "508f6161100c52e6322a66049605ae3a814096ace7f377a3011f5b0d9f4fd773",
+      "size": 11594968
     },
     {
       "name": "FACILITATOR-RUNBOOK-v9-PUBLIC-KIT.docx",
@@ -89,6 +99,16 @@
     {
       "name": "KAIRALI-AI-HUMAN-v201-EMPLOYEE-EDITION-PUBLIC-KIT.zip.sha256",
       "sha256": "462dcec3390e63dfb979b53a539a6eccfe757e33780b15e13e69b42b2a07c2f5",
+      "size": 120
+    },
+    {
+      "name": "KAIRALI-AI-HUMAN-v210-EMPLOYEE-EDITION-PUBLIC-KIT.zip",
+      "sha256": "ec25f6bee638c833956a3a6c64e9f1661c5660b028a048b2a2de348ef9da836f",
+      "size": 23310620
+    },
+    {
+      "name": "KAIRALI-AI-HUMAN-v210-EMPLOYEE-EDITION-PUBLIC-KIT.zip.sha256",
+      "sha256": "5d44d0b89136d01a63dcf0342bee26e346ebbe6c153286b9777584ee021c384e",
       "size": 120
     },
     {

@@ -6,7 +6,7 @@ This is the stable, no-login delivery page for approved Kairali AI Method materi
 
 The portal is deliberately indexable and therefore public. Search indexing is not a
 release or approval signal. v2.0.1 is held after a post-publication Monitor finding;
-v2.0.2 remains local until its repository manifests, release proof and production gates
+v2.1.0 remains local until its repository manifests, release proof and production gates
 say it is owner-approved and released. Candidate labels and install refusals remain
 authoritative. Download files carry a scoped `noindex` response
 header, but anyone with their URL can still open them. The portal and downloads must

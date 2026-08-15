@@ -42,10 +42,15 @@ GitHub Desktop `Fetch origin`/`Pull origin` only synchronizes an assigned shared
 Kairali repository. It does not install or update your managed system, reference kit or
 role skill.
 
-1. Required: build the separate **Daily Email Triage AI Human** under task
-   `EMAIL-HW-001`; choose the daily local time, prove the read-only pilot, rule
-   `BRIEF ONLY` or `BRIEF + SAFE FILING`, and verify the active automation.
-2. Required: build the separate **Drive Index AI Human** under task `DRIVE-HW-001`; choose `FULL DRIVE INDEX` for the complete connector-visible metadata index, or `TEST 25` only for a quick proof.
+1. Required: build the separate **Personal Work Memory + Daily Email EA** under task
+   `EMAIL-HW-001`; choose the fixed daily local time, prove the read-only pilot, build
+   the supervised sourced memory baseline, rule `BRIEF ONLY` or
+   `BRIEF + SAFE FILING`, and verify the active automation.
+2. Required: build the separate **Drive Master Index AI Human** under task
+   `DRIVE-HW-001`; choose `FULL DRIVE INDEX` for the complete connector-visible
+   metadata index, or `TEST 25` only for a quick proof. Reconcile the JSONL file of
+   record with one Sheet-or-CSV human register, then confirm or decline the offered
+   weekly refresh.
 3. Optional, only after both pass: build the **Weekly LinkedIn Message Assistant** under
    task `LINKEDIN-WEEKLY-001`; choose the Saturday local time, confirm the time zone,
    approve task-scoped Computer control for the local worker, prove the `YOUR TURN ON
@@ -58,10 +63,16 @@ role skill.
 The public kit and portal make all three starters available; they do not activate your
 accounts or schedules.
 
-- **Email — LIVE FOR ME:** the approved Gmail account, chosen local time and time zone,
-  pilot report, filing-mode ruling, automation card and validator all match.
+- **Personal Memory + Email EA — LIVE FOR ME:** the approved Gmail account, sourced
+  supervised memory baseline, show/correct/exclude/forget controls, fixed local time
+  and time zone, neat EA report, filing-mode ruling, automation card and validator all
+  match. Proposed replies remain `NOT SENT` and external mailbox actions remain exact-
+  approval-only.
 - **Drive — LIVE FOR ME:** `FULL DRIVE INDEX` has reached the end of every supported
-  scope in checkpointed batches, and the CSV, summary, final cursor and validator pass.
+  scope in checkpointed batches; `DRIVE-INDEX.jsonl` and the one generated
+  Sheet-or-CSV human register reopen; their generation, object/data-row,
+  unique/relationship/overlap/unknown/refresh totals agree with summary and cursor;
+  the weekly refresh is card-verified or declined; and the validator passes.
   `TEST 25` proves setup only; it is not the completed company homework.
 - **LinkedIn — LIVE FOR ME, OPTIONAL:** you chose it; the Saturday schedule, scoped
   local-control proof, `YOUR TURN ON LINKEDIN` handoff, manually supplied pilot, queue
@@ -70,9 +81,11 @@ accounts or schedules.
 Downloaded, installed or connected alone is not live. Show the visible proof inside
 each separate worker.
 
-This fallback does not replace a named employee plan. Email never sends, deletes,
-unsubscribes, opens attachments or silently changes permanent Gmail filters; reversible
-filing requires the employee's explicit rule. Drive remains read-only. Both projects
+This fallback does not replace a named employee plan. The Email EA builds only concise,
+sourced, dated work memory that the employee can inspect, correct, exclude or forget;
+it never copies a whole mailbox, creates hidden profiling, sends, deletes,
+automatically unsubscribes, opens attachments or silently changes permanent Gmail
+filters. Reversible filing requires the employee's explicit rule. Drive remains read-only. Both projects
 finish only when the visible local report, state proof and validator pass are present.
 The LinkedIn assistant may use Computer control inside its approved local worker and
 Chrome on an approved non-LinkedIn public page. It stops all computer/browser tools

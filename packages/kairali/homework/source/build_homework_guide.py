@@ -331,14 +331,14 @@ def add_title_block(doc):
 
     subtitle = doc.add_paragraph()
     subtitle.paragraph_format.space_after = Pt(18)
-    run = subtitle.add_run("Email Triage + Drive Inventory, with an optional Saturday LinkedIn Message Assistant")
+    run = subtitle.add_run("Personal Work Memory + Daily Email EA + Drive Master Index, with optional Saturday LinkedIn")
     set_font(run, size=13.5, color=GRAY)
 
     table = doc.add_table(rows=2, cols=2)
     set_table_geometry(table, [4680, 4680])
     values = [
         ("WHO", "Meeting attendee without a named homework page"),
-        ("REQUIRED", "Daily Email worker + Full Drive Index"),
+        ("REQUIRED", "Personal Memory + Email EA + Full Drive Index"),
         ("HUMAN ROLE", "Mission, login, approval and final judgment"),
         ("PROOF", "Visible local report + evidence + validator pass"),
     ]
@@ -513,9 +513,9 @@ def build():
             add_rich_text(p, line)
 
     doc.core_properties.title = "Two Required Workers. One Optional Worker."
-    doc.core_properties.subject = "Beginner Daily Email, Full Drive Index and optional Saturday LinkedIn homework"
+    doc.core_properties.subject = "Beginner Personal Work Memory, Daily Email EA, Drive Master Index and optional Saturday LinkedIn homework"
     doc.core_properties.author = "Kairali AI Method"
-    doc.core_properties.keywords = "Codex, AI human, email triage, full drive index, LinkedIn message assistant, beginner"
+    doc.core_properties.keywords = "Codex, AI human, personal work memory, email EA, JSONL, drive index, LinkedIn message assistant, beginner"
     mark_table_headers(doc)
     doc.save(OUTPUT)
     print(OUTPUT)

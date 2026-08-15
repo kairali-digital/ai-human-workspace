@@ -56,10 +56,10 @@ personal files.
 - Governed capability and fleet-update control plane:
   [`docs/GOVERNED-CAPABILITIES-AND-FLEET.md`](docs/GOVERNED-CAPABILITIES-AND-FLEET.md)
 
-v2.0.2 is the current correction candidate for the held v2.0.1 release. It is
-backward-compatible for configured v2.0.0 and v2.0.1 workers and keeps automatic update
-eligibility off. A pre-v2 worker still needs the guided exact-scope Gate 0 setup
-migration before entering the v2 line. Until every release gate passes, v2.0.2 remains
+v2.1.0 is the current combined lifecycle-correction and personal-assistant candidate.
+It is backward-compatible for configured v2.0.0 and held v2.0.1 workers and keeps
+automatic update eligibility off. A pre-v2 worker still needs the guided exact-scope
+Gate 0 setup migration before entering the v2 line. Until every release gate passes, v2.1.0 remains
 `LOCAL_BUILD_ONLY`; candidate validation proves that lane while normal public-release
 validation rejects it.
 

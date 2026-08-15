@@ -56,7 +56,14 @@ Wait for the employee's item-by-item outcomes. Never claim a send without confir
 Learn only from SENT AS WRITTEN or EDITED AND SENT outcomes. Ask before turning a new
 outcome into a general routing rule.
 
-Update the queue and cursor only after outcomes are confirmed. A failed, partial, or
+Update the queue and cursor only after outcomes are confirmed. Add a concise tone,
+person or work-context learning to `CONFIRMED-LINKEDIN-LEARNINGS.md` only when the
+employee explicitly approves it for future reuse. Never copy the full conversation or
+infer a private relationship, personality, sensitive trait, authority or intent. The
+employee may correct or forget a learning row at any time. Another worker may read the
+export only after the employee approves its exact local path.
+
+A failed, partial, or
 abandoned run does not advance the successful cursor. Write LINKEDIN-SATURDAY-REPORT.md
 with the chosen schedule and counts for supplied, reviewed, ready drafts, decision
 holds, skips, employee-confirmed sends, unresolved queue items, and remaining batches.

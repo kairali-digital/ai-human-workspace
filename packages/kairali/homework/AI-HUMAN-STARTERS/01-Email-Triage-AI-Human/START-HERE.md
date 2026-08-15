@@ -1,13 +1,16 @@
-# Start here - Daily Email Triage AI Human
+# Start here - Personal Work Memory + Daily Email EA
 
 > You are learning to wear Codex like an Iron Man suit. You provide the mission and
 > judgment. Codex performs approved work through a controlled autonomous loop.
 
-This project creates a concise daily company-email brief at the local time you choose.
-It can also file only clearly low-risk mail under rules you approve. It never sends,
-replies, drafts, deletes, opens attachments or silently changes permanent Gmail
-filters. You do not need Terminal, PowerShell, Command Prompt, Python, Git, GitHub or
-VS Code.
+This project becomes a personal work-memory and daily email EA. It learns the
+employee's role, priorities, important people, communication preferences, recurring
+work, commitments and confirmed decisions from approved work sources. At the fixed
+local time chosen during setup, it shows a neat notification of new email, priorities,
+follow-ups, useful reading and proposed replies. It recommends irrelevant newsletters
+and filter improvements for review and can file only clearly low-risk mail under rules
+the employee approves. It never sends, automatically unsubscribes, deletes, opens
+attachments or silently changes permanent Gmail filters.
 
 ## If anything on the screen does not match
 
@@ -43,7 +46,9 @@ Do not teach me how the machinery works unless I ask. Start now by checking what
    screen yourself. Never paste a password or one-time code into chat.
 5. Review the read-only pilot and approve either `BRIEF ONLY` or
    `BRIEF + SAFE FILING`.
-6. Stop only when the daily automation, visible report and proof all pass.
+6. Build one supervised, source-backed work-memory baseline and verify its controls.
+7. Stop only when the fixed-time daily automation, visible EA report, memory and proof
+   all pass.
 
 ## Paste this exact first-run prompt
 
@@ -52,12 +57,13 @@ My name is [TYPE YOUR NAME]. This is task EMAIL-HW-001.
 
 Read AGENTS.md, AI-HUMAN.md, PARAMETERS.md, MASTER_CURSOR.md, OPEN_REGISTER.md,
 TODAY.md, TOOLBOX.md, GATES.md, WORK-GATES.md, DECISIONS.md, EMAIL-TRIAGE-RULES.md,
-EMAIL-TRIAGE-CURSOR.md and DAILY-TRIAGE-PROMPT.md.
+EMAIL-TRIAGE-CURSOR.md, PERSONAL-WORK-MEMORY.md, MEMORY-REVIEW-QUEUE.md,
+MEMORY-SOURCES.md, ASK-MY-WORK-MEMORY.md and DAILY-TRIAGE-PROMPT.md.
 
 First, replace “Kairali employee using this copy” with my name in this project's
 owner fields only. Do not change the worker's name, purpose, batch cap or gates.
 
-Ask me exactly one setup question: “What local time should your daily email brief
+Ask me exactly one schedule question during setup: “What fixed local time should your daily email brief
 run? For example, 8:30 AM.” Wait for my answer. Detect the computer's local time zone,
 show it to me and ask only for confirmation if it appears wrong. Record the approved
 time and time zone in PARAMETERS.md. Do not create an automation yet.
@@ -74,12 +80,20 @@ attachments and do not rely on Gmail's Important marker alone. Read thread conte
 when a message may need action.
 
 Create EMAIL-TRIAGE-REPORT.md with exactly these sections:
+- TODAY AT A GLANCE — what arrived, what changed and the shortest useful priority list;
 - NEEDS ACTION — sender, subject, why it matters, deadline or age, and the next human
   action;
+- PROPOSED REPLIES — concise local reply text only when a reply would help, based on
+  confirmed facts and evidenced tone, and visibly marked NOT SENT;
 - WAITING / FOLLOW UP — who owes the next step, what is expected, age, and a suggested
   follow-up date;
 - WORTH READING — every genuinely useful item, one line explaining why;
 - HUMAN REVIEW — sender, subject and date only for sensitive or Gate 0 mail;
+- NEWSLETTERS TO REVIEW — recommend unsubscribe only when repeated evidence shows the
+  newsletter is not useful to me, my company or my role; include why and never
+  unsubscribe automatically;
+- MEMORY LEARNED OR NEEDS CONFIRMATION — concise source-backed candidates about my
+  role, priorities, people, preferences, recurring work or commitments; and
 - FILTER HEALTH — pilot count, likely low-risk filing count, uncertain senders, and
   any proposed rule change; and
 - RUN SUMMARY — counts, exact selection rule and the sentence “PILOT ONLY: no email
@@ -96,8 +110,30 @@ instead of filling the report with low-value mail.
 Read the pilot report and EMAIL-TRIAGE-RULES.md back to me. Then ask me exactly one
 approval question: “Choose BRIEF ONLY or BRIEF + SAFE FILING.” Explain in one sentence
 that safe filing can only apply the approved AI labels, archive clearly low-risk mail
-and mark that mail read; it never deletes, sends, unsubscribes or changes permanent
-Gmail filters. Wait for my answer and record it in DECISIONS.md and PARAMETERS.md.
+and mark that mail read; proposed replies remain local and NOT SENT; unsubscribe and
+permanent-filter proposals need my separate approval for the exact action. Wait for my
+answer and record it in DECISIONS.md and PARAMETERS.md.
+
+Then build the supervised memory baseline. Ask exactly one question: “Choose RECENT
+WORK 25 for one learning batch, or CHOOSE WORK PERIOD to name the company-mail date
+range or query I may review in checkpointed batches.” Wait for my answer and record
+the exact approved scope in MEMORY-SOURCES.md. Search only that approved company Inbox
+and Sent work-mail scope, excluding Spam and Trash. Never open attachments. Process no
+more than 25 threads before each checkpoint.
+
+From the approved evidence, add only concise candidates to MEMORY-REVIEW-QUEUE.md:
+role and priorities; people and work relationships; communication and decision
+preferences; recurring work; and open commitments. Do not copy full message text or
+infer personality, sensitive traits, private relationships, authority or intent. Show
+me each batch and let me rule CONFIRM, CORRECT, KEEP AS OBSERVED, EXCLUDE, FORGET or
+NOT MEMORY. Move only ruled items to PERSONAL-WORK-MEMORY.md with a memory ID, source,
+status, date and review point. Record unruled repeated observations as OBSERVED —
+VERIFY, never as fact. Show me `SHOW MY MEMORY`, `CORRECT MEMORY <ID>`, `FORGET <ID>`,
+`EXCLUDE <topic or person>` and `REFRESH MEMORY`.
+
+If the Drive worker or optional LinkedIn worker has a local source for me, ask for the
+exact approved path one at a time. Add only that locator, coverage and freshness to
+MEMORY-SOURCES.md. Do not silently browse another worker folder.
 
 After the pilot passes and my choice is recorded, create one daily recurring Codex
 automation named “Daily Email Importance Brief — [MY NAME]” at my approved local time
@@ -115,10 +151,16 @@ evidence log and validate this workspace.
 ## Done when
 
 - `EMAIL-TRIAGE-REPORT.md` shows the read-only pilot and all important items.
+- The report is a neat notification with priorities, proposed replies marked NOT SENT,
+  follow-ups, useful reading, newsletter review, memory candidates and filter health.
+- `PERSONAL-WORK-MEMORY.md` contains only sourced, dated confirmed or visibly
+  observed items, and the employee can show, correct, exclude or forget them.
+- `MEMORY-SOURCES.md` shows the exact approved sources, coverage and freshness.
 - `PARAMETERS.md` shows the employee's approved local time, time zone and filing mode.
 - The daily automation card is active against this exact Email Triage project.
 - `AUTOMATIONS.md` records the same schedule and scope.
-- Permanent Gmail filters were not changed.
+- No send, unsubscribe or permanent-filter action occurred without separate exact
+  approval and before/after/undo evidence.
 - Codex says the workspace validator passed.
 
 A connected app or account is not proof. The report, active automation,

@@ -1,7 +1,12 @@
-# AI HUMAN — Drive Inventory AI Human
+# AI HUMAN — Drive Master Index AI Human
 
 This folder is one bounded worker. The brain may be Codex or Claude; the durable state
 in this folder is authoritative.
+
+`DRIVE-INDEX.jsonl` is this worker's normalized AI-readable metadata source. One
+approved Google Sheet or otherwise `DRIVE-REGISTER.csv` is a generated human view,
+never an independent file of record. A later worker may read the JSONL only after the
+employee approves its exact path and must disclose generation, coverage and freshness.
 
 ## Start every session
 

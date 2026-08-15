@@ -843,7 +843,8 @@ def validate(root, candidate=False):
         all_employees = all_employees_path.read_text(encoding="utf-8")
         all_employees_flat = re.sub(r"\s+", " ", all_employees)
         for required in (
-            "Email Triage", "Drive Index", "Weekly LinkedIn Message Assistant",
+            "Personal Work Memory + Daily Email EA", "Drive Master Index",
+            "Weekly LinkedIn Message Assistant",
             "homework/START-HERE.md", "Assignment is not execution",
             "must not silently stop at row 25", "separate GitHub Issues",
         ):
@@ -855,13 +856,19 @@ def validate(root, candidate=False):
         homework_prompts_flat = re.sub(r"\s+", " ", homework_prompts)
         for required in (
             "EMAIL-HW-001", "DRIVE-HW-001", "LINKEDIN-WEEKLY-001",
-            "What local time should your daily email brief",
+            "What fixed local time should your daily email brief",
             "BRIEF + SAFE FILING", "Daily Email Importance Brief",
-            "no Gmail filter was changed", "metadata only",
-            "TEST 25", "FULL DRIVE INDEX", "DRIVE-INDEX.csv",
+            "no Gmail filter was changed", "PERSONAL-WORK-MEMORY.md",
+            "PROPOSED REPLIES", "NOT SENT", "NEWSLETTERS TO REVIEW",
+            "SHOW MY MEMORY", "CORRECT MEMORY <ID>", "FORGET <ID>",
+            "metadata only", "TEST 25", "FULL DRIVE INDEX",
+            "DRIVE-INDEX.jsonl", "DRIVE-REGISTER.csv", "GOOGLE SHEET",
+            "generation ID", "SET WEEKLY REFRESH", "Sunday night",
+            "RUN DRIVE REFRESH NOW", "NOT SEEN THIS RUN",
             "UNKNOWN — CONNECTOR COVERAGE GAP",
             "What local time every Saturday", "Focused and Other",
             "READY TO SEND", "NEEDS YOUR DECISION", "manually press Send",
+            "CONFIRMED-LINKEDIN-LEARNINGS.md",
         ):
             if required.casefold() not in homework_prompts_flat.casefold():
                 failures.append("homework prompts lack: " + required)
@@ -870,6 +877,8 @@ def validate(root, candidate=False):
         email_required_files = {
             "DAILY-TRIAGE-PROMPT.md", "EMAIL-RULE-REVIEW.md",
             "EMAIL-TRIAGE-CURSOR.md", "EMAIL-TRIAGE-RULES.md",
+            "PERSONAL-WORK-MEMORY.md", "MEMORY-REVIEW-QUEUE.md",
+            "MEMORY-SOURCES.md", "ASK-MY-WORK-MEMORY.md",
         }
         for name in sorted(email_required_files):
             if not (email_root / name).is_file():
@@ -879,7 +888,7 @@ def validate(root, candidate=False):
             for path in sorted(email_root.iterdir()) if path.is_file()
         )
         for required in (
-            "What local time should your daily email brief",
+            "What fixed local time should your daily email brief",
             "BRIEF ONLY", "BRIEF + SAFE FILING",
             "Daily Email Importance Brief", "DAILY-TRIAGE-PROMPT.md",
             "no more than 25", "every connector-visible result", "checkpoint",
@@ -887,6 +896,14 @@ def validate(root, candidate=False):
             "AI Triage/Reviewed", "AI Filed/Promotions",
             "permanent Gmail filter", "computer is awake",
             "ChatGPT is running", "this exact project remains available",
+            "PERSONAL-WORK-MEMORY.md", "MEMORY-REVIEW-QUEUE.md",
+            "MEMORY-SOURCES.md", "ASK-MY-WORK-MEMORY.md",
+            "TODAY AT A GLANCE", "PROPOSED REPLIES", "NOT SENT",
+            "NEWSLETTERS TO REVIEW", "MEMORY LEARNED OR NEEDS CONFIRMATION",
+            "SHOW MY MEMORY", "CORRECT MEMORY <ID>", "FORGET <ID>",
+            "EXCLUDE <topic or person>", "REFRESH MEMORY",
+            "CONFIRMED", "OBSERVED — VERIFY", "source reference",
+            "Do not copy full message text", "Never unsubscribe",
         ):
             if required.casefold() not in email_text.casefold():
                 failures.append("Email Triage starter lacks: " + required)
@@ -898,14 +915,22 @@ def validate(root, candidate=False):
                 failures.append("Email Triage starter contains unsafe instruction: " + forbidden)
     drive_root = homework_root / "02-Drive-Inventory-AI-Human"
     if drive_root.is_dir():
+        if not (drive_root / "WEEKLY-DRIVE-REFRESH-PROMPT.md").is_file():
+            failures.append("Drive Index starter missing WEEKLY-DRIVE-REFRESH-PROMPT.md")
         drive_text = "\n".join(
             path.read_text(encoding="utf-8", errors="replace")
             for path in sorted(drive_root.iterdir()) if path.is_file()
         )
         for required in (
-            "TEST 25", "FULL DRIVE INDEX", "DRIVE-INDEX.csv",
+            "TEST 25", "FULL DRIVE INDEX", "DRIVE-INDEX.jsonl",
+            "DRIVE-REGISTER.csv", "GOOGLE SHEET", "file of record",
             "DRIVE-INDEX-CURSOR.md", "no more than 25", "checkpoint",
             "connector coverage gap", "item ID", "never store a password",
+            "generation ID", "reopen", "malformed JSON", "duplicate IDs",
+            "owned_or_created_by_me", "shared_with_me", "shared_by_me",
+            "NOT SEEN THIS RUN — VERIFY", "SET WEEKLY REFRESH", "Sunday night",
+            "exact local time", "time zone", "WEEKLY-DRIVE-REFRESH-PROMPT.md",
+            "RUN DRIVE REFRESH NOW", "does not advance",
         ):
             if required.casefold() not in drive_text.casefold():
                 failures.append("Drive Index starter lacks: " + required)
@@ -920,7 +945,7 @@ def validate(root, candidate=False):
         linkedin_required_files = {
             "SATURDAY-REVIEW-PROMPT.md", "LINKEDIN-TONE-AND-PRECEDENTS.md",
             "LINKEDIN-REPLY-QUEUE.md", "LINKEDIN-REVIEW-CURSOR.md",
-            "LINKEDIN-INBOX-BATCH.md",
+            "LINKEDIN-INBOX-BATCH.md", "CONFIRMED-LINKEDIN-LEARNINGS.md",
         }
         for name in sorted(linkedin_required_files):
             if not (linkedin_root / name).is_file():
@@ -938,6 +963,8 @@ def validate(root, candidate=False):
             "manually press Send", "employee's confirmation",
             "SATURDAY-REVIEW-PROMPT.md", "LINKEDIN-REPLY-QUEUE.md",
             "must never open, read, click, control, or send through LinkedIn",
+            "CONFIRMED-LINKEDIN-LEARNINGS.md", "explicitly approves",
+            "correct or forget", "Never copy the full conversation",
         ):
             if required.casefold() not in linkedin_flat.casefold():
                 failures.append("LinkedIn Message Assistant lacks: " + required)

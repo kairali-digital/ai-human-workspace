@@ -1,8 +1,8 @@
 # Governed capabilities and fleet updates
 
 This document describes the v2 control plane, introduced in v2.0.0 and retained in the
-v2.0.2 correction candidate. v2.0.1 is held after a post-publication concurrency
-finding. v2.0.2 is backward-compatible from configured v2.0.0 and v2.0.1 workers; a
+v2.1.0 combined candidate. v2.0.1 is held after a post-publication concurrency
+finding. v2.1.0 is backward-compatible from configured v2.0.0 and held v2.0.1 workers; a
 pre-v2 worker still needs the exact-scope setup migration. Automatic update selection
 remains disabled. Pre-release builds use `LOCAL_BUILD_ONLY`, and the lifecycle refuses
 to install them.
@@ -88,8 +88,8 @@ then receives its approved worker ID, confirmed time zone, designated supervisor
 ACTIVE/DISABLED automatic-update setting only while idle. The migration preserves user
 state and records the local decision reference and validator receipts; it never guesses
 these settings. Because entering the v2 line requires this setup migration, it is not
-an automatic path. The v2.0.2 correction remains profile-preserving and explicitly
-`BACKWARD_COMPATIBLE` from configured v2.0.0 and v2.0.1 workers, while its automatic-
+an automatic path. The v2.1.0 release remains profile-preserving and explicitly
+`BACKWARD_COMPATIBLE` from configured v2.0.0 and held v2.0.1 workers, while its automatic-
 update eligibility remains off.
 
 For Mac/Windows portability, scheduling does not assume Python can supply a bundled

@@ -31,7 +31,7 @@ Before installing, ask me one question at a time for the exact company or group,
 Do not teach me how the machinery works unless I ask. Start now by checking what I already have.
 
 ============================================================
-PROMPT 1 - DAILY EMAIL TRIAGE AI HUMAN - REQUIRED
+PROMPT 1 - PERSONAL WORK MEMORY + DAILY EMAIL EA - REQUIRED
 Replace [TYPE YOUR NAME] before sending.
 ============================================================
 
@@ -39,12 +39,13 @@ My name is [TYPE YOUR NAME]. This is task EMAIL-HW-001.
 
 Read AGENTS.md, AI-HUMAN.md, PARAMETERS.md, MASTER_CURSOR.md, OPEN_REGISTER.md,
 TODAY.md, TOOLBOX.md, GATES.md, WORK-GATES.md, DECISIONS.md, EMAIL-TRIAGE-RULES.md,
-EMAIL-TRIAGE-CURSOR.md and DAILY-TRIAGE-PROMPT.md.
+EMAIL-TRIAGE-CURSOR.md, PERSONAL-WORK-MEMORY.md, MEMORY-REVIEW-QUEUE.md,
+MEMORY-SOURCES.md, ASK-MY-WORK-MEMORY.md and DAILY-TRIAGE-PROMPT.md.
 
 First, replace “Kairali employee using this copy” with my name in this project's
 owner fields only. Do not change the worker's name, purpose, batch cap or gates.
 
-Ask me exactly one setup question: “What local time should your daily email brief
+Ask me exactly one schedule question during setup: “What fixed local time should your daily email brief
 run? For example, 8:30 AM.” Wait for my answer. Detect the computer's local time zone,
 show it to me and ask only for confirmation if it appears wrong. Record the approved
 time and time zone in PARAMETERS.md. Do not create an automation yet.
@@ -61,12 +62,20 @@ attachments and do not rely on Gmail's Important marker alone. Read thread conte
 when a message may need action.
 
 Create EMAIL-TRIAGE-REPORT.md with exactly these sections:
+- TODAY AT A GLANCE — what arrived, what changed and the shortest useful priority list;
 - NEEDS ACTION — sender, subject, why it matters, deadline or age, and the next human
   action;
+- PROPOSED REPLIES — concise local reply text only when a reply would help, based on
+  confirmed facts and evidenced tone, and visibly marked NOT SENT;
 - WAITING / FOLLOW UP — who owes the next step, what is expected, age, and a suggested
   follow-up date;
 - WORTH READING — every genuinely useful item, one line explaining why;
 - HUMAN REVIEW — sender, subject and date only for sensitive or Gate 0 mail;
+- NEWSLETTERS TO REVIEW — recommend unsubscribe only when repeated evidence shows the
+  newsletter is not useful to me, my company or my role; include why and never
+  unsubscribe automatically;
+- MEMORY LEARNED OR NEEDS CONFIRMATION — concise source-backed candidates about my
+  role, priorities, people, preferences, recurring work or commitments;
 - FILTER HEALTH — pilot count, likely low-risk filing count, uncertain senders, and
   any proposed rule change; and
 - RUN SUMMARY — counts, exact selection rule and the sentence “PILOT ONLY: no email
@@ -83,8 +92,24 @@ instead of filling the report with low-value mail.
 Read the pilot report and EMAIL-TRIAGE-RULES.md back to me. Then ask me exactly one
 approval question: “Choose BRIEF ONLY or BRIEF + SAFE FILING.” Explain in one sentence
 that safe filing can only apply the approved AI labels, archive clearly low-risk mail
-and mark that mail read; it never deletes, sends, unsubscribes or changes permanent
-Gmail filters. Wait for my answer and record it in DECISIONS.md and PARAMETERS.md.
+and mark that mail read; proposed replies remain local and NOT SENT; unsubscribe and
+permanent-filter proposals need my separate approval for the exact action. Wait for my
+answer and record it in DECISIONS.md and PARAMETERS.md.
+
+Then build the supervised memory baseline. Ask exactly one question: “Choose RECENT
+WORK 25 for one learning batch, or CHOOSE WORK PERIOD to name the company-mail date
+range or query I may review in checkpointed batches.” Wait for my answer and record
+the exact approved scope in MEMORY-SOURCES.md. Search only that approved company Inbox
+and Sent work-mail scope, excluding Spam and Trash. Never open attachments. Process no
+more than 25 threads before each checkpoint.
+
+Add only concise candidates to MEMORY-REVIEW-QUEUE.md for my role and priorities,
+people and work relationships, communication preferences, recurring work and open
+commitments. Do not copy full messages or infer personality, sensitive traits, private
+relationships, authority or intent. Let me rule CONFIRM, CORRECT, KEEP AS OBSERVED,
+EXCLUDE, FORGET or NOT MEMORY. Move only ruled items to PERSONAL-WORK-MEMORY.md with a
+source, status, date and review point. Show me SHOW MY MEMORY, CORRECT MEMORY <ID>,
+FORGET <ID>, EXCLUDE <topic or person> and REFRESH MEMORY.
 
 After the pilot passes and my choice is recorded, create one daily recurring Codex
 automation named “Daily Email Importance Brief — [MY NAME]” at my approved local time
@@ -106,7 +131,8 @@ Replace [TYPE YOUR NAME] before sending.
 My name is [TYPE YOUR NAME]. This is task DRIVE-HW-001.
 
 Read AGENTS.md, AI-HUMAN.md, PARAMETERS.md, MASTER_CURSOR.md, OPEN_REGISTER.md,
-TODAY.md, TOOLBOX.md, GATES.md, WORK-GATES.md and DECISIONS.md.
+TODAY.md, TOOLBOX.md, GATES.md, WORK-GATES.md, DECISIONS.md, AUTOMATIONS.md and
+WEEKLY-DRIVE-REFRESH-PROMPT.md.
 
 First, replace “Kairali employee using this copy” with my name in this project's
 owner fields only. Do not change the worker's name, purpose, task, limits or gates.
@@ -116,26 +142,38 @@ approved company account. If it is missing or disconnected, do not troubleshoot 
 and do not ask for my password. Show me only the next click or login I must do, wait
 for me, and verify the connection before continuing.
 
-When the approved company Drive is connected, ask me one question: Choose TEST 25 for
-setup proof or FULL DRIVE INDEX for completed company homework. Wait for my answer. Do
-not ask another setup question.
+When the approved company Drive is connected, show both choices in plain language and
+ask me one question: “Choose TEST 25 for a 25-item learning sample, or FULL DRIVE INDEX
+for the completed company master index.” Wait for my answer. Do not choose for me.
 
 For either choice, read metadata only. Never open or download file contents. Use batches
 of no more than 25 items and checkpoint after every batch.
 
-Create or update these local files:
-- DRIVE-INDEX.csv, with one row per unique Drive item and these columns: item_id, name,
-  file_type, owner_or_relationship, modified_time, parent_or_location, sharing_status,
-  web_link, source_scope, indexed_at_utc, review_note;
-- DRIVE-INDEX.md, with the account label without secrets, chosen mode, coverage by
-  source scope, batch count, unique item count, duplicate count, unavailable fields,
-  and a plain-language guide for asking Codex to find a file later; and
-- DRIVE-INDEX-CURSOR.md, with chosen mode, current source scope, last completed batch,
-  the connector's next-page state when safely available, unique item count, and the
-  exact next action. Never store a password, one-time code or access token.
+Immediately create or update these local files after I choose a mode. Start one new
+generation ID for the selected run and put it in every output. Do not report a
+successful run until the outputs are created, reopened and reconciled:
+- DRIVE-INDEX.jsonl, the normalized AI-readable file of record, with one JSON object
+  per stable item ID and these fields: generation_id, item_id, name, file_type,
+  owner_or_relationship, owned_or_created_by_me, shared_with_me, shared_by_me,
+  modified_time, parent_or_location, sharing_status, web_link, source_scope,
+  visibility_status, first_indexed_at_utc, last_seen_at_utc and review_note;
+- one human register generated from that exact JSONL data. If a Google Sheets app is
+  already connected and I explicitly approve its write permission and exact target,
+  ask whether I want GOOGLE SHEET or LOCAL CSV. Otherwise create DRIVE-REGISTER.csv
+  without asking for broader access. Never maintain two human registers for the same
+  generation;
+- DRIVE-INDEX.md, with generation ID, human-register type and locator, approved
+  account label, chosen mode, coverage, batch and unique/relationship/overlap/unknown/
+  duplicate/added/updated/unchanged counts, unavailable fields, freshness and a
+  plain-language later-use guide; and
+- DRIVE-INDEX-CURSOR.md, with the same generation ID, mode, human-register type and
+  locator, last reconciled batch, connector next-page state, unique count, last
+  successful refresh and exact next action. Never store a secret.
 
-Use the connector's stable item ID to prevent duplicates. If a saved page cursor expires,
-restart that source scope and skip every item ID already present in DRIVE-INDEX.csv.
+Use the connector's stable item ID to upsert DRIVE-INDEX.jsonl and prevent duplicates.
+If a saved cursor expires or a supported change feed is unavailable, restart a bounded
+source-scope scan and skip or update IDs already recorded. Never delete an indexed
+record merely because it is temporarily invisible; mark NOT SEEN THIS RUN — VERIFY.
 Use UNKNOWN for every unavailable value instead of a guess. Use HUMAN REVIEW for titles
 or metadata that point to medical, dosage, certification, legal, spend, credentials,
 banking, personal HR or other highly sensitive material; do not open them.
@@ -146,16 +184,35 @@ the result TEST 25 COMPLETE — FULL DRIVE NOT INDEXED, then stop.
 If I choose FULL DRIVE INDEX, enumerate every page the connector exposes for all visible
 scopes it supports: owned or created by me, shared with me, shared by me when that
 relationship is available, and visible shared drives. Work in batches of no more than
-25. After each batch, save the CSV, summary, cursor, state files and evidence, then
-continue automatically inside this approved task. If the session must end, validate the
-workspace and leave the cursor ready so a new session resumes without starting over.
+25. After each batch, save JSONL, regenerate or update the one human register, reopen
+both registers, reconcile them, then advance the cursor and save summary, state and
+evidence. Continue automatically inside this approved task. If the session must end,
+validate and leave the cursor ready so a new session resumes without starting over.
 Call the result complete only when every supported scope has no next page. Record any
 scope the connector cannot expose as UNKNOWN — CONNECTOR COVERAGE GAP; never claim it
 was scanned.
 
+After the selected mode finishes, reopen DRIVE-INDEX.jsonl, parse every non-empty line,
+count objects and unique IDs, and reject malformed JSON or duplicate IDs. Reopen the
+selected human register and count its data rows. Compare both with DRIVE-INDEX.md and
+DRIVE-INDEX-CURSOR.md. Generation ID, unique and relationship/overlap/unknown and
+added/updated/unchanged counts must agree everywhere. Missing, empty, malformed or
+disagreeing output fails closed and the cursor does not advance. Use TRUE, FALSE or
+UNKNOWN for each relationship flag and never add overlapping relationship counts as
+if they were unique items.
+
 Put this exact sentence in DRIVE-INDEX.md: “No Drive file content was opened or
 downloaded, and no Drive item was created, edited, renamed, moved, shared, unshared,
 deleted or organized.”
+
+After the first successful FULL DRIVE INDEX, ask whether I choose SET WEEKLY REFRESH
+or NOT NOW. Do not activate one silently. If I choose it, ask one schedule question
+for my day, exact local time within my preferred window and time zone. Suggest Sunday
+night but invent no time. Create one “Weekly Drive Index Refresh — [MY NAME]” automation
+against this exact project using WEEKLY-DRIVE-REFRESH-PROMPT.md. Verify its card and
+record the matching ACTIVE row in AUTOMATIONS.md. Explain the computer, ChatGPT,
+folder and connector conditions and show pause, edit, remove and RUN DRIVE REFRESH NOW
+recovery. If I choose NOT NOW, record NOT ENABLED BY CHOICE.
 
 Read the finished index summary back to me. If it passes the task's exit evidence,
 update the ledger, register, cursor, today file and evidence log. Then validate this
@@ -172,7 +229,7 @@ Read AGENTS.md, AI-HUMAN.md, PARAMETERS.md, MASTER_CURSOR.md, OPEN_REGISTER.md,
 TODAY.md, TOOLBOX.md, GATES.md, WORK-GATES.md, DECISIONS.md, SATURDAY-REVIEW-PROMPT.md,
 LINKEDIN-TONE-AND-PRECEDENTS.md, LINKEDIN-REPLY-QUEUE.md,
 LINKEDIN-REVIEW-CURSOR.md, LINKEDIN-INBOX-BATCH.md and
-LINKEDIN-CONTROL-HANDOFF.md.
+LINKEDIN-CONTROL-HANDOFF.md and CONFIRMED-LINKEDIN-LEARNINGS.md.
 
 First, replace “Kairali employee using this copy” with my name in this project's
 owner fields only. Do not change the worker name, purpose, limits or gates.
@@ -225,6 +282,9 @@ Show only one setup action at a time and wait after it.
    ask me to mark each item SENT AS WRITTEN, EDITED AND SENT, SKIPPED, or
    KEEP FOR LATER. Never claim a message was sent without my confirmation. Learn only
    from confirmed outcomes and keep unresolved items in LINKEDIN-REPLY-QUEUE.md.
+11. Ask before saving any reusable tone, person or work-context learning. Save only a
+   concise employee-confirmed row in CONFIRMED-LINKEDIN-LEARNINGS.md, never a full
+   conversation or sensitive/private inference. Show how I can correct or forget it.
 
 If more than 25 items remain, checkpoint the cursor and offer the next batch only after
 the first batch is recorded. Never weaken the 25-item batch cap.

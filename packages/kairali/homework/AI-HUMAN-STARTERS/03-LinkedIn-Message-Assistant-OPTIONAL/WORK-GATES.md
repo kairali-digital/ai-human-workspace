@@ -37,6 +37,10 @@ uncertain.
   sensitive information.
 - Keep copied message text local. Never copy it to the shared company repository,
   employee-wide report or public kit.
+- Only concise employee-confirmed tone, person or work-context learning may enter
+  `CONFIRMED-LINKEDIN-LEARNINGS.md`. Never store a full conversation or infer private
+  relationships, personality, sensitive traits, authority or intent. Corrections and
+  forget requests apply before future use.
 - LinkedIn's current User Agreement and Help Center prohibit unauthorized bots and
   browser automation. See `https://www.linkedin.com/legal/user-agreement` and
   `https://www.linkedin.com/help/linkedin/answer/a1341387` and

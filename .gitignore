@@ -2,7 +2,6 @@ __pycache__/
 *.pyc
 .DS_Store
 dist/
-release-proof.json
 .pytest_cache/
 *.update-temp
 *.rollback-temp
@@ -10,3 +9,4 @@ portal/.next/
 portal/node_modules/
 portal/.vercel/
 portal/tsconfig.tsbuildinfo
+portal/next-env.d.ts

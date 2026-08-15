@@ -1,33 +1,40 @@
 {
   "approval_status": "APPROVED_BY_OWNER",
+  "automatic_update_eligible": false,
+  "compatibility": {
+    "classification": "SETUP_MIGRATION_REQUIRED",
+    "migration": "Configure and validate the exact local Gate 0 profile at a safe checkpoint before applying the managed update.",
+    "minimum_supported_version": "1.5.1",
+    "preserves_user_state": true
+  },
   "managed_files": [
     {
-      "sha256": "5252b6fdcd6ad4a75b00a977f0b43b12a746d65c384dcc7b68ac8fcee2ba95ee",
+      "sha256": "e92a4105df7c8a524cff01ab385fe7ae7094583fa4cde84f32aeda617f97b44f",
       "source": "core/AI-HUMAN.md",
       "target": ".ai-human/system/AI-HUMAN.md"
     },
     {
-      "sha256": "13f42649a7435eae25e5cc9951de4d9afe8d282f55f6543214d78b958b7e3e4c",
+      "sha256": "074caa6d28104ad5f6bdb2bcf0316c134efdd7a257ed4dda26afa399d9ab6228",
       "source": "core/AGENT-RULES.md",
       "target": ".ai-human/system/AGENT-RULES.md"
     },
     {
-      "sha256": "fcee496e777237a5075d3537185d4b6c996e9a53a3224796c05f050ca4780ea9",
+      "sha256": "5ea0db0ce0aa663c0f8f9b6de72b02e7705b8ed8b13b293f30117b648403cf72",
       "source": "core/OPERATING-LOOP.md",
       "target": ".ai-human/system/OPERATING-LOOP.md"
     },
     {
-      "sha256": "d1352074fc8fb74856e4811df8b389fde8e9cf50a12f9b75f2d213b58282c76c",
+      "sha256": "f5c1dcda603c3d3bc6a239470f7e0a7044f00b097c94ee99b52bf49dc1cdf972",
       "source": "core/GATES-SHARED.md",
       "target": ".ai-human/system/GATES-SHARED.md"
     },
     {
-      "sha256": "9cbf24641bef8a9b646f39f7e1c1db29aeea25fc728690bc8e962dff85d9fd2a",
+      "sha256": "d180dd6a897b5cd360349b646a2d0c89ed127476249430f1e307b85641a4e605",
       "source": "core/SESSION-START.md",
       "target": ".ai-human/system/SESSION-START.md"
     },
     {
-      "sha256": "81f7764de029d2ec511f164c45a008bfdcdc802205f510f250a6880ca5f200da",
+      "sha256": "256be7d49524a6db4c86b417ce55465b0ffe64646fef6aa3176278aa603a5c7f",
       "source": "core/SESSION-END.md",
       "target": ".ai-human/system/SESSION-END.md"
     },
@@ -37,12 +44,12 @@
       "target": ".ai-human/system/TOOLBOX-TEMPLATE.md"
     },
     {
-      "sha256": "dfe7d71b3f428eb73ed853f8fded65e2986896e21d69f45ebf06bb623b450e14",
+      "sha256": "c28fcca53637bc88e124af1725df13cb98c69dedefd62fb3cdbe1cdb6b760624",
       "source": "core/VERSION",
       "target": ".ai-human/VERSION"
     },
     {
-      "sha256": "10bc8a7d6ce70393fa9fbb1f26ea9a4c5a61702a828711a891fccce90e8e5e64",
+      "sha256": "07d9069dddc76ddcc5780f19dbad44688035f415cec77e69e4b5155fb111ccbb",
       "source": "scripts/ai_human.py",
       "target": ".ai-human/bin/ai_human.py"
     }
@@ -63,14 +70,21 @@
     "DECISIONS.md",
     "TOOLBOX.md",
     "GATES.md",
+    "WORK-GATES.md",
+    "COMPLIANCE-SOURCES.md",
+    "WORKSPACE-MAP.md",
     "AUTOMATIONS.md",
     "START-HERE.md",
     "READ-ME-FIRST.txt",
+    ".ai-human/control/",
+    ".ai-human/capabilities/",
+    ".ai-human/version-report.json",
     "credentials",
     "browser sessions",
     "personal files"
   ],
+  "release_status": "RELEASED",
   "repository": "kairali-digital/ai-human-workspace",
   "schema": "ai-human.workspace-release/v1",
-  "version": "1.5.1"
+  "version": "2.0.0"
 }

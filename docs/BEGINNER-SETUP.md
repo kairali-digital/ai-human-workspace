@@ -4,23 +4,60 @@ You do not need to understand folders, Git, GitHub, Terminal, PowerShell, Python
 commands. The Setup Helper performs every safe step it can and shows only an unavoidable
 login, account choice or permission one at a time.
 
-## Start from the screen you can see
+## First choose exactly one edition
 
-1. If ChatGPT is already open, start a new chat.
-2. If it is not installed, open a normal web browser, go to `chatgpt.com`, sign in with
-   the approved work account and start a new chat.
-3. Paste the complete Setup Helper message below.
+- Kairali employee: click **Download the Kairali employee edition**. It includes the
+  approved Kairali rollout route, role prompts and homework workers. It does not embed
+  one Kairali-wide compliance profile.
+- Everyone else: click **Download the reusable edition**. It contains only the neutral
+  workspace and generic helper. It contains no Kairali employee material.
+
+Do not combine the two downloads. A package marked `LOCAL_BUILD_ONLY` is a test
+candidate and must stop before real installation.
+
+## Install in five visible steps
+
+1. Click the correct edition download on the website.
+   **DONE WHEN:** its ZIP is visible in Downloads.
+2. Open Downloads. On Mac, double-click the ZIP once. On Windows, right-click the ZIP,
+   select **Extract All**, then select **Extract**.
+   **DONE WHEN:** `KAIRALI-EMPLOYEE-EDITION` or
+   `AI-HUMAN-REUSABLE-EDITION` appears as a normal folder.
+3. Open the ChatGPT desktop app with the correct account and start a new chat. If the
+   app is missing, open `chatgpt.com` in a normal browser and sign in first.
+   **DONE WHEN:** a new chat box is visible under the correct account.
+4. Open `START-HERE.md` inside the extracted edition folder and paste its complete
+   Setup Helper message. The helper checks the computer first, preserves the download
+   as the source copy, confirms the exact company/entity/unit/jurisdictions and private
+   Gate 0 profile, creates the working copy and opens the correct local project in
+   Codex. It gives only one unavoidable click, login or permission at a time.
+   **DONE WHEN:** Codex shows the correct working folder as the active local project.
+5. Paste the startup test from the same `START-HERE.md` file.
+   **DONE WHEN:** the readback names the exact entity, unit, jurisdictions, user
+   relationship, compliance owner, purpose and confirmed Gate 0 profile, reports the
+   actual mode as `ACTIVE`, shows the installed version, says no task is live unless
+   one was explicitly assigned, and shows validator `PASS`.
+
+## What active guardrails should feel like
+
+When the system is `ACTIVE` and a request crosses a declared boundary, the AI should
+politely name that boundary, refuse only the unsafe or unauthorized part, continue any
+safe part and offer the nearest compliant next step. It should not scold, lecture or
+use one guardrail to block unrelated work. If you deliberately verify `SUSPENDED`, the
+AI-human rules and this pushback pattern are off until you resume them.
 
 ## First likely failure: use the Setup Helper
 
-Kairali employees must paste this exact approved rescue message. Employees of another
-company use the same message from that company's approved profile; only the company and
-human escalation names may differ.
+Kairali employees must paste this exact approved rescue message. Users at another
+company use that company's approved Setup Helper; the company identity, profile and
+human escalation names differ.
 
 ```text
 I am stuck setting up my Kairali AI workspace. I do not know Terminal, Python, Git, GitHub, folders, projects or Codex.
 
 Be my Setup Helper.
+
+Before installing, ask me one question at a time for the exact company or group, legal entity, operating unit, jurisdictions, purpose, my relationship to the company, and compliance owner. Check current authoritative sources, treat historical charts only as leads, create a separate confirmed Gate 0 profile for each materially different entity or unit, and do not report ACTIVE while compliance questions remain.
 
 1. Work out whether I am on Mac or Windows and check what is already installed before changing anything.
 2. Do every approved safe setup step you can yourself.
@@ -31,7 +68,7 @@ Be my Setup Helper.
 7. Keep permissions on Ask for approval. Never choose Full access.
 8. For the shared Kairali workspace, use GitHub Desktop buttons. For a standalone local project, do not install GitHub unless it is actually needed.
 9. Continue until ChatGPT is installed, Codex is open, the correct project is connected, AGENTS.md is visible, approved apps are connected when required, and the startup test passes.
-10. If you cannot continue safely, write one OPEN_REGISTER.md row with the failed step, exact error, what you checked, and the one human access or decision needed. Then tell me whether Ambuj or Abilash must help.
+10. If you cannot continue safely, write one OPEN_REGISTER.md row with the failed step, exact error, what you checked, and the one human access or decision needed. Then tell me whether Ambuj or Abhilash must help.
 
 Do not teach me how the machinery works unless I ask. Start now by checking what I already have.
 ```
@@ -53,10 +90,15 @@ update is recorded and deferred instead.
 
 ## What the helper does
 
-The helper checks what is already installed, downloads the latest public release,
-creates one worker folder, personalizes it with the approved company/owner/role/purpose,
-opens that exact folder in Codex and validates it. It does not place employee state in
-the public repository.
+The helper checks what is already installed and uses the extracted edition source copy
+selected above. It asks one question at a time for company/group, exact legal entity, operating unit,
+jurisdictions, purpose, user relationship, mission owner and compliance owner. It
+researches current authoritative sources, records old charts only as unverified leads,
+creates the private Gate 0 profile and shows it to the compliance owner. Only after the
+profile is confirmed with no unknowns does it create the worker, open that exact folder
+in Codex and validate it. It does not place user state or the private profile in the
+public repository. Materially different entities or units use separate profiles and
+worker folders.
 
 For Kairali, the helper also opens the approved role prompt. If the attendee has no
 named plan, it installs the universal homework reference kit and creates separate Email
@@ -90,16 +132,18 @@ Downloaded, installed or connected alone is not a completed worker.
 
 ## DONE WHEN
 
-Codex is open inside the employee's worker folder and answers this from the project
+Codex is open inside the user's worker folder and answers this from the project
 files without asking for an upload:
 
 ```text
-Read AGENTS.md, COMPANY.md, PARAMETERS.md, MASTER_CURSOR.md and .ai-human/VERSION.
-Tell me the company, owner, purpose, live task and installed system version. Change nothing.
+Read AGENTS.md, COMPANY.md, PARAMETERS.md, GATES.md, WORK-GATES.md, COMPLIANCE-SOURCES.md,
+WORKSPACE-MAP.md, MASTER_CURSOR.md and .ai-human/VERSION. Tell me the exact legal
+entity, operating unit, jurisdictions, user relationship, compliance owner, purpose,
+Gate 0 profile ID and review date, live task and installed system version. Change nothing.
 ```
 
-The answer names the approved company, owner and purpose, says `NOT SET` when no task is
-live, and reports a valid semantic version.
+The answer names the approved identity, scope and confirmed Gate 0 profile, says
+`NOT SET` when no task is live, and reports a valid semantic version.
 
 ## Recovery
 
@@ -107,3 +151,24 @@ If the repository cannot be downloaded, keep the current worker untouched and re
 later. If an update fails, the lifecycle tool restores the previous managed system. If
 the worker opens but its state is wrong, stop and show the Setup Helper the exact visible
 result; never create replacement facts from memory.
+
+## Troubleshooting and how to stop using it
+
+- ZIP does not open: on Windows, confirm you selected **Extract All** rather than opening
+  files inside the compressed folder. On Mac, double-click the ZIP once. If extraction
+  still fails, keep it, download once more, and ask the Setup Helper to compare the
+  visible filename and checksum. Do not install another utility without approval.
+- Codex cannot see the files: make the extracted working folder the local project, not
+  the ZIP or untouched source copy.
+- The package says `LOCAL_BUILD_ONLY`: stop. It has not been released for real work.
+- The old chat remains restrictive after suspension: start a new chat in the same
+  project and run the `SUSPENDED` verification. A stale chat is not proof.
+- Uninstall leaves `.ai-human` or an active AI-human adapter: removal failed. Use the
+  receipt and Setup Helper; do not delete work files.
+- A plugin is gone but its account is still reachable: disconnect its connector
+  separately. Plugin removal and connector revocation are different actions.
+
+Open [`UPDATES-ROLLBACK-REMOVAL.md`](UPDATES-ROLLBACK-REMOVAL.md) for the exact
+natural-language prompts to suspend, resume or reversibly uninstall the local system,
+verify `ACTIVE`, `SUSPENDED` or `UNINSTALLED`, and separately revoke plugin, connector
+or Computer Use access.

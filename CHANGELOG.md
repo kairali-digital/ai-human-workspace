@@ -2,6 +2,84 @@
 
 All notable changes are recorded here in plain language.
 
+## [2.0.0] - 2026-08-15
+
+- Replace the incorrect universal company Gate 0 with a confirmed local profile bound
+  to one exact company/group, legal entity, operating unit, jurisdictions, purpose and
+  user relationship. Setup requires current authoritative sources and compliance-owner
+  confirmation; historical charts remain unverified leads. Different scopes use
+  isolated workers/profiles.
+- Add tamper-evident `.ai-human/control/gate-profile.json`, generated `GATES.md` and
+  `COMPLIANCE-SOURCES.md`, separate task-specific `WORK-GATES.md`, and
+  `WORKSPACE-MAP.md`, which makes the file of record for
+  identity, gates, facts, decisions, tools, task state, completion and evidence explicit.
+- Classify this release as `SETUP_MIGRATION_REQUIRED`. A checkpoint-only migration
+  archives the old universal gate file, preserves task locks, binds and validates the
+  exact profile, and remains ineligible for automatic updates.
+- Make reusable core and starter language user-neutral. Kairali-specific materials use
+  employee only where that relationship has been confirmed.
+- Add an ACTIVE-mode pushback contract: name the exact boundary politely, refuse only
+  the conflicting part, preserve safe work and guide the owner to the nearest compliant
+  path or approval. The pattern is deliberately off when the system is SUSPENDED.
+- Add two non-overlapping public downloads: a complete Kairali Employee Edition and
+  a company-neutral Reusable Edition tested to contain no Kairali, Abhilash or Ambuj
+  content. Add one five-step beginner install path with visible `DONE WHEN` proof.
+- Add owner-controlled `ACTIVE`, `SUSPENDED` and `UNINSTALLED` modes. Suspension turns
+  managed rules, automations and automatic updates off; automatic checks defer without
+  mutation. Reversible uninstall archives the managed system and active generated
+  adapters while preserving independent project instructions and work files.
+- Add install, troubleshooting, resume, uninstall and separate plugin/connector/
+  Computer Use revocation guidance to the website and both edition guides.
+- Use the canonical owner name `Abhilash` throughout Kairali-facing material while
+  rejecting both canonical and legacy spellings from the reusable edition.
+- Give Mac and Windows separate ZIP extraction steps, reject weak completion evidence
+  such as `done` or `ok`, and map `WORKSPACE-MAP.md` to itself as the map's file of record.
+- Report a setup-migration release as a safe automatic-update deferral instead of a
+  failed rollback, and let CI select the candidate or public validation lane from the
+  manifest without weakening either lane.
+- Make the portal indexable with canonical metadata, robots.txt and a sitemap; keep
+  download binaries under a scoped `noindex` response header and gate production on
+  exact released manifests and public-edition assets.
+- Put a fail-closed public-release and candidate-asset gate before every production
+  portal deployment command; an indexable local candidate still cannot deploy.
+- Normalize and minimum-size completion proof so punctuation cannot turn `done` or `ok`
+  into detailed evidence, and require the approved scheduler adapter to supply an
+  offset-aware worker-local timestamp instead of falling back to the host clock.
+- Treat commented workflow commands as inactive and require both production gates
+  before Vercel pull, build or deploy. Reject combinations of weak proof words and count
+  Unicode combining marks so Malayalam and other Indic evidence is not undercounted.
+- Detect alternate or second-job Vercel production commands, reject shell overrides,
+  and structurally verify active PR/lifecycle/secret CI jobs. Parse only true Markdown
+  delimiter rows, expand weak-phrase screening, and state that lexical checks do not
+  prove a completion claim is true.
+- Pin all three allowed GitHub Actions workflows to governed SHA-256 values and reject
+  every additional workflow file, closing folded-scalar, command-continuation,
+  shallow-history, command-neutralizer and trigger-narrowing fail-open paths.
+- Add exclusive session leases and expected-state compare-and-swap commits for the
+  cursor, register, today, ledger and evidence files. A second writer is rejected,
+  out-of-band changes are detected, and failed multi-file state commits restore their
+  before copy.
+- Add governed capability proposals with required ownership, source, tool, gate,
+  deterministic/model-judgment, proof, version, secret and retirement fields.
+  Users choose `PROPOSE`, `LATER` or `REJECT`; only the configured supervisor can
+  activate a proven proposal or approve it for a later company release.
+- Add first-calendar-day, 10:00 AM user-local version checks and idle-only
+  automatic updates. Automatic application requires a released, owner-approved,
+  hash-verified, backward-compatible manifest and an explicitly active worker setting.
+- Add a Daily Email Triage pilot gate and isolated fleet batches capped at 25. A local
+  worker failure is reported without stopping other safe workers; general workers wait
+  until the pilot is verified.
+- Define the batch unit before applying the cap: one intact artifact or assignment
+  intake may contain any number of entries and must not be truncated, while separately
+  executed items and separately created external records remain capped at 25. Add a
+  read-only batch planner and regression tests for a 150-entry artifact versus 150
+  GitHub issue writes.
+- Enforce the generated release proof as an exact non-portal payload inventory, reject
+  duplicate JSON keys, protected-state subtree targets, source/worker symlinks and
+  duplicate or symbolic-link ZIP members before installation or update writes.
+- Release v2.0.0 as owner-approved and installable while keeping automatic updates off:
+  its exact-scope Gate 0 migration must be completed at a safe checkpoint.
+
 ## [1.5.1] - 2026-08-13
 
 - Add one explicit employee update workflow from company announcement through

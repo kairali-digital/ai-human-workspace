@@ -5,4 +5,4 @@ parameters and current task state it names. Project facts belong in `FACTS.md`; 
 rulings belong in `DECISIONS.md`.
 
 Do not import assumptions from another project. Do not start a second task while one is
-live. Available tools do not grant permission; check `TOOLBOX.md` and `GATES.md`.
+live. Available tools do not grant permission; check `TOOLBOX.md`, `GATES.md` and `WORK-GATES.md`.

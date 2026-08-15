@@ -3,7 +3,7 @@
 Run `EMAIL-DAILY-001` inside this Email Triage project.
 
 1. Read `PARAMETERS.md`, `MASTER_CURSOR.md`, `AUTOMATIONS.md`,
-   `EMAIL-TRIAGE-RULES.md`, `EMAIL-TRIAGE-CURSOR.md`, `TOOLBOX.md` and `GATES.md`.
+   `EMAIL-TRIAGE-RULES.md`, `EMAIL-TRIAGE-CURSOR.md`, `TOOLBOX.md`, `GATES.md` and `WORK-GATES.md`.
    Stop without reading mail if the automation row is not `ACTIVE`, the approved
    company account cannot be verified, the project differs from the recorded project,
    or another task is changing the same state files.

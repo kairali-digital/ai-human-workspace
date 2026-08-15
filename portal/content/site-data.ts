@@ -14,31 +14,43 @@ export type DownloadGroup = {
 
 export const downloadGroups: DownloadGroup[] = [
   {
-    title: "Everything in one file",
-    description: "The complete approved company pack for an offline copy or facilitator handoff.",
+    title: "Choose one edition",
+    description: "Do not mix them. Kairali staff use the employee edition. Everyone else uses the company-neutral reusable edition.",
     featured: true,
     items: [
       {
-        label: "Download the complete pack",
-        description: "Presentations, guides, homework, prompts, core release and role skills.",
-        file: "KAIRALI-AI-METHOD-ROLLOUT-v151-PUBLIC-KIT.zip",
+        label: "Kairali employee edition",
+        description: "Workspace, Kairali Setup Helper, role prompts, homework workers, opt-in skills and lifecycle controls.",
+        file: "KAIRALI-AI-HUMAN-v200-EMPLOYEE-EDITION-PUBLIC-KIT.zip",
         format: "ZIP",
       },
       {
-        label: "Checksum",
-        description: "Use this only when IT or a technical facilitator verifies the download.",
-        file: "KAIRALI-AI-METHOD-ROLLOUT-v151-PUBLIC-KIT.sha256",
+        label: "Kairali edition checksum",
+        description: "Use this when the Setup Helper or IT verifies the exact employee-edition download.",
+        file: "KAIRALI-AI-HUMAN-v200-EMPLOYEE-EDITION-PUBLIC-KIT.zip.sha256",
+        format: "SHA-256",
+      },
+      {
+        label: "Reusable edition",
+        description: "Company-neutral workspace, generic Setup Helper and lifecycle controls with no Kairali employee content.",
+        file: "AI-HUMAN-v200-REUSABLE-EDITION-PUBLIC-KIT.zip",
+        format: "ZIP",
+      },
+      {
+        label: "Reusable edition checksum",
+        description: "Use this when the Setup Helper verifies the exact company-neutral download.",
+        file: "AI-HUMAN-v200-REUSABLE-EDITION-PUBLIC-KIT.zip.sha256",
         format: "SHA-256",
       },
     ],
   },
   {
-    title: "Employee start",
-    description: "Start here if you are setting up your own AI-human worker.",
+    title: "User start",
+    description: "Start here if you are setting up your own AI-human worker; company employees and external users follow the same identity-and-Gate-0 check.",
     items: [
       {
         label: "Setup and proof guide",
-        description: "The simple employee path for Mac and Windows.",
+        description: "The simple user path for Mac and Windows.",
         file: "EMPLOYEE-SETUP-AND-PROOF-GUIDE-v7-PUBLIC-KIT.pdf",
         format: "PDF",
       },

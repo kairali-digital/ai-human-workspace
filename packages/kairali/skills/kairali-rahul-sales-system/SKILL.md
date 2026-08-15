@@ -77,4 +77,9 @@ Return:
 6. **Review loop** — what a manager observes and how learning is recorded.
 7. **Next single action** — one bounded step.
 
-If medical/dosage/certification/legal/spend, staffing policy, price/discount, access, or customer-data permissions are involved, flag the decision and stop at a reviewable proposal. Never cross Gate 0.
+Read the active local gate IDs from the worker's `GATES.md`. If one is crossed, name
+it and stop at its approval path. For health/treatment, certification, regulated
+wording, staffing policy, price/discount, access, customer-data permissions or other
+uncertain consequential content not yet covered by a confirmed profile, route a
+reviewable proposal to the named compliance owner. These public risk examples do not
+create one Kairali-wide Gate 0.

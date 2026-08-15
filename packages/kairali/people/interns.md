@@ -64,11 +64,12 @@ What needs tagging on this page, and what event should fire?
 
 ```
 Check this page for anything we cannot claim:
-medical claims, dosage, certification, legal wording.
-Flag every one. Do not fix them yourself.
+read the active IDs in GATES.md and flag every crossed gate.
+Also route any uncertain health, treatment, certification or legal claim to the named
+compliance owner as an unverified risk lead. Do not fix or approve it yourself.
 ```
 
-Nothing goes live without Abilash. That is a hard rule.
+Nothing goes live without Abhilash. That is a hard rule.
 ---
 
 ## Every time you finish
@@ -77,7 +78,7 @@ Nothing goes live without Abilash. That is a hard rule.
 I am closing this session.
 1. Write my row into COMPLETED_LEDGER.md with the proof attached.
 2. Remove that row from OPEN_REGISTER.md.
-3. Update MASTER_CURSOR.md with what is next, or leave it clear for Abilash.
+3. Update MASTER_CURSOR.md with what is next, or leave it clear for Abhilash.
 4. List anything I left open, with the reason in one line.
 Show me all of it before you save.
 ```

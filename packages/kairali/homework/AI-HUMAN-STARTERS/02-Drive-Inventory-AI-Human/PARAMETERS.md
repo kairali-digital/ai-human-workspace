@@ -4,6 +4,7 @@
 |---|---|
 | AI-human name | Drive Inventory AI Human |
 | Human owner | Kairali employee using this copy |
+| User relationship to the company | Kairali employee using this copy |
 | Purpose | Create a future-searchable metadata index of the connected company Drive without opening file contents or changing Drive |
 | Allowed scope | Owner chooses `TEST 25` or `FULL DRIVE INDEX`; read connector-visible metadata in batches of no more than 25 and create or verify local CSV and Markdown index files in this folder |
 | Out of scope | Reading file contents, downloading, creating, editing, renaming, moving, sharing, unsharing, deleting, deduplicating, or scheduling Drive work |

@@ -25,5 +25,5 @@ the same recoverable archive and deletes nothing.
 ## Employee-state boundary
 
 The homework package is a reference kit. Once the Setup Helper copies one of its starter
-projects into an employee's own worker folder, that new folder is employee state. A
+projects into a user's own worker folder, that new folder is user state. A
 later component upgrade or removal never manages that worker.

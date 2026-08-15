@@ -1,12 +1,16 @@
 # GATES
 
-The shared gates in `.ai-human/system/GATES-SHARED.md` always apply.
+During installation this template is replaced by a deterministic human-readable view
+of `.ai-human/control/gate-profile.json`. The shared core defines how a profile is
+confirmed and enforced; it does not supply one universal company Gate 0.
 
 ## Local scope and truth
 
 - The action must belong to the live task and allowed scope.
 - Every material fact needs a source in `FACTS.md`.
 - A human decision is not reopened without contrary evidence.
+- The exact legal entity, operating unit, jurisdiction and purpose must match the
+  confirmed local gate profile.
 
 ## Tools and external effects
 

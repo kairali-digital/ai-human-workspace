@@ -6,12 +6,16 @@ approved work through a controlled loop and records durable state in the worker 
 
 ## What this repository provides
 
-- a complete starter workspace for one employee or specialist;
-- company, owner, role and purpose parameters without company facts in the shared core;
+- a complete starter workspace for one user or specialist;
+- company, exact legal entity, operating unit, jurisdiction, user relationship, owner,
+  role and purpose parameters without company facts in the shared core;
 - separate adapters for Codex (`AGENTS.md`) and Claude (`CLAUDE.md`);
-- durable cursor, register, today, ledger, evidence, facts and decision files;
+- a confirmed, exact-scope local Gate 0 profile with generated gate/source views;
+- durable cursor, register, today, ledger, evidence, facts and decision files plus an
+  explicit [`WORKSPACE-MAP.md`](starter/WORKSPACE-MAP.md) defining what belongs where;
 - an installer that can also adopt an existing project without overwriting files;
-- versioned update, checkpoint, rollback, validation, status and reversible removal;
+- versioned update, checkpoint, rollback, validation, status, temporary suspension and
+  reversible removal with `ACTIVE`, `SUSPENDED` and `UNINSTALLED` proof;
 - a zero-command beginner path and an optional Git/CLI path for technical teams;
 - release validation, secret checks and lifecycle tests on every pull request.
 - an optional, hashed Kairali company bundle with approved role prompts, two governed
@@ -23,9 +27,11 @@ approved work through a controlled loop and records durable state in the worker 
 Public repository and approved releases
   └── shared system, templates and lifecycle tool
          ↓ install or update
-Company A / employee worker       Company B / employee worker
+Company A / user worker           Company B / user worker
   ├── .ai-human/system/           ├── .ai-human/system/   updated
+  ├── .ai-human/control/          ├── .ai-human/control/  isolated Gate 0 profile
   ├── COMPANY.md                  ├── COMPANY.md          preserved
+  ├── GATES.md                    ├── GATES.md            generated and verified
   ├── PARAMETERS.md               ├── PARAMETERS.md       preserved
   ├── ROLE.md                     ├── ROLE.md             preserved
   └── cursor/register/evidence    └── cursor/register/evidence preserved
@@ -37,22 +43,38 @@ personal files.
 
 ## Start here
 
-- New or nontechnical employee: [`docs/BEGINNER-SETUP.md`](docs/BEGINNER-SETUP.md)
-- Technical employee: [`docs/TECHNICAL-SETUP.md`](docs/TECHNICAL-SETUP.md)
+- Download exactly one edition: Kairali employees use the Kairali Employee Edition;
+  everyone else uses the company-neutral Reusable Edition. Source guides live in
+  [`editions/`](editions/).
+- New or nontechnical user: [`docs/BEGINNER-SETUP.md`](docs/BEGINNER-SETUP.md)
+- Technical user: [`docs/TECHNICAL-SETUP.md`](docs/TECHNICAL-SETUP.md)
 - Rollout owner: [`docs/MULTI-COMPANY-ROLLOUT.md`](docs/MULTI-COMPANY-ROLLOUT.md)
 - Updates and removal: [`docs/UPDATES-ROLLBACK-REMOVAL.md`](docs/UPDATES-ROLLBACK-REMOVAL.md)
 - Kairali complete bundle: [`packages/kairali/README.md`](packages/kairali/README.md)
 - Kairali employee update workflow: [`packages/kairali/UPDATE-WORKFLOW.md`](packages/kairali/UPDATE-WORKFLOW.md)
 - Three-worker go-live: [`docs/THREE-WORKER-GO-LIVE.md`](docs/THREE-WORKER-GO-LIVE.md)
+- Governed capability and fleet-update control plane:
+  [`docs/GOVERNED-CAPABILITIES-AND-FLEET.md`](docs/GOVERNED-CAPABILITIES-AND-FLEET.md)
+
+v2.0.0 is owner-approved and released. It is installable from either public edition,
+but its exact-scope Gate 0 change is a guided setup migration and is not eligible for
+automatic updates. Future work may still be built as a `LOCAL_BUILD_ONLY` candidate;
+candidate validation proves that lane while normal public-release validation rejects it.
 
 Skills are not installed indiscriminately. The Kairali Akshar marketing skill and Rahul
 sales-system skill are explicit, role-based options. Platform/system and third-party
 skills from a maintainer's computer are not part of this repository.
 
 The public repository is a distribution channel, not a company work repository. Never
-commit live employee state, customer data, credentials or private evidence here.
+commit live user state, customer data, credentials or private evidence here.
 
 GitHub Desktop `Fetch origin` or `Pull origin` synchronizes only the selected repository
-checkout. It does not install or update the managed system inside an employee worker.
+checkout. It does not install or update the managed system inside a user worker.
 Beginners ask the Setup Helper to run the checked lifecycle at a safe checkpoint;
-technical employees may run the same lifecycle directly.
+technical users may run the same lifecycle directly.
+
+The local system and external access are separate. Suspension turns managed rules,
+automations and automatic updates off without deleting work. Reversible uninstall
+archives the managed system and its active adapters while preserving work. Plugins,
+connectors and operating-system permissions must be revoked separately and verified in
+a new chat.

@@ -75,4 +75,8 @@ Return:
 5. **Ship gate** — exact checks still required and named owner decisions.
 6. **Next single action** — one bounded step.
 
-If medical/dosage/certification/legal/spend content is involved, flag it and stop at a reviewable draft. Never approve, cure, certify, publish, purchase, grant access, or cross Gate 0.
+Read the active local gate IDs from the worker's `GATES.md`. If one is crossed, name
+it and stop at its approval path. For health/treatment, certification, regulated
+wording, price/spend, access or other uncertain consequential content not yet covered
+by a confirmed profile, route a reviewable draft to the named compliance owner. These
+public risk examples do not create one Kairali-wide Gate 0.

@@ -18,7 +18,7 @@ Copy these one at a time. Do not run two at once.
 
 ## Every time you start
 
-Open ChatGPT with the approved company account. Your work source is the Master Delegation Sheet, not website or domain files. The Setup Helper creates or opens your standalone local worker for durable state and connects the approved Google Drive app for your own rows; you do not need the shared repository. Never use Terminal. If the local worker or Sheet is missing, use the Setup Helper before continuing. Everything else is the same: one task at a time, batches of 25, proof at the end.
+Open ChatGPT with the approved company account. Your work source is the Master Delegation Sheet, not website or domain files. The Setup Helper creates or opens your standalone local worker for durable state and connects the approved Google Drive app for your own rows; you do not need the shared repository. Never use Terminal. If the local worker or Sheet is missing, use the Setup Helper before continuing. Everything else is the same: one task at a time, execution batches of 25, proof at the end. Reading, counting, sorting or recording the complete assigned list is intake, not execution; follow the batch-unit rule in `people/ALL-EMPLOYEES.md`.
 
 ```
 Here are my rows from the Master Delegation Sheet.
@@ -67,7 +67,7 @@ List every row you could not finish, with the reason in one line.
 I am closing this session.
 1. Write my row into COMPLETED_LEDGER.md with the proof attached.
 2. Remove that row from OPEN_REGISTER.md.
-3. Show Abilash the proof and next safe action. Wait for Abilash to rule the cursor; Codex may record that ruling. Do not overwrite MASTER_CURSOR.md yourself.
+3. Show Abhilash the proof and next safe action. Wait for Abhilash to rule the cursor; Codex may record that ruling. Do not overwrite MASTER_CURSOR.md yourself.
 4. List anything I left open, with the reason in one line.
 Show me all of it before you save.
 ```

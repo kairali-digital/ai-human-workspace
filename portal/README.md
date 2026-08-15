@@ -1,10 +1,15 @@
-# Kairali AI Method public portal
+# Kairali AI Method portal
 
-This deployment is the public, indexable landing page and download infrastructure for the Kairali AI Method and AI-Human Workspace. Its stable URL is [kairali-ai-method.vercel.app](https://kairali-ai-method.vercel.app), and existing `/downloads/*` links remain available at their original URLs.
+This is the stable, no-login delivery page for approved Kairali AI Method material.
 
 ## Important boundary
 
-The landing page is deliberately indexable and canonical at the stable Vercel URL. Download responses remain available but carry a scoped `X-Robots-Tag` so search engines focus on the landing page. This is a public site, so it must contain no confidential information, credentials, private evidence or live employee work.
+The portal is deliberately indexable and therefore public. Search indexing is not a
+release or approval signal. v2.0.0 is public only because its repository manifests,
+release proof and production gates say it is owner-approved and released; future
+candidate labels and install refusals remain authoritative. Download files carry a scoped `noindex` response
+header, but anyone with their URL can still open them. The portal and downloads must
+contain no confidential information, credentials, private evidence or live employee work.
 
 ## Local check
 
@@ -23,6 +28,6 @@ npm run build
 4. Run `npm run refresh-downloads` to update the committed hash manifest.
 5. Run the portal and repository gates.
 6. Push a branch and review its Vercel preview.
-7. Merge only the approved change to the production branch. Vercel then updates the public deployment while the stable landing-page and download URLs remain unchanged.
+7. Merge only the approved change to the production branch. Vercel then updates the stable portal URL.
 
 Do not edit only the website label when the downloadable file also changed. A change is complete only when the source, generated artifact, download manifest and portal agree.

@@ -12,9 +12,10 @@ go-live. It does not silently overwrite employee work.
 
 The release never manages `COMPANY.md`, `PARAMETERS.md`, `ROLE.md`, `FACTS.md`,
 `DECISIONS.md`, `MASTER_CURSOR.md`, `OPEN_REGISTER.md`, `TODAY.md`,
-`COMPLETED_LEDGER.md`, `EVIDENCE_LOG.md`, `AUTOMATIONS.md`, credentials, browser
-sessions or personal files. A copied homework worker is employee-owned state and is not
-rewritten when the reference kit changes.
+`COMPLETED_LEDGER.md`, `EVIDENCE_LOG.md`, `GATES.md`, `WORK-GATES.md`,
+`COMPLIANCE-SOURCES.md`, `WORKSPACE-MAP.md`, the private gate profile,
+`AUTOMATIONS.md`, credentials, browser sessions or personal files. A copied homework
+worker is employee-owned state and is not rewritten when the reference kit changes.
 
 ## What happens when a release is ready
 
@@ -34,6 +35,37 @@ rewritten when the reference kit changes.
 8. The employee's evidence log points to the receipt. Monitor reads version, receipt
    and validation proof for the announced batch and reports any missing, deferred or
    mismatched worker. Monitor never rewrites a worker's state.
+
+## Mandatory v2 Gate 0 migration
+
+The first v2 update is not automatic. At a safe checkpoint, the Setup Helper identifies
+the exact legal entity, operating unit, jurisdictions, purpose, employee relationship
+and compliance owner; checks current authoritative sources; obtains confirmation; then
+runs the checkpoint-only Gate 0 configuration. It archives the old generic gate file,
+preserves task locks separately in `WORK-GATES.md` and validates the exact profile.
+Different entities or materially different units use different worker/profile pairs.
+Only after that proof may the managed v2 update run.
+
+## Post-migration automatic path
+
+This local candidate adds a second path without removing the manual one. It is not
+active on any employee worker yet.
+
+1. Each configured worker checks once on the first calendar day at 10:00 AM in its
+   confirmed local time zone.
+2. The worker reports its ID, installed/latest version, last check, validator result
+   and controlled status without exposing email or other employee content.
+3. If a live task or writer lease exists, report `DEFERRED` and change nothing.
+4. If the worker is idle and its automatic setting is ACTIVE, apply only a later released,
+   owner-approved, hash-verified, explicitly backward-compatible core update.
+5. Back up first, preserve every employee file and setting, validate afterward, issue
+   the employee/supervisor receipt and roll back automatically on failure.
+6. Start with the Daily Email Triage pilot. Continue only after that pilot passes, in
+   verified batches no larger than 25. Isolate a worker-local failure and continue safe
+   workers; stop before all workers for a release-level identity or hash failure.
+
+Only a separately approved release and rollout may change this candidate path from
+local proof to employee use.
 
 ## Exact employee check prompt
 

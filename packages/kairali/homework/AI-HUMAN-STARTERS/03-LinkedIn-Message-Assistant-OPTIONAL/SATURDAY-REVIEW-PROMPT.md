@@ -5,7 +5,7 @@ Use this prompt for the approved weekly reminder and any supervised manual run.
 ```text
 Run LINKEDIN-WEEKLY-001 inside this local project.
 
-Read PARAMETERS.md, GATES.md, LINKEDIN-TONE-AND-PRECEDENTS.md,
+Read PARAMETERS.md, GATES.md, WORK-GATES.md, LINKEDIN-TONE-AND-PRECEDENTS.md,
 LINKEDIN-REPLY-QUEUE.md, LINKEDIN-REVIEW-CURSOR.md and
 LINKEDIN-CONTROL-HANDOFF.md before doing anything.
 

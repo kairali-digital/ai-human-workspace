@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """End-to-end lifecycle tests for the AI-Human workspace."""
 
+import ast
 import hashlib
 import importlib.util
 import json
@@ -253,23 +254,65 @@ class LifecycleTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         return result
 
+    def test_python_text_reads_declare_utf8_for_windows(self):
+        missing = []
+        paths = sorted((ROOT / "scripts").glob("*.py")) + sorted(
+            (ROOT / "tests").glob("*.py")
+        )
+        for path in paths:
+            tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+            for node in ast.walk(tree):
+                if not (
+                    isinstance(node, ast.Call)
+                    and isinstance(node.func, ast.Attribute)
+                    and node.func.attr == "read_text"
+                ):
+                    continue
+                encoding = next(
+                    (keyword.value for keyword in node.keywords if keyword.arg == "encoding"),
+                    None,
+                )
+                if not (
+                    isinstance(encoding, ast.Constant) and encoding.value == "utf-8"
+                ):
+                    missing.append(f"{path.relative_to(ROOT)}:{node.lineno}")
+        self.assertEqual(
+            missing, [], "read_text calls without explicit UTF-8: " + ", ".join(missing)
+        )
+
     def test_fresh_install_and_validation_support_spaces(self):
         worker = self.base / "Company Folder" / "User Workspace"
         result = self.install(worker)
         self.assertIn("AI-HUMAN INSTALL: PASS", result.stdout)
-        self.assertEqual((worker / ".ai-human/VERSION").read_text().strip(), CURRENT_VERSION)
-        self.assertIn("Example Holdings", (worker / "COMPANY.md").read_text())
-        self.assertIn("Example Holdings Private Limited", (worker / "COMPANY.md").read_text())
-        self.assertIn("EXAMPLE-REG-001", (worker / "GATES.md").read_text())
-        self.assertIn("SYNTHETIC-AUTHORITY-001", (worker / "COMPLIANCE-SOURCES.md").read_text())
-        self.assertIn("gate-profile.json", (worker / "WORKSPACE-MAP.md").read_text())
-        profile = json.loads((worker / ".ai-human/control/gate-profile.json").read_text())
+        self.assertEqual(
+            (worker / ".ai-human/VERSION").read_text(encoding="utf-8").strip(),
+            CURRENT_VERSION,
+        )
+        self.assertIn("Example Holdings", (worker / "COMPANY.md").read_text(encoding="utf-8"))
+        self.assertIn(
+            "Example Holdings Private Limited",
+            (worker / "COMPANY.md").read_text(encoding="utf-8"),
+        )
+        self.assertIn("EXAMPLE-REG-001", (worker / "GATES.md").read_text(encoding="utf-8"))
+        self.assertIn(
+            "SYNTHETIC-AUTHORITY-001",
+            (worker / "COMPLIANCE-SOURCES.md").read_text(encoding="utf-8"),
+        )
+        self.assertIn(
+            "gate-profile.json",
+            (worker / "WORKSPACE-MAP.md").read_text(encoding="utf-8"),
+        )
+        profile = json.loads(
+            (worker / ".ai-human/control/gate-profile.json").read_text(encoding="utf-8")
+        )
         self.assertEqual(profile["legal_entity"], "Example Holdings Private Limited")
-        metadata = json.loads((worker / ".ai-human/install.json").read_text())
+        metadata = json.loads(
+            (worker / ".ai-human/install.json").read_text(encoding="utf-8")
+        )
         self.assertEqual(metadata["user_relationship"], "employee")
         self.assertIn("gate_profile_sha256", metadata)
         self.assertEqual(set(metadata["gate_rendered_hashes"]), {"GATES.md", "COMPLIANCE-SOURCES.md"})
-        self.assertNotIn("{{", (worker / "PARAMETERS.md").read_text())
+        self.assertNotIn("{{", (worker / "PARAMETERS.md").read_text(encoding="utf-8"))
         self.assertEqual(self.run_cli("validate", worker).returncode, 0)
 
     def test_gate_profile_must_match_exact_entity_and_have_no_unknowns(self):
@@ -318,8 +361,8 @@ class LifecycleTests(unittest.TestCase):
             operating_units=["Company B Unit"], jurisdictions=["Country B / Region B"],
             gate_profile=profile_b,
         )
-        gates_a = (worker_a / "GATES.md").read_text()
-        gates_b = (worker_b / "GATES.md").read_text()
+        gates_a = (worker_a / "GATES.md").read_text(encoding="utf-8")
+        gates_b = (worker_b / "GATES.md").read_text(encoding="utf-8")
         self.assertIn("COMPANY-A-GATE-001", gates_a)
         self.assertNotIn("COMPANY-B-GATE-001", gates_a)
         self.assertIn("COMPANY-B-GATE-001", gates_b)
@@ -330,7 +373,7 @@ class LifecycleTests(unittest.TestCase):
         self.assertIn("gate-rendered file integrity mismatch", failed.stdout)
 
         profile_path = worker_b / ".ai-human/control/gate-profile.json"
-        profile_data = json.loads(profile_path.read_text())
+        profile_data = json.loads(profile_path.read_text(encoding="utf-8"))
         profile_data["legal_entity"] = "Another Entity Limited"
         profile_path.write_text(json.dumps(profile_data) + "\n", encoding="utf-8")
         failed = self.run_cli("validate", worker_b, expect=1)
@@ -445,7 +488,7 @@ class LifecycleTests(unittest.TestCase):
             unverified_leads=["Old internal compliance chart — date and authority unconfirmed"],
         )
         self.install(worker, gate_profile=profile)
-        sources = (worker / "COMPLIANCE-SOURCES.md").read_text()
+        sources = (worker / "COMPLIANCE-SOURCES.md").read_text(encoding="utf-8")
         self.assertIn("Unverified leads", sources)
         self.assertIn("cannot support an active gate", sources)
         self.assertIn("Old internal compliance chart", sources)
@@ -523,10 +566,14 @@ class LifecycleTests(unittest.TestCase):
         work_gates = "# WORK GATES\n\nCustom task-specific lock.\n"
         (worker / "WORK-GATES.md").write_text(work_gates, encoding="utf-8")
         self.install(worker, adopt=True)
-        self.assertEqual((worker / "AGENTS.md").read_text(), sentinel)
-        self.assertEqual((worker / "WORK-GATES.md").read_text(), work_gates)
-        self.assertIn("EXAMPLE-REG-001", (worker / "GATES.md").read_text())
-        notice = (worker / ".ai-human/ADOPTION-NOTICE.md").read_text()
+        self.assertEqual((worker / "AGENTS.md").read_text(encoding="utf-8"), sentinel)
+        self.assertEqual(
+            (worker / "WORK-GATES.md").read_text(encoding="utf-8"), work_gates
+        )
+        self.assertIn(
+            "EXAMPLE-REG-001", (worker / "GATES.md").read_text(encoding="utf-8")
+        )
+        notice = (worker / ".ai-human/ADOPTION-NOTICE.md").read_text(encoding="utf-8")
         self.assertIn("AGENTS.md", notice)
         self.assertIn("WORK-GATES.md", notice)
 
@@ -576,7 +623,7 @@ class LifecycleTests(unittest.TestCase):
             encoding="utf-8",
         )
         metadata_path = worker / ".ai-human/install.json"
-        metadata = json.loads(metadata_path.read_text())
+        metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
         for key in (
             "company", "legal_entity", "operating_units", "jurisdictions",
             "purpose_scope", "user_relationship", "compliance_owner", "gate_profile_id",
@@ -602,14 +649,20 @@ class LifecycleTests(unittest.TestCase):
         configured = self.run_cli(*base_args, "--at-checkpoint")
         self.assertIn("GATE PROFILE CONFIGURATION: PASS", configured.stdout)
         recovery = Path(self.output_value(configured.stdout, "recovery archive"))
-        self.assertEqual((recovery / "before/GATES.md").read_text(), legacy)
-        work_gates = (worker / "WORK-GATES.md").read_text()
+        self.assertEqual(
+            (recovery / "before/GATES.md").read_text(encoding="utf-8"), legacy
+        )
+        work_gates = (worker / "WORK-GATES.md").read_text(encoding="utf-8")
         self.assertIn("legacy task lock", work_gates)
         self.assertNotIn("old universal list", work_gates)
-        self.assertIn("EXAMPLE-REG-001", (worker / "GATES.md").read_text())
+        self.assertIn(
+            "EXAMPLE-REG-001", (worker / "GATES.md").read_text(encoding="utf-8")
+        )
         self.assertEqual(self.run_cli("validate", worker).returncode, 0)
 
-        candidate_manifest = json.loads((ROOT / "release-manifest.json").read_text())
+        candidate_manifest = json.loads(
+            (ROOT / "release-manifest.json").read_text(encoding="utf-8")
+        )
         candidate_manifest["automatic_update_eligible"] = True
         eligible, reason = AI_HUMAN.automatic_release_eligible(candidate_manifest, "1.5.1")
         self.assertFalse(eligible)
@@ -622,7 +675,10 @@ class LifecycleTests(unittest.TestCase):
         new_release = self.base / "release-2.1.0"
         shutil.copytree(self.release, new_release, ignore=shutil.ignore_patterns(".git", "__pycache__", "release-proof.json", "portal"))
         agent_rules = new_release / "core/AGENT-RULES.md"
-        agent_rules.write_text(agent_rules.read_text() + "\nRelease-test marker 2.1.0.\n", encoding="utf-8")
+        agent_rules.write_text(
+            agent_rules.read_text(encoding="utf-8") + "\nRelease-test marker 2.1.0.\n",
+            encoding="utf-8",
+        )
         refresh_release(new_release, "2.1.0")
 
         cursor = worker / "MASTER_CURSOR.md"
@@ -641,29 +697,47 @@ class LifecycleTests(unittest.TestCase):
             encoding="utf-8",
         )
 
-        before_defer_version = (worker / ".ai-human/VERSION").read_text()
+        before_defer_version = (worker / ".ai-human/VERSION").read_text(encoding="utf-8")
         deferred = self.run_cli("update", worker, "--source", new_release)
         self.assertIn("AI-HUMAN UPDATE: DEFERRED", deferred.stdout)
-        self.assertEqual((worker / ".ai-human/VERSION").read_text(), before_defer_version)
-        self.assertIn("CORE-UPDATE-2.1.0", register.read_text())
+        self.assertEqual(
+            (worker / ".ai-human/VERSION").read_text(encoding="utf-8"),
+            before_defer_version,
+        )
+        self.assertIn("CORE-UPDATE-2.1.0", register.read_text(encoding="utf-8"))
 
         before_update_state = state_hashes(worker)
         updated = self.run_cli("update", worker, "--source", new_release, "--at-checkpoint")
         self.assertIn("AI-HUMAN UPDATE: PASS", updated.stdout)
-        self.assertEqual((worker / ".ai-human/VERSION").read_text().strip(), "2.1.0")
+        self.assertEqual(
+            (worker / ".ai-human/VERSION").read_text(encoding="utf-8").strip(),
+            "2.1.0",
+        )
         self.assertEqual(state_hashes(worker), before_update_state)
-        self.assertIn("Release-test marker", (worker / ".ai-human/system/AGENT-RULES.md").read_text())
+        self.assertIn(
+            "Release-test marker",
+            (worker / ".ai-human/system/AGENT-RULES.md").read_text(encoding="utf-8"),
+        )
 
         before_rollback_state = state_hashes(worker)
         rolled_back = self.run_cli("rollback", worker, "--version", CURRENT_VERSION)
         self.assertIn("AI-HUMAN ROLLBACK: PASS", rolled_back.stdout)
-        self.assertEqual((worker / ".ai-human/VERSION").read_text().strip(), CURRENT_VERSION)
+        self.assertEqual(
+            (worker / ".ai-human/VERSION").read_text(encoding="utf-8").strip(),
+            CURRENT_VERSION,
+        )
         self.assertEqual(state_hashes(worker), before_rollback_state)
-        self.assertNotIn("Release-test marker", (worker / ".ai-human/system/AGENT-RULES.md").read_text())
+        self.assertNotIn(
+            "Release-test marker",
+            (worker / ".ai-human/system/AGENT-RULES.md").read_text(encoding="utf-8"),
+        )
 
         repeated = self.run_cli("update", worker, "--source", new_release, "--at-checkpoint")
         self.assertIn("AI-HUMAN UPDATE: PASS", repeated.stdout)
-        self.assertEqual((worker / ".ai-human/VERSION").read_text().strip(), "2.1.0")
+        self.assertEqual(
+            (worker / ".ai-human/VERSION").read_text(encoding="utf-8").strip(),
+            "2.1.0",
+        )
         matching_backups = list((worker / ".ai-human/backups").glob(f"{CURRENT_VERSION}-before-2.1.0-*"))
         self.assertEqual(len(matching_backups), 2)
 
@@ -1307,7 +1381,10 @@ class LifecycleTests(unittest.TestCase):
         report = json.loads((worker / ".ai-human/version-report.json").read_text(encoding="utf-8"))
         self.assertEqual(report["reason"], "SETUP_MIGRATION_REQUIRED")
         self.assertEqual(report["validator"], "PASS")
-        self.assertEqual((worker / ".ai-human/VERSION").read_text().strip(), "1.5.1")
+        self.assertEqual(
+            (worker / ".ai-human/VERSION").read_text(encoding="utf-8").strip(),
+            "1.5.1",
+        )
         self.assertFalse((worker / ".ai-human/update-receipt.json").exists())
 
     def test_corrupt_release_is_rejected_before_worker_changes(self):
@@ -1327,7 +1404,9 @@ class LifecycleTests(unittest.TestCase):
         worker = self.base / "worker"
         self.install(worker)
         managed = worker / ".ai-human/system/AGENT-RULES.md"
-        managed.write_text(managed.read_text() + "\ntampered\n", encoding="utf-8")
+        managed.write_text(
+            managed.read_text(encoding="utf-8") + "\ntampered\n", encoding="utf-8"
+        )
         result = self.run_cli("validate", worker, expect=1)
         self.assertIn("managed file integrity mismatch", result.stdout)
 
@@ -1586,7 +1665,9 @@ class LifecycleTests(unittest.TestCase):
             "--now-local", "2026-09-01T10:00:00+05:30",
         )
         self.assertIn("AUTOMATIC UPDATE: UPDATED", updated.stdout)
-        self.assertEqual((idle / ".ai-human/VERSION").read_text().strip(), "2.1.0")
+        self.assertEqual(
+            (idle / ".ai-human/VERSION").read_text(encoding="utf-8").strip(), "2.1.0"
+        )
         self.assertEqual(state_hashes(idle), before_state)
         updated_metadata = json.loads((idle / ".ai-human/install.json").read_text(encoding="utf-8"))
         self.assertEqual(updated_metadata["timezone"], "Asia/Kolkata")
@@ -1609,7 +1690,10 @@ class LifecycleTests(unittest.TestCase):
             "--now-local", "2026-09-01T10:00:00+05:30",
         )
         self.assertIn("AUTOMATIC UPDATE: DEFERRED", deferred.stdout)
-        self.assertEqual((busy / ".ai-human/VERSION").read_text().strip(), CURRENT_VERSION)
+        self.assertEqual(
+            (busy / ".ai-human/VERSION").read_text(encoding="utf-8").strip(),
+            CURRENT_VERSION,
+        )
 
     def test_suspended_worker_defers_direct_and_fleet_automatic_updates(self):
         new_release = self.base / "release-2.1.0-suspended"
@@ -1630,7 +1714,10 @@ class LifecycleTests(unittest.TestCase):
         )
         self.assertIn("AUTOMATIC UPDATE: DEFERRED", direct.stdout)
         self.assertIn("SYSTEM_SUSPENDED", direct.stdout)
-        self.assertEqual((suspended / ".ai-human/VERSION").read_text().strip(), CURRENT_VERSION)
+        self.assertEqual(
+            (suspended / ".ai-human/VERSION").read_text(encoding="utf-8").strip(),
+            CURRENT_VERSION,
+        )
 
         fleet = self.base / "suspended-fleet.json"
         fleet.write_text(
@@ -1656,7 +1743,10 @@ class LifecycleTests(unittest.TestCase):
         )
         self.assertIn("suspended-001: DEFERRED — SYSTEM_SUSPENDED", fleet_result.stdout)
         self.assertIn("Daily Email Triage pilot: NOT_VERIFIED", fleet_result.stdout)
-        self.assertEqual((suspended / ".ai-human/VERSION").read_text().strip(), CURRENT_VERSION)
+        self.assertEqual(
+            (suspended / ".ai-human/VERSION").read_text(encoding="utf-8").strip(),
+            CURRENT_VERSION,
+        )
         self.assertEqual(preserved_work_hashes(suspended), before)
 
     def test_fleet_pilots_email_then_isolates_a_general_worker_failure(self):
@@ -1698,8 +1788,13 @@ class LifecycleTests(unittest.TestCase):
         self.assertIn("Daily Email Triage pilot: PASS", result.stdout)
         self.assertIn("general-001: MISMATCH", result.stdout)
         self.assertIn("general-002: UPDATED", result.stdout)
-        self.assertEqual((safe / ".ai-human/VERSION").read_text().strip(), "2.1.0")
-        self.assertEqual((broken / ".ai-human/VERSION").read_text().strip(), CURRENT_VERSION)
+        self.assertEqual(
+            (safe / ".ai-human/VERSION").read_text(encoding="utf-8").strip(), "2.1.0"
+        )
+        self.assertEqual(
+            (broken / ".ai-human/VERSION").read_text(encoding="utf-8").strip(),
+            CURRENT_VERSION,
+        )
 
     def test_automatic_update_failure_restores_backup_and_records_failed_receipt(self):
         worker = self.base / "rollback-update-worker"
@@ -1724,7 +1819,10 @@ class LifecycleTests(unittest.TestCase):
         ):
             with self.assertRaises(ValueError):
                 AI_HUMAN.apply_update(worker, new_release, manifest, automatic=True)
-        self.assertEqual((worker / ".ai-human/VERSION").read_text().strip(), CURRENT_VERSION)
+        self.assertEqual(
+            (worker / ".ai-human/VERSION").read_text(encoding="utf-8").strip(),
+            CURRENT_VERSION,
+        )
         self.assertEqual((worker / ".ai-human/system/AGENT-RULES.md").read_text(encoding="utf-8"), before_rules)
         self.assertEqual(state_hashes(worker), before_state)
         receipt = json.loads((worker / ".ai-human/update-receipt.json").read_text(encoding="utf-8"))

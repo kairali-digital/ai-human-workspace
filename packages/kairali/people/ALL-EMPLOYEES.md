@@ -45,7 +45,10 @@ role skill.
 1. Required: build the separate **Daily Email Triage AI Human** under task
    `EMAIL-HW-001`; choose the daily local time, prove the read-only pilot, rule
    `BRIEF ONLY` or `BRIEF + SAFE FILING`, and verify the active automation.
-2. Required: build the separate **Drive Index AI Human** under task `DRIVE-HW-001`; choose `FULL DRIVE INDEX` for the complete connector-visible metadata index, or `TEST 25` only for a quick proof.
+2. Required: build the separate **Drive Index AI Human** under task `DRIVE-HW-001`;
+   choose `FULL DRIVE INDEX` for the complete connector-visible metadata register, or
+   `TEST 25` only for a quick proof. The full result keeps one AI-readable JSONL file
+   of record and one matching human CSV or explicitly approved Google Sheet mirror.
 3. Optional, only after both pass: build the **Weekly LinkedIn Message Assistant** under
    task `LINKEDIN-WEEKLY-001`; choose the Saturday local time, confirm the time zone,
    approve task-scoped Computer control for the local worker, prove the `YOUR TURN ON
@@ -61,8 +64,11 @@ accounts or schedules.
 - **Email — LIVE FOR ME:** the approved Gmail account, chosen local time and time zone,
   pilot report, filing-mode ruling, automation card and validator all match.
 - **Drive — LIVE FOR ME:** `FULL DRIVE INDEX` has reached the end of every supported
-  scope in checkpointed batches, and the CSV, summary, final cursor and validator pass.
+  scope in checkpointed batches, and the AI JSONL, human register, relationship-count
+  summary, receipt, final cursor and validators agree.
   `TEST 25` proves setup only; it is not the completed company homework.
+  Weekly refresh remains optional and is active only after the employee confirms the
+  schedule/time zone and its first bounded pilot passes.
 - **LinkedIn — LIVE FOR ME, OPTIONAL:** you chose it; the Saturday schedule, scoped
   local-control proof, `YOUR TURN ON LINKEDIN` handoff, manually supplied pilot, queue
   and cursor pass. Otherwise record **NOT ENABLED BY CHOICE**.

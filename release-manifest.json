@@ -43,7 +43,7 @@
       "target": ".ai-human/system/TOOLBOX-TEMPLATE.md"
     },
     {
-      "sha256": "b4b16faea52dc04ccfe32f7b342094855923ebf599a3cac1940470a2d6d7c261",
+      "sha256": "c89b87c262e9d5ffd20e73aac74a1772adcc9f5a21682cc33adcf5086e5fef5c",
       "source": "core/VERSION",
       "target": ".ai-human/VERSION"
     },
@@ -85,5 +85,5 @@
   "release_status": "RELEASED",
   "repository": "kairali-digital/ai-human-workspace",
   "schema": "ai-human.workspace-release/v1",
-  "version": "2.0.2"
+  "version": "2.1.0"
 }

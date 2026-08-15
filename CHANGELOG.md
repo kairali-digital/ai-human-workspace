@@ -2,6 +2,31 @@
 
 All notable changes are recorded here in plain language.
 
+## [2.1.0] - 2026-08-16
+
+- Upgrade Drive Inventory so `TEST 25` and `FULL DRIVE INDEX` cannot pass until the
+  generated registers reopen and reconcile. Keep one normalized `DRIVE-INDEX.jsonl` as
+  the AI-readable metadata file of record and generate a formula-safe
+  `DRIVE-REGISTER.csv` human view from the same stable-ID records.
+- When Google Sheets is already connected and the employee explicitly approves the
+  resolved write, allow one human-facing Sheet mirror. Require its URL, generation ID
+  and row count to be read back; otherwise keep CSV as the human register. Never create
+  a replacement Sheet silently.
+- Report unique total, owned-or-created, shared-with, shared-by, relationship-overlap
+  and relationship-unknown counts without adding overlapping categories into a false
+  total. Require one generation ID across JSONL, CSV, optional Sheet, summary, receipt
+  and cursor.
+- Add `validate_drive_register.py` and synthetic regressions for formula-injection
+  neutralization, Sheet proof and count mismatch. Missing/empty output or any
+  generation/count disagreement fails closed.
+- After a verified full index, offer an optional weekly incremental refresh. Sunday
+  night is suggested or the employee chooses another convenient time; activation
+  requires confirmed day/time window, time zone, exact task card and a bounded pilot.
+  Missed or approval-blocked runs do not advance the successful cursor.
+- Retain the v2.0.2 lease-order correction and its forced concurrent-start and
+  concurrent-completion regressions. v2.1.0 supersedes held v2.0.1 and the unpublished
+  v2.0.2 correction candidate without weakening Gate 0 or the 25-item batch cap.
+
 ## [2.0.2] - 2026-08-16
 
 - Hold v2.0.1 after an independent post-publication Monitor test found that two task

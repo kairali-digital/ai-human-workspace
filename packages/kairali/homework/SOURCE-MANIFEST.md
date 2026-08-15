@@ -15,6 +15,11 @@
 - Owner instruction H-35, 12 Aug 2026: employees may choose `TEST 25` or a full
   connector-visible Drive metadata index; full mode continues in batches of at most 25
   with a durable checkpoint after each batch and never opens or changes Drive files.
+- Owner instruction H-48, 16 Aug 2026: the Drive worker must visibly create and reopen
+  a 25-item test or complete full register, report unique owned/created, shared-with,
+  shared-by, overlap and unknown counts, keep one fast AI-readable register and one
+  matching human Sheet-or-CSV view, then optionally refresh new files weekly on Sunday
+  night or another employee-chosen schedule.
 - Owner instruction H-36, 13 Aug 2026: Email Triage asks each employee for a preferred
   daily local time, produces a concise importance brief through the Gmail connector,
   and follows Abhilash's proven separation of briefing, conservative reversible filing
@@ -53,7 +58,7 @@
   Sources: https://www.linkedin.com/legal/user-agreement and
   https://www.linkedin.com/help/linkedin/answer/a1341387 and
   https://www.linkedin.com/help/linkedin/answer/a1340567
-- Protected public `kairali-digital/ai-human-workspace` release v1.5.1 - complete
+- Protected public `kairali-digital/ai-human-workspace` release v2.1.0 - complete
   integrity-checked Kairali reference kit, public distribution boundary, three homework
   starters, all approved people/setup prompts and two explicit role-opt-in skills.
 - `work/MULTI-COMPANY-AI-HUMAN-CORE-001/repo/packages/kairali/README.md` - the public
@@ -84,6 +89,9 @@
   click, type and navigate approved Mac/Windows apps with permission prompts and human
   review; use `@Computer` for local computer work and `@Chrome` for signed-in browser
   work, with a pause before send, submit or another important change.
+- https://learn.chatgpt.com/docs/automations?surface=app - project-scoped scheduled
+  tasks can run from ChatGPT desktop; local runs require the computer on, the app
+  running and the folder available; prompts should be tested before scheduling.
 
 ## Locked scope choices
 
@@ -95,6 +103,11 @@
 - For the company homework completion readback, `TEST 25` proves connector and cursor
   setup only. `FULL DRIVE INDEX` must finish every supported scope before the Drive
   worker is marked live for that employee.
+- The local JSONL is the Drive metadata file of record. The human CSV is always a
+  portable verified view; an explicitly approved Google Sheet may mirror it. All
+  outputs share a generation ID and counts. Weekly refresh is offered only after a full
+  pass and requires the employee's confirmed day/time window, time zone, task card and
+  bounded pilot.
 - Email first records the employee's daily local time and time zone, then reads no more
   than 25 Inbox messages and changes nothing. After the pilot passes, the employee
   chooses `BRIEF ONLY` or `BRIEF + SAFE FILING`; every later batch remains no larger than 25, and the first

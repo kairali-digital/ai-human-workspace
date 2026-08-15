@@ -124,9 +124,9 @@ SCENES = [
     {
         "title": "Check Drive proof",
         "label": "RESUMABLE METADATA INDEX",
-        "actions": ["DRIVE-INDEX.csv + summary + cursor are visible", "Every batch ≤ 25  ·  IDs prevent duplicates", "Drive unchanged  ·  scope coverage recorded"],
-        "done": "Full mode ends only when every supported scope has no next page.",
-        "narration": "The Drive project creates a CSV index, a summary and a saved cursor. Test Twenty Five stops after one batch and says the full Drive was not indexed. Full Drive Index continues in checkpointed batches until every connector-visible scope has no next page. Missing facts say Unknown. Sensitive titles say Human Review. No file content is opened and Drive is not changed.",
+        "actions": ["AI JSONL + human CSV or Sheet agree", "Generation + relationship counts match", "Optional weekly refresh only after full proof"],
+        "done": "Both registers validate; Drive is unchanged; schedule is employee-confirmed or off.",
+        "narration": "The Drive project creates one fast A I register and one matching human register. Test Twenty Five proves setup only. Full Drive continues in batches until every visible scope ends. The generation, totals, owned, shared and unknown counts must agree. No file content is opened and Drive is unchanged. After full proof, weekly refresh is optional at Sunday night or another time you choose and confirm.",
     },
     {
         "title": "Optional: set up Saturday LinkedIn review",

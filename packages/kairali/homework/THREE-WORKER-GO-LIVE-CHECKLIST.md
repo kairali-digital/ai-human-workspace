@@ -25,13 +25,21 @@ Mark **LIVE FOR ME** only when all are visible:
 - the approved Google Drive company account is connected;
 - `FULL DRIVE INDEX` reached the end of every connector-supported scope through
   checkpointed batches no larger than 25;
-- `DRIVE-INDEX.csv`, the summary and final cursor agree;
+- `DRIVE-INDEX.jsonl`, `DRIVE-REGISTER.csv`, the summary, receipt and final cursor
+  reopen with one generation ID and unique-item count;
+- owned-or-created, shared-with, shared-by, overlap and unknown counts recalculate;
+- any approved Google Sheet mirror has the same generation ID and data-row count;
 - unsupported scopes are named instead of guessed;
 - no file content was opened and Drive was not changed; and
 - the evidence row and validator pass.
 
 `TEST 25` proves that setup works. It does not complete the company homework and must
 not be described as a full Drive index.
+
+The weekly refresh is optional. It is **ACTIVE** only after you confirm the day/time
+window and time zone, see the exact ChatGPT desktop task card and next run, say
+`ACTIVATE WEEKLY REFRESH`, and one bounded pilot passes. Sunday night is suggested, not
+assumed. The computer must be on, ChatGPT desktop running and the project available.
 
 ## 3. Saturday LinkedIn Message Assistant — optional
 

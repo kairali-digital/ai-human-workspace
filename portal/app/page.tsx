@@ -15,8 +15,8 @@ type GithubRelease = {
 };
 
 const fallbackRelease: GithubRelease = {
-  tag_name: "v2.0.2",
-  html_url: "https://github.com/kairali-digital/ai-human-workspace/releases/tag/v2.0.2",
+  tag_name: "v2.1.0",
+  html_url: "https://github.com/kairali-digital/ai-human-workspace/releases/tag/v2.1.0",
   published_at: "2026-08-16T00:00:00Z",
   assets: [],
 };
@@ -63,18 +63,18 @@ export default async function Home() {
 
       <section className="hero" id="start">
         <div className="hero-copy">
-          <p className="eyebrow">Released v2.0.2</p>
+          <p className="eyebrow">Released v2.1.0</p>
           <h1>Install it simply. Turn it off cleanly.</h1>
           <p className="hero-summary">Choose the correct edition, follow five visible steps and prove whether the system is ON, OFF or GONE.</p>
           <div className="hero-actions">
-            <a className="button button-primary" href="/downloads/KAIRALI-AI-HUMAN-v202-EMPLOYEE-EDITION-PUBLIC-KIT.zip" download>
+            <a className="button button-primary" href="/downloads/KAIRALI-AI-HUMAN-v210-EMPLOYEE-EDITION-PUBLIC-KIT.zip" download>
               Kairali employee edition
             </a>
-            <a className="button button-secondary" href="/downloads/AI-HUMAN-v202-REUSABLE-EDITION-PUBLIC-KIT.zip" download>
+            <a className="button button-secondary" href="/downloads/AI-HUMAN-v210-REUSABLE-EDITION-PUBLIC-KIT.zip" download>
               Reusable edition
             </a>
           </div>
-          <p className="release-note">These are separate, verified public downloads. Configured v2.0.0 and held v2.0.1 workers can take the v2.0.2 correction at a safe checkpoint. Pre-v2 workers first use the guided exact-scope Gate 0 migration.</p>
+          <p className="release-note">These are separate, verified public downloads. Configured v2.0.0 and held v2.0.1 workers can take v2.1.0, including the concurrency correction, at a safe checkpoint. Pre-v2 workers first use the guided exact-scope Gate 0 migration.</p>
         </div>
         <div className="hero-media">
           <Image
@@ -90,7 +90,7 @@ export default async function Home() {
       <section className="release-strip" aria-label="Current source status">
         <div>
           <span>Current public workspace</span>
-          <strong>v2.0.2 RELEASED</strong>
+          <strong>v2.1.0 RELEASED</strong>
         </div>
         <div>
           <span>Latest approved GitHub release</span>
@@ -115,13 +115,13 @@ export default async function Home() {
             <span>For Kairali employees</span>
             <h3>Company edition.</h3>
             <p>Includes the Kairali Setup Helper, employee role prompts, Daily Email, Full Drive Index, optional Saturday LinkedIn worker and governed opt-in skills.</p>
-            <a href="/downloads/KAIRALI-AI-HUMAN-v202-EMPLOYEE-EDITION-PUBLIC-KIT.zip" download>Download Kairali employee edition</a>
+            <a href="/downloads/KAIRALI-AI-HUMAN-v210-EMPLOYEE-EDITION-PUBLIC-KIT.zip" download>Download Kairali employee edition</a>
           </article>
           <article className="path path-facilitator">
             <span>For everyone else</span>
             <h3>Reusable edition.</h3>
             <p>Contains only the company-neutral workspace, generic Setup Helper and reversible lifecycle controls. It is tested to contain no Kairali employee content.</p>
-            <a href="/downloads/AI-HUMAN-v202-REUSABLE-EDITION-PUBLIC-KIT.zip" download>Download reusable edition</a>
+            <a href="/downloads/AI-HUMAN-v210-REUSABLE-EDITION-PUBLIC-KIT.zip" download>Download reusable edition</a>
           </article>
         </div>
       </section>
@@ -146,7 +146,7 @@ export default async function Home() {
         <div className="section-intro">
           <p className="eyebrow">Fast for ordinary work</p>
           <h2 id="work-paths-heading">Use the smallest path that matches the effect.</h2>
-          <p>v2.0.2 keeps real safety gates while removing ceremony from reading and reversible local work. A guardrail blocks only the conflicting part and helps the useful part finish.</p>
+          <p>v2.1.0 keeps real safety gates while making reversible local work and verified Drive registers easier to finish. A guardrail blocks only the conflicting part and helps the useful part finish.</p>
         </div>
         <div className="control-grid">
           <article><span>Read only</span><h3>Answer directly.</h3><p>A question or source review gets an answer without creating task state, facts, decisions or tool rows.</p><strong>PROOF: useful answer, no workspace diff.</strong></article>
@@ -247,7 +247,7 @@ export default async function Home() {
           <article>
             <span className="worker-status">Required</span>
             <h3>Full Drive Index</h3>
-            <p>Mark <strong>LIVE FOR ME</strong> only after every supported scope ends in checkpointed batches, and the CSV, summary, final cursor and validator agree. <strong>TEST 25 proves setup only.</strong></p>
+            <p>Mark <strong>LIVE FOR ME</strong> only after every supported scope ends in checkpointed batches, and the AI JSONL, human CSV or approved Sheet mirror, relationship counts, receipt, final cursor and validators agree. <strong>TEST 25 proves setup only.</strong> Weekly refresh is optional after a confirmed schedule and pilot.</p>
           </article>
           <article>
             <span className="worker-status worker-status-optional">Optional</span>
@@ -283,7 +283,7 @@ export default async function Home() {
           <article>
             <span>4</span>
             <h3>Prove the exact worker.</h3>
-            <p>A configured v2.0.0 or held v2.0.1 worker moves to v2.0.2 with user-owned state preserved. A pre-v2 worker completes the guided Gate 0 migration first. Keep the version, validation receipt and preserved-state proof.</p>
+            <p>A configured v2.0.0 or held v2.0.1 worker moves to v2.1.0 with user-owned state preserved. A pre-v2 worker completes the guided Gate 0 migration first. Keep the version, validation receipt and preserved-state proof.</p>
           </article>
         </div>
         <div className="update-boundary">
@@ -343,7 +343,7 @@ export default async function Home() {
         <div>
           <p className="eyebrow">Technical and owner path</p>
           <h2 id="technical-heading">GitHub stays the approved source of truth.</h2>
-          <p>v2.0.2 is the approved public release. Its exact source, checksums and release evidence are published together. Fetch/Pull updates a repository checkout, not an installed worker; configured v2.0.0 or held v2.0.1 workers use the checked correction path and pre-v2 workers use the guided migration.</p>
+          <p>v2.1.0 is the approved public release. Its exact source, checksums and release evidence are published together. Fetch/Pull updates a repository checkout, not an installed worker; configured v2.0.0 or held v2.0.1 workers use the checked update path and pre-v2 workers use the guided migration.</p>
         </div>
         <div className="technical-links">
           <a href={assetLink(release, "ai-human-workspace-")} target="_blank" rel="noreferrer">
@@ -384,7 +384,7 @@ export default async function Home() {
       </section>
 
       <footer>
-        <p>Public v2.0.2. Choose one edition, verify setup, and keep company Gate 0 profiles isolated.</p>
+        <p>Public v2.1.0. Choose one edition, verify setup, and keep company Gate 0 profiles isolated.</p>
         <a href="#troubleshooting">Stuck? Start with troubleshooting.</a>
       </footer>
     </main>

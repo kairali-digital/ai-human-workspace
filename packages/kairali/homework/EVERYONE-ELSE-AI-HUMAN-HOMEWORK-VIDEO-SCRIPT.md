@@ -126,14 +126,14 @@ no more than twenty-five items and ends with a saved checkpoint.
 
 ## Scene 13 - Check Drive proof
 
-**Screen:** `DRIVE-INDEX.csv` + summary + cursor + batch ≤25 + scope coverage + Drive
-unchanged.
+**Screen:** AI JSONL + human CSV or approved Sheet + matching generation/counts +
+summary + receipt + cursor + batch ≤25 + Drive unchanged.
 
-**Narration:** The Drive project creates a CSV index, a summary and a saved cursor. Test
-Twenty Five stops after one batch and says the full Drive was not indexed. Full Drive
-Index continues in checkpointed batches until every connector-visible scope has no
-next page. Missing facts say Unknown. Sensitive titles say Human Review. No file
-content is opened and Drive is not changed.
+**Narration:** The Drive project creates one fast A I register and one matching human
+register. Test Twenty Five proves setup only. Full Drive continues in batches until
+every visible scope ends. The generation, totals, owned, shared and unknown counts must
+agree. No file content is opened and Drive is unchanged. After full proof, weekly
+refresh is optional at Sunday night or another time you choose and confirm.
 
 ## Scene 14 - Optional LinkedIn setup
 

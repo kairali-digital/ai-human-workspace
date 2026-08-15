@@ -6,7 +6,7 @@ Use this guide only if you attended the meeting and do not already have a named 
 or homework page.
 
 This homework is part of the protected public
-`kairali-digital/ai-human-workspace` v1.5.1 company kit. The public kit is the clean
+`kairali-digital/ai-human-workspace` v2.1.0 Kairali Employee Edition. The public kit is the clean
 setup and update source; it contains no live company work or secrets, so no GitHub
 invitation or collaborator seat is needed. Ask the Setup Helper to obtain and verify
 the kit. Then copy the Email and Drive starters into separate local work folders. Do
@@ -21,7 +21,9 @@ You will set up two required workers and may choose a third:
    read-only 25-message pilot, then runs a concise daily importance report. You choose
    whether it is brief-only or may safely label and file clearly low-risk mail.
 2. **Drive Index AI Human** - choose a 25-item test or index every connector-visible
-   Drive item in checkpointed batches of 25. It does not open file contents or change Drive.
+   Drive item in checkpointed batches of 25. It creates a fast AI JSONL register and a
+   matching human CSV or approved Google Sheet mirror without opening file contents or
+   changing Drive. After full proof, you may choose a weekly refresh.
 3. **Optional Weekly LinkedIn Message Assistant** - at your chosen Saturday time,
    uses task-scoped Computer control in its local folder, then stops all Computer and
    Chrome control before LinkedIn appears. It prepares replies from message text you
@@ -40,14 +42,15 @@ choose your times or activate your workers. Open
 - Email is required and is live for you only after its account, schedule, pilot,
   filing-mode ruling, automation and validator agree.
 - Full Drive Index is required and is live for you only after every supported scope,
-  output file, final cursor and validator agree. `TEST 25` proves setup only.
+  AI and human registers, relationship counts, receipt, final cursor and validators
+  agree. `TEST 25` proves setup only. Weekly refresh is optional and separate.
 - Saturday LinkedIn is optional. If you choose it, its schedule, scoped local-control
   handoff, manually supplied pilot, queue and validator must agree. If you decline it,
   record `NOT ENABLED BY CHOICE`.
 
 ## The whole loop at a glance
 
-1. Ask the Setup Helper to find the verified public v1.5.1 company kit on your screen.
+1. Ask the Setup Helper to find the verified public v2.1.0 Kairali Employee Edition on your screen.
 2. Make an `AI Humans` folder inside Documents.
 3. Copy the Email and Drive starter folders into it.
 4. Open one starter folder as a local project in the ChatGPT desktop app.
@@ -110,7 +113,7 @@ state.
 
 # Step 1 - find and open the verified company kit
 
-The preferred file is named `kairali-company-rollout-1.5.1.zip`. If your facilitator
+The preferred file is named `KAIRALI-AI-HUMAN-v210-EMPLOYEE-EDITION-PUBLIC-KIT.zip`. If your facilitator
 gave you the smaller homework-only file, it is named
 `EVERYONE-ELSE-AI-HUMAN-HOMEWORK-PACK.zip`. Both routes open this same homework. You
 do not need a GitHub invitation.
@@ -152,7 +155,7 @@ do not need a GitHub invitation.
    **DONE WHEN:** You can see `AI-HUMAN-STARTERS` and this guide.
 
 If the ZIP is not visible, do not search the whole computer. Paste the Setup Helper
-rescue. The helper checks Downloads, obtains the protected public v1.5.1 kit when safe,
+rescue. The helper checks Downloads, obtains the protected public v2.1.0 kit when safe,
 and asks Ambuj only if the approved source or access decision is missing.
 
 # Step 2 - make one home for your AI humans
@@ -391,7 +394,12 @@ or `FULL DRIVE INDEX`, and never processes more than 25 items before a checkpoin
 
 Stop when all of these are visible:
 
-- `DRIVE-INDEX.csv`, `DRIVE-INDEX.md` and `DRIVE-INDEX-CURSOR.md` exist.
+- `DRIVE-INDEX.jsonl`, `DRIVE-REGISTER.csv`, `DRIVE-INDEX.md`,
+  `DRIVE-INDEX-RECEIPT.json` and `DRIVE-INDEX-CURSOR.json` exist and reopen.
+- One generation ID and unique-item count match in every output. Unique owned/created,
+  shared-with, shared-by, overlap and unknown counts recalculate correctly.
+- If you approved a Google Sheet mirror, its URL, generation ID and data-row count were
+  read back. If Sheets was not connected or you said No, the CSV is the human register.
 - Every batch is no more than 25 items and has a durable checkpoint.
 - `TEST 25` says the full Drive was not indexed. `FULL DRIVE INDEX` shows each
   connector-visible source scope has no next page, or names the coverage gap.
@@ -399,15 +407,31 @@ Stop when all of these are visible:
 - Missing fields say UNKNOWN; sensitive titles say HUMAN REVIEW.
 - It says no Drive file content was opened or downloaded and no Drive item was created,
   edited, renamed, moved, shared, unshared, deleted or organized.
-- The workspace validator passed.
+- `validate_drive_register.py` and the workspace validator passed.
 
-**DONE WHEN:** You can show the index summary and cursor on your screen. A connected
-Drive account alone is not completion. The index helps Codex find files later, but
-opening a file later still needs current Drive permission and a new approved task.
+**DONE WHEN:** You can show the human register, AI register, summary, receipt and cursor
+on your screen. A connected Drive account alone is not completion. The JSONL helps
+Codex or Claude find metadata later only when this worker is named as an approved
+source; it is not permission for personal profiling. Opening a file later still needs
+current Drive permission and a new approved task.
 
 For company homework, stop after `TEST 25` only if setup is blocked and record that
 blocker. The Drive worker is marked **LIVE FOR ME** only after `FULL DRIVE INDEX`
 finishes every supported scope and the final validator passes.
+
+## Optional weekly Drive refresh
+
+After full mode passes, Codex asks whether you want a weekly refresh. Say No to leave
+it off. If Yes, choose the day and local-time window—Sunday night is suggested, or pick
+another convenient time—then confirm the time zone. Review the exact approved Drive
+account, project folder, schedule and metadata-only prompt. Say `ACTIVATE WEEKLY
+REFRESH` only when all are correct.
+
+**DONE WHEN:** ChatGPT desktop Scheduled shows the exact card and next run, and one
+bounded pilot refresh adds or updates by stable item ID and passes both validators. The
+computer must be on, ChatGPT desktop running and this project available. A missed or
+approval-blocked run does not pretend to have updated the register. You can pause, edit
+or delete the scheduled task without deleting the registers.
 
 # Optional bonus — Weekly LinkedIn Message Assistant
 
@@ -477,7 +501,8 @@ stops. It does not access LinkedIn.
 Bring the laptop or screenshots that show:
 
 - Email project open with `EMAIL-TRIAGE-REPORT.md`.
-- Drive project open with `DRIVE-INDEX.md` and its saved cursor.
+- Drive project open with its human register, `DRIVE-INDEX.md`, receipt and saved
+  cursor; optional weekly card only if the employee activated it.
 - The final evidence row and validator pass in each project.
 - Optional: approved Saturday schedule, tone/precedent file, numbered reply queue,
   cursor, employee-confirmed outcomes, and validator pass. Do not show message bodies.
@@ -526,9 +551,7 @@ does not rewrite the worker.
 
 # Official screen references
 
-- ChatGPT quickstart: https://learn.chatgpt.com/docs/quickstart
-- ChatGPT desktop app: https://learn.chatgpt.com/docs/app
-- Projects and chats: https://learn.chatgpt.com/docs/projects
-- Apps: https://help.openai.com/en/articles/11487775-connectors-in-chatgpt
-- Email inbox use case: https://learn.chatgpt.com/use-cases/manage-your-inbox
-- Computer Use with Codex: https://learn.chatgpt.com/use-cases/use-your-computer-with-codex
+- Setup, desktop and projects: https://learn.chatgpt.com/docs/quickstart ·
+  https://learn.chatgpt.com/docs/app · https://learn.chatgpt.com/docs/projects
+- Apps and scheduled tasks: https://help.openai.com/en/articles/11487775-connectors-in-chatgpt ·
+  https://learn.chatgpt.com/docs/automations?surface=app

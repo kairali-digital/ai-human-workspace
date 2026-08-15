@@ -72,8 +72,11 @@ permission at a time.
   local time and time zone, pilot, filing-mode ruling, automation card and validator
   all match.
 - Mark Drive **LIVE FOR THIS EMPLOYEE** only after `FULL DRIVE INDEX` completes every
-  connector-supported scope through batches no larger than 25 and its CSV, summary,
-  final cursor and validator pass. `TEST 25` is setup proof, not completed homework.
+  connector-supported scope through batches no larger than 25 and its AI JSONL, human
+  CSV or approved Sheet mirror, relationship-count summary, receipt, final cursor and
+  validators reconcile. `TEST 25` is setup proof, not completed homework. Offer weekly
+  refresh only afterward; give one schedule/time-zone choice at a time and never mark
+  it active until the exact task card, next run and bounded pilot pass.
 - Mark LinkedIn **LIVE FOR THIS EMPLOYEE, OPTIONAL** only after the employee chooses it
   and the Saturday schedule, local-control proof, `YOUR TURN ON LINKEDIN` handoff,
   manually supplied pilot, queue and cursor pass. If it is declined, record **NOT

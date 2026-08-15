@@ -858,7 +858,8 @@ def validate(root, candidate=False):
             "What local time should your daily email brief",
             "BRIEF + SAFE FILING", "Daily Email Importance Brief",
             "no Gmail filter was changed", "metadata only",
-            "TEST 25", "FULL DRIVE INDEX", "DRIVE-INDEX.csv",
+            "TEST 25", "FULL DRIVE INDEX", "DRIVE-INDEX.jsonl",
+            "DRIVE-REGISTER.csv", "validate_drive_register.py",
             "UNKNOWN — CONNECTOR COVERAGE GAP",
             "What local time every Saturday", "Focused and Other",
             "READY TO SEND", "NEEDS YOUR DECISION", "manually press Send",
@@ -898,14 +899,28 @@ def validate(root, candidate=False):
                 failures.append("Email Triage starter contains unsafe instruction: " + forbidden)
     drive_root = homework_root / "02-Drive-Inventory-AI-Human"
     if drive_root.is_dir():
+        drive_required_files = {
+            "DRIVE-REGISTER-SCHEMA.md", "WEEKLY-DRIVE-REFRESH.md",
+            "validate_drive_register.py",
+        }
+        for name in sorted(drive_required_files):
+            if not (drive_root / name).is_file():
+                failures.append("Drive Index starter missing " + name)
         drive_text = "\n".join(
             path.read_text(encoding="utf-8", errors="replace")
             for path in sorted(drive_root.iterdir()) if path.is_file()
         )
         for required in (
-            "TEST 25", "FULL DRIVE INDEX", "DRIVE-INDEX.csv",
-            "DRIVE-INDEX-CURSOR.md", "no more than 25", "checkpoint",
-            "connector coverage gap", "item ID", "never store a password",
+            "TEST 25", "FULL DRIVE INDEX", "DRIVE-INDEX.jsonl",
+            "DRIVE-REGISTER.csv", "DRIVE-INDEX-RECEIPT.json",
+            "DRIVE-INDEX-CURSOR.json", "no more than 25", "checkpoint",
+            "connector coverage gap", "stable item ID", "never store a password",
+            "owned_or_created_by_me", "shared_with_me", "shared_by_me",
+            "relationship_overlap_items", "relationship_unknown_items",
+            "generation ID", "GOOGLE_SHEET", "Sunday night",
+            "ACTIVATE WEEKLY REFRESH", "computer must be on",
+            "ChatGPT desktop", "formula-safe", "untrusted data",
+            "validate_drive_register.py", "personal profiling",
         ):
             if required.casefold() not in drive_text.casefold():
                 failures.append("Drive Index starter lacks: " + required)

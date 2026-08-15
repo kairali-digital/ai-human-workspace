@@ -10,8 +10,12 @@ Drive content or private evidence.
 - `homework/` — the complete fallback homework for any attendee without a named plan;
 - the Email Triage and Drive Index workers as required, separate read-only projects;
 - a `TEST 25` or resumable `FULL DRIVE INDEX` choice; full mode enumerates all
-  connector-visible metadata in checkpointed batches of at most 25 and creates a local
-  future-searchable CSV, summary and cursor without opening or changing Drive files;
+  connector-visible metadata in checkpointed batches of at most 25 and creates one
+  AI-readable JSONL file of record, a matching human CSV or approved Google Sheet
+  mirror, summary, receipt and cursor without opening or changing Drive files;
+- after a verified full index, an optional employee-confirmed weekly refresh (Sunday
+  night suggested or another convenient time) that reconciles generation IDs and
+  counts before advancing the register;
 - the optional Weekly LinkedIn Message Assistant: employee-chosen Saturday time,
   task-scoped Computer control in its local worker, Chrome only on approved
   non-LinkedIn pages, a forced `YOUR TURN ON LINKEDIN` control handoff, manually

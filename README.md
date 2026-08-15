@@ -56,12 +56,13 @@ personal files.
 - Governed capability and fleet-update control plane:
   [`docs/GOVERNED-CAPABILITIES-AND-FLEET.md`](docs/GOVERNED-CAPABILITIES-AND-FLEET.md)
 
-v2.0.2 is the current owner-approved correction for the held v2.0.1 release. It is
-backward-compatible for configured v2.0.0 and v2.0.1 workers and keeps automatic update
-eligibility off. A pre-v2 worker still needs the guided exact-scope Gate 0 setup
-migration before entering the v2 line. The release manifests are
-`APPROVED_BY_OWNER` / `RELEASED`; protected GitHub checks and live verification remain
-the publication evidence for each distribution channel.
+v2.1.0 is the current owner-approved Drive-register release and includes the v2.0.2
+concurrency correction for the held v2.0.1 release. It is backward-compatible for
+configured v2.0.0 and v2.0.1 workers and keeps automatic update eligibility off. A
+pre-v2 worker still needs the guided exact-scope Gate 0 setup migration before entering
+the v2 line. The release manifests are `APPROVED_BY_OWNER` / `RELEASED`; protected
+GitHub checks and live verification remain the publication evidence for each
+distribution channel.
 
 Skills are not installed indiscriminately. The Kairali Akshar marketing skill and Rahul
 sales-system skill are explicit, role-based options. Platform/system and third-party

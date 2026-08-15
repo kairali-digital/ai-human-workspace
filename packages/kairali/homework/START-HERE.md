@@ -6,8 +6,8 @@ homework page.
 ## Where this pack comes from
 
 The preferred source is the protected public
-`kairali-digital/ai-human-workspace` release v1.5.1. The complete
-`kairali-company-rollout-1.5.1.zip` contains this homework, all approved people/setup
+`kairali-digital/ai-human-workspace` release v2.1.0. The complete Kairali Employee
+Edition contains this homework, all approved people/setup
 prompts and the two governed role skills. Public access needs no invitation or
 collaborator seat, and the kit contains no live company work or secrets.
 
@@ -64,8 +64,10 @@ account choice or permission. Never ask for a password or one-time code.
   zone, ruled `BRIEF ONLY` or `BRIEF + SAFE FILING` mode, active daily automation and
   unchanged permanent Gmail filters.
 - Drive: `FULL DRIVE INDEX` reaches the end of every connector-supported scope; every
-  batch is at most 25 and checkpointed; index CSV, summary, final cursor and scope
-  coverage are visible; Drive is unchanged. `TEST 25` alone is not completion.
+  batch is at most 25 and checkpointed; AI JSONL, human CSV or approved Sheet mirror,
+  summary, receipt, final cursor and scope coverage share one generation ID and count;
+  Drive is unchanged. `TEST 25` alone is not completion. Weekly refresh is optional
+  and becomes active only after the employee confirms its schedule and pilot.
 - Optional LinkedIn: approved Saturday time and time zone, reminder-only automation,
   task-scoped Computer control proven in the local worker, the exact `YOUR TURN ON
   LINKEDIN` stop/handoff, one manually supplied batch of at most 25, a numbered reply

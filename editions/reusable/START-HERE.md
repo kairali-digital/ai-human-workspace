@@ -75,10 +75,10 @@ If an update is available, wait for me to say UPDATE NOW. Never ask me to use Te
 
 If the check says the worker is compatible and idle, paste `UPDATE NOW`. The helper
 backs up, verifies the release, updates only managed files and validates. A configured
-v2.0.0 or held v2.0.1 worker can take v2.0.2 directly. A pre-v2 worker first needs the
+v2.0.0 or held v2.0.1 worker can take v2.1.0 directly. A pre-v2 worker first needs the
 guided exact-scope Gate 0 migration.
 
-**DONE WHEN:** the installed version is `2.0.2`, validation is `PASS`, preserved state
+**DONE WHEN:** the installed version is `2.1.0`, validation is `PASS`, preserved state
 is confirmed and a recovery location is shown.
 
 ## If anything fails

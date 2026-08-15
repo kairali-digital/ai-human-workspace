@@ -12,9 +12,9 @@ from pathlib import Path
 SEMVER = re.compile(r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$")
 REPOSITORY = "kairali-digital/ai-human-workspace"
 GOVERNED_WORKFLOW_SHA256 = {
-    ".github/workflows/portal-deploy.yml": "c723209745da605423c100cb813fa25916f09dbb882c4772ab9dc4b719f65219",
-    ".github/workflows/portal.yml": "e1e58f58265c9e634a2c2c6f462fb01266b7cb34432b963e3d899bf5f9fab1f5",
-    ".github/workflows/validate.yml": "441f45ee09bebb9f824b83e4c52edf2e935b18791d4b62266bef115f52dbc397",
+    ".github/workflows/portal-deploy.yml": "a373f4a02abcbbccc73cd3d8954826ce801f5e588a2e5e27ced04b82bfee043c",
+    ".github/workflows/portal.yml": "475f188109f987ec00072d235d704475ee09dc726e6eba1d688a46cb0ac69012",
+    ".github/workflows/validate.yml": "6b8189e91548a5916839d8afb3b022990422b842987011d0d57cb4fffc433f0e",
 }
 REQUIRED_FILES = {
     ".github/CODEOWNERS",

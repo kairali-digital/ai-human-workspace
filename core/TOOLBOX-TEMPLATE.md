@@ -1,7 +1,12 @@
 # TOOLBOX TEMPLATE
 
-An installed or visible tool is not automatically allowed. Add a local `TOOLBOX.md`
-row only after the owner approves the role, target and action.
+An installed or visible tool is not automatically allowed. A fresh worker may read
+files already inside the worker for the declared task. Permission to create or edit the
+bounded reversible local artifact the user explicitly requested becomes active only
+after deterministic `task-start` returns the current task ID. Those
+permissions exclude controlled state, `.ai-human/`, credentials, accounts, external
+effects, deletion, unrecoverable overwrite, security changes and expanded scope. Add a
+local `TOOLBOX.md` row only after the owner approves every other role, target and action.
 
 | Surface | Use | Allowed by default | Approval required | Prohibited |
 |---|---|---|---|---|

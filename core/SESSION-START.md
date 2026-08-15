@@ -1,16 +1,16 @@
 # SESSION START
 
-1. Read `COMPANY.md`, `PARAMETERS.md`, `ROLE.md`,
-   `.ai-human/control/gate-profile.json`, `GATES.md`, `COMPLIANCE-SOURCES.md`,
-   `WORK-GATES.md`, `MASTER_CURSOR.md`, `OPEN_REGISTER.md` and `TODAY.md`.
-2. Read the installed version from `.ai-human/VERSION` and inspect the session-lease
-   status. Stop if another writer owns the lease; never take over silently.
-3. On the first calendar day at 10:00 AM, ask the approved scheduler adapter to supply
+1. Read the mode, classify the requested effect, then use the proportional read set in
+   `AGENT-RULES.md`. Do not perform the older blanket read of every identity,
+   compliance and task-state file for an ordinary read-only or local reversible task.
+2. Read the installed version from `.ai-human/VERSION`. The deterministic local task
+   command checks the writer lease itself. Inspect the lease manually only when a live
+   task, manual controlled-state change or consequential path makes it relevant.
+3. Only on the first calendar day at 10:00 AM, ask the approved scheduler adapter to supply
    this worker's confirmed offset-aware local time to the lifecycle tool and run the
    monthly read-only version check. Never substitute the lifecycle host's clock. At
    other times, use the last report and do not create a duplicate monthly check.
-4. Report the installed version, latest approved version, plain-language changes and
-   whether the core, reference pack or an explicitly installed skill is affected.
+4. Report update details only when an update check actually ran or the user asked.
 5. If a live task or writer lease exists, report `DEFERRED` and wait for a safe
    checkpoint. Do not alter controlled state behind the active writer.
 6. If no live task or writer exists, an automatic update may continue only when the
@@ -26,5 +26,8 @@
 10. On success, report the old version, new version, receipt location, preserved-state
     result and plain-language change summary. Attach that receipt to the user's
     evidence log without rewriting unrelated state.
-11. Acquire one exclusive session lease. Name the live task, next action, exit evidence
-    and blocker, then commit controlled state with the lease's expected-state hash.
+11. Classify the user's request. For read-only work, answer directly without changing
+    task state. For a clear local reversible request, run the deterministic task-start
+    lifecycle path; it auto-generates an ID when needed and owns the lease and exact
+    state format. Use the manual lease path only for consequential or other controlled
+    changes the task command does not cover.

@@ -56,10 +56,11 @@ personal files.
 - Governed capability and fleet-update control plane:
   [`docs/GOVERNED-CAPABILITIES-AND-FLEET.md`](docs/GOVERNED-CAPABILITIES-AND-FLEET.md)
 
-v2.0.0 is owner-approved and released. It is installable from either public edition,
-but its exact-scope Gate 0 change is a guided setup migration and is not eligible for
-automatic updates. Future work may still be built as a `LOCAL_BUILD_ONLY` candidate;
-candidate validation proves that lane while normal public-release validation rejects it.
+v2.0.1 is the current owner-approved release. It is backward-compatible for an already
+configured v2.0.0 worker and keeps automatic update eligibility off. A pre-v2 worker
+still needs the guided exact-scope Gate 0 setup migration before entering the v2 line.
+Future work may still be built as a `LOCAL_BUILD_ONLY` candidate; candidate validation
+proves that lane while normal public-release validation rejects it.
 
 Skills are not installed indiscriminately. The Kairali Akshar marketing skill and Rahul
 sales-system skill are explicit, role-based options. Platform/system and third-party

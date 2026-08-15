@@ -57,6 +57,30 @@ offers the nearest compliant next step or approval path. It must not scold, lect
 turn a narrow rule into a broad ban. This pattern is off when the system is verified
 `SUSPENDED`.
 
+## Already using an older version?
+
+Open the existing working folder in Codex, start a new chat and paste this exact prompt:
+
+```text
+CHECK FOR AI-HUMAN UPDATE
+
+Read .ai-human/VERSION and .ai-human/system/SESSION-START.md in this project.
+Check only the latest approved semantic-version release from this worker's configured repository.
+Do not change any file yet.
+
+Tell me my installed version, the latest approved version, the plain-language changes, whether a live task means the update must wait, exactly which managed files may change and which company/user files stay preserved.
+If everything is current, show the version-check proof and stop.
+If an update is available, wait for me to say UPDATE NOW. Never ask me to use Terminal, PowerShell, Command Prompt, Python, a CLI or type a command.
+```
+
+If the check says the worker is compatible and idle, paste `UPDATE NOW`. The helper
+backs up, verifies the release, updates only managed files and validates. A configured
+v2.0.0 worker can take v2.0.1 directly. A pre-v2 worker first needs the guided exact-
+scope Gate 0 migration.
+
+**DONE WHEN:** the installed version is `2.0.1`, validation is `PASS`, preserved state
+is confirmed and a recovery location is shown.
+
 ## If anything fails
 
 Do not guess, reinstall repeatedly or delete the working folder. Paste the complete

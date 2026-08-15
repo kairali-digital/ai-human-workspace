@@ -2,9 +2,38 @@
 
 `MISSION → PLAN → APPROVED WORK → CHECK → PROOF → NEXT RULING`
 
-Acquire the worker's exclusive session lease before the first controlled-state write.
-Every cursor, register, today, ledger, evidence or capability change uses the lease's
-expected-state hash. Validate the committed state, then release the lease.
+Use the smallest path that matches the real effect:
+
+1. **READ ONLY** — answer from approved sources. Do not create a task, lease, evidence
+   row, fact or decision merely to return an answer.
+2. **LOCAL REVERSIBLE** — the mission owner's current clear request authorizes the
+   bounded local artifact. Start it with the lifecycle task command (which auto-names it
+   when needed), use the standing local permissions, read back the result, and close it
+   with the lifecycle task command. That command atomically owns cursor, register,
+   today, ledger, evidence, lease and final validation. Store only proportional proof.
+3. **CONSEQUENTIAL / GATE 0** — retain the full declared source, approval, lease,
+   evidence and rollback path. Refuse only the conflicting part and continue unrelated
+   safe work when possible. If the gated effect is withheld and the remainder is only a
+   reversible local artifact, the remainder stays on the LOCAL REVERSIBLE task path;
+   reading the gate profile does not itself require a separate manual writer lease.
+
+Do not turn routine task wording, a derived date or an incidental file name into a fact,
+decision or permanent tool-policy row. Put the useful result first; keep hashes,
+transactions and receipts available to Monitor or recovery without surfacing them in a
+normal successful answer. Also omit task IDs, lifecycle labels and routine housekeeping
+from a successful answer unless the user asked or they materially affect the result.
+
+For a local reversible task, the agent runtime—not the human—calls the installed
+lifecycle tool with this shape:
+
+```text
+task-start WORKER --title "plain-language mission"
+task-complete WORKER --task-id RETURNED-ID --artifact RELATIVE-PATH --outcome "concrete result" --verification "real readback" --undo "usable reversal"
+```
+
+Use the runtime's available Python launcher internally. Never teach or ask the user to
+type these commands. If task completion exits nonzero, the task remains open and the
+answer must not say complete.
 
 Before planning a bounded batch, classify the authorized action:
 

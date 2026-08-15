@@ -51,6 +51,13 @@ One session owns the writer lease. Cursor, register, today, ledger, evidence and
 capability records change only through an expected-state commit. A conflicting writer
 or stale hash stops instead of overwriting newer state.
 
+Process stays proportional to effect. A read-only answer creates no task state. A clear
+user request for ordinary reversible local work uses standing worker-local permissions
+and deterministic task start/close commands, which auto-name the task when needed and
+own the atomic state format and validator. Consequential, external, destructive,
+security, account and Gate 0 work retains the full approval and evidence path. Routine
+task wording does not become a permanent fact, decision or tool-policy row.
+
 ## Capability compounding
 
 A repeated useful process may become a governed proposal when local evidence explains

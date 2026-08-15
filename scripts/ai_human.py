@@ -54,7 +54,7 @@ ADAPTER_MARKERS = {
 MODE_GUARDED_COMMANDS = {
     "checkpoint", "update", "rollback", "session-acquire", "session-recover",
     "configure-control", "state-commit", "capability-propose", "capability-choice",
-    "capability-activate",
+    "capability-activate", "task-start", "task-complete",
 }
 COORDINATION_STATE_FILES = (
     "MASTER_CURSOR.md", "OPEN_REGISTER.md", "TODAY.md",
@@ -856,6 +856,21 @@ def live_task(worker):
     return value
 
 
+def live_task_id(worker):
+    """Return the declared task ID without treating description backticks as the ID."""
+    value = live_task(worker)
+    if not value:
+        return ""
+    explicit = re.search(r"^Task ID:\s*`([^`]+)`\s*$", value, flags=re.M | re.I)
+    if explicit:
+        return explicit.group(1).strip()
+    first_line = next((line.strip() for line in value.splitlines() if line.strip()), "")
+    legacy = re.match(r"^(?:[-*]\s*)?`([^`]+)`(?:\s|$)", first_line)
+    if legacy:
+        return legacy.group(1).strip()
+    return first_line.split()[0].strip("*`-") if first_line else ""
+
+
 def render(content, replacements):
     for token, value in replacements.items():
         content = content.replace(token, value)
@@ -913,7 +928,10 @@ def parse_table_rows(path):
     for line in path.read_text(encoding="utf-8", errors="ignore").splitlines():
         if not line.strip().startswith("|"):
             continue
-        cells = [cell.strip() for cell in line.strip().strip("|").split("|")]
+        cells = [
+            cell.replace("\\|", "|").strip()
+            for cell in re.split(r"(?<!\\)\|", line.strip().strip("|"))
+        ]
         if cells and all(re.fullmatch(r":?-{3,}:?", cell) for cell in cells):
             continue
         if cells and cells[0] not in {"ID", "Task ID", "—", ""}:
@@ -923,6 +941,81 @@ def parse_table_rows(path):
 
 def parse_table_ids(path):
     return [row[0] for row in parse_table_rows(path)]
+
+
+def markdown_table_row(cells):
+    return "| " + " | ".join(
+        clean(str(cell).replace("\\|", "|"), "table cell") for cell in cells
+    ) + " |"
+
+
+def update_task_table(content, task_id, replacement=None):
+    """Remove one task row and optionally insert its deterministic replacement."""
+    lines = content.rstrip("\n").splitlines()
+    table_start = next(
+        (
+            index for index, line in enumerate(lines)
+            if line.strip().startswith("|")
+            and re.split(r"(?<!\\)\|", line.strip().strip("|"))[0].strip()
+            in {"ID", "Task ID"}
+        ),
+        None,
+    )
+    if table_start is None:
+        raise ValueError("task-state table is missing")
+    table_end = table_start
+    while table_end < len(lines) and lines[table_end].strip().startswith("|"):
+        table_end += 1
+    kept = []
+    for line in lines[table_start:table_end]:
+        cells = [
+            cell.replace("\\|", "|").strip()
+            for cell in re.split(r"(?<!\\)\|", line.strip().strip("|"))
+        ]
+        if cells and cells[0] == task_id:
+            continue
+        kept.append(line)
+    if replacement is not None:
+        kept.append(markdown_table_row(replacement))
+    lines[table_start:table_end] = kept
+    return "\n".join(lines) + "\n"
+
+
+def replace_markdown_section(content, heading, body):
+    pattern = r"(^## " + re.escape(heading) + r"\s*$\n).*?(?=^## |\Z)"
+    updated, count = re.subn(
+        pattern,
+        lambda match: match.group(1) + "\n" + body.strip() + "\n\n",
+        content,
+        count=1,
+        flags=re.M | re.S,
+    )
+    if count != 1:
+        raise ValueError("missing Markdown section: " + heading)
+    return updated.rstrip() + "\n"
+
+
+def parameter_value(worker, name):
+    for row in parse_table_rows(worker / "PARAMETERS.md"):
+        if len(row) >= 2 and row[0] == name:
+            return row[1]
+    return ""
+
+
+def next_local_task_id(worker):
+    used = set()
+    for name in COORDINATION_STATE_FILES:
+        used.update(parse_table_ids(worker / name))
+    current = live_task_id(worker)
+    if current:
+        used.add(current)
+    number = max(
+        (int(match.group(1)) for value in used if (match := re.fullmatch(r"LOCAL-(\d+)", value))),
+        default=0,
+    ) + 1
+    while "LOCAL-" + str(number).zfill(3) in used:
+        number += 1
+    return "LOCAL-" + str(number).zfill(3)
 
 
 WEAK_COMPLETION_EVIDENCE = {
@@ -940,6 +1033,12 @@ WEAK_COMPLETION_TOKENS = WEAK_COMPLETION_EVIDENCE | {
     "verification", "with", "work", "working", "works",
 }
 MIN_COMPLETION_EVIDENCE_CHARACTERS = 12
+
+
+def normalized_evidence_result(value):
+    """Normalize a leading PASS token while keeping explanatory text out of logic."""
+    text = unicodedata.normalize("NFKC", str(value)).strip().upper()
+    return "PASS" if re.match(r"^PASS(?:\s|[-—:;,.])", text + " ") else text
 
 
 def completion_evidence_parts(value):
@@ -995,7 +1094,7 @@ def validate_completion_records(worker):
         evidence_rows = evidence_by_task.get(task_id, [])
         passing = [
             evidence for evidence in evidence_rows
-            if evidence[5].strip().upper() == "PASS"
+            if normalized_evidence_result(evidence[5]) == "PASS"
             and not placeholder(evidence[4])
             and not placeholder(evidence[6])
             and not placeholder(evidence[7])
@@ -1190,8 +1289,7 @@ def validate_worker(worker, quiet=False):
             failures.append("unresolved parameter in " + name)
     live = live_task(worker)
     if live:
-        match = re.search(r"`([^`]+)`", live)
-        task_id = match.group(1) if match else live.split()[0].strip("*`-")
+        task_id = live_task_id(worker)
         if task_id and task_id not in parse_table_ids(worker / "OPEN_REGISTER.md"):
             failures.append("live task is missing from OPEN_REGISTER.md: " + task_id)
         if task_id and task_id not in parse_table_ids(worker / "TODAY.md"):
@@ -1523,13 +1621,12 @@ def configure_gate_profile(args):
     print("- recovery archive: " + str(migration_root))
 
 
-def session_acquire(args):
-    worker = safe_worker(args.worker)
+def acquire_worker_lease(worker, session_id, actor):
     ok, failures = validate_worker(worker, quiet=True)
     if not ok:
         raise ValueError("cannot acquire a lease on an invalid worker: " + "; ".join(failures))
-    session_id = safe_identity(args.session_id, "session id")
-    actor = clean(args.actor, "actor")
+    session_id = safe_identity(session_id, "session id")
+    actor = clean(actor, "actor")
     path = lease_file(worker)
     path.parent.mkdir(parents=True, exist_ok=True)
     lease = {
@@ -1550,8 +1647,14 @@ def session_acquire(args):
     with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
         json.dump(lease, stream, indent=2, sort_keys=True)
         stream.write("\n")
+    return lease
+
+
+def session_acquire(args):
+    worker = safe_worker(args.worker)
+    lease = acquire_worker_lease(worker, args.session_id, args.actor)
     print("AI-HUMAN SESSION LEASE: ACQUIRED")
-    print("- session id: " + session_id)
+    print("- session id: " + lease["session_id"])
     print("- expected-state hash: " + lease["state_hash"])
 
 
@@ -1678,10 +1781,10 @@ def load_state_changes(path):
     return files
 
 
-def state_commit(args):
-    worker = safe_worker(args.worker)
-    lease, before_hash = require_lease(worker, args.session_id, args.expected_state_hash)
-    changes = load_state_changes(args.changes)
+def commit_state_changes(
+    worker, lease, session_id, before_hash, changes, receipt_prefix="state-commit",
+    receipt_extra=None,
+):
     transaction = worker / ".ai-human/control/transactions" / ("state-" + now_utc())
     counter = 2
     while transaction.exists():
@@ -1702,7 +1805,7 @@ def state_commit(args):
         transaction / "transaction.json",
         {
             "before_state_hash": before_hash, "files": sorted(changes),
-            "schema": "ai-human.state-transaction/v1", "session_id": args.session_id,
+            "schema": "ai-human.state-transaction/v1", "session_id": session_id,
             "status": "PREPARED",
         },
     )
@@ -1726,24 +1829,279 @@ def state_commit(args):
         {
             "after_state_hash": after_hash, "before_state_hash": before_hash,
             "files": sorted(changes), "schema": "ai-human.state-transaction/v1",
-            "session_id": args.session_id, "status": "COMMITTED",
+            "session_id": session_id, "status": "COMMITTED",
         },
     )
-    receipt = unique_receipt(worker, "state-commit")
-    atomic_json(
-        receipt,
-        {
+    receipt = None
+    if receipt_prefix:
+        receipt = unique_receipt(worker, receipt_prefix)
+        payload = {
             "after_state_hash": after_hash, "before_state_hash": before_hash,
             "files": sorted(changes), "schema": "ai-human.state-commit/v1",
-            "session_id": args.session_id, "transaction": str(transaction),
+            "session_id": session_id, "transaction": str(transaction),
             "validator": "PASS",
-        },
+        }
+        if receipt_extra:
+            payload.update(receipt_extra)
+        atomic_json(receipt, payload)
+    return after_hash, receipt, transaction
+
+
+def state_commit(args):
+    worker = safe_worker(args.worker)
+    lease, before_hash = require_lease(worker, args.session_id, args.expected_state_hash)
+    changes = load_state_changes(args.changes)
+    after_hash, receipt, _transaction = commit_state_changes(
+        worker, lease, args.session_id, before_hash, changes
     )
     print("AI-HUMAN STATE COMMIT: PASS")
     print("- files: " + str(len(changes)))
     print("- previous-state hash: " + before_hash)
     print("- new expected-state hash: " + after_hash)
     print("- receipt: " + str(receipt))
+
+
+def run_task_state_change(worker, task_id, action, changes):
+    session_id = safe_identity(
+        "task-" + action + "-" + task_id + "-" + now_utc(), "session id"
+    )
+    lease = acquire_worker_lease(worker, session_id, "deterministic task " + action)
+    before_hash = lease["state_hash"]
+    try:
+        after_hash, _receipt, transaction = commit_state_changes(
+            worker, lease, session_id, before_hash, changes, receipt_prefix=None
+        )
+        require_lease(worker, session_id, after_hash)
+        ok, failures = validate_worker(worker, quiet=True)
+        if not ok:
+            raise ValueError("final worker validation failed: " + "; ".join(failures))
+        lease_file(worker).unlink()
+        receipt = unique_receipt(worker, "task-" + action)
+        atomic_json(
+            receipt,
+            {
+                "action": action.upper(),
+                "after_state_hash": after_hash,
+                "before_state_hash": before_hash,
+                "files": sorted(changes),
+                "lease_released": True,
+                "schema": "ai-human.task-state-change/v1",
+                "session_id": session_id,
+                "task_id": task_id,
+                "transaction": str(transaction),
+                "validator": "PASS",
+            },
+        )
+        return receipt
+    except Exception:
+        active = read_lease(worker, required=False)
+        if active and active.get("session_id") == session_id:
+            lease_file(worker).unlink()
+        raise
+
+
+def all_task_ids(worker):
+    identifiers = set()
+    for name in COORDINATION_STATE_FILES:
+        identifiers.update(parse_table_ids(worker / name))
+    current = live_task_id(worker)
+    if current:
+        identifiers.add(current)
+    return identifiers
+
+
+def task_start(args):
+    worker = safe_worker(args.worker)
+    if live_task(worker):
+        raise ValueError(
+            "another task is live; capture the new idea without interrupting it or close the live task first"
+        )
+    task_id = safe_identity(args.task_id or next_local_task_id(worker), "task id")
+    if task_id in all_task_ids(worker):
+        raise ValueError("task id already exists: " + task_id)
+    title = clean(args.title, "task title")
+    source = clean(args.source or "Current user request", "task source")
+    owner = clean(parameter_value(worker, "Human owner"), "human owner")
+    next_action = clean(
+        args.next_action or "Perform the requested local work, read it back, then close it with the lifecycle tool",
+        "next action",
+    )
+    exit_evidence = clean(
+        args.exit_evidence
+        or "Requested local artifact exists, its contents are read back, and final worker validation passes",
+        "exit evidence",
+    )
+    cursor = (worker / "MASTER_CURSOR.md").read_text(encoding="utf-8")
+    cursor = replace_markdown_section(
+        cursor,
+        "LIVE TASK",
+        "Task ID: `" + task_id + "`\nPath: `LOCAL REVERSIBLE`\nMission: " + title,
+    )
+    cursor = replace_markdown_section(cursor, "NEXT ACTION", next_action)
+    cursor = replace_markdown_section(cursor, "EXIT EVIDENCE", exit_evidence)
+    cursor = replace_markdown_section(
+        cursor,
+        "LAST CHECKPOINT",
+        "Task promoted from the mission owner's current request. No consequential or external authority was added.",
+    )
+    register = update_task_table(
+        (worker / "OPEN_REGISTER.md").read_text(encoding="utf-8"),
+        task_id,
+        [task_id, "Current", title, source, owner, "LIVE — LOCAL REVERSIBLE", exit_evidence],
+    )
+    today_source = (worker / "TODAY.md").read_text(encoding="utf-8")
+    today_source = re.sub(r"\nNo live work\.\s*\n", "\n", today_source, count=1)
+    today = update_task_table(
+        today_source,
+        task_id,
+        [
+            task_id,
+            title,
+            "Declared task; separately executed units remain capped at 25",
+            next_action,
+            "LIVE",
+        ],
+    )
+    run_task_state_change(
+        worker,
+        task_id,
+        "start",
+        {"MASTER_CURSOR.md": cursor, "OPEN_REGISTER.md": register, "TODAY.md": today},
+    )
+    print("AI-HUMAN TASK START: PASS")
+    print("- task id: " + task_id)
+    print("- path: LOCAL REVERSIBLE")
+    print("- next action: " + next_action)
+
+
+def validate_local_artifacts(worker, values):
+    if not values or len(values) > BATCH_CAP:
+        raise ValueError("task completion requires between 1 and 25 local artifact paths")
+    verified = []
+    seen = set()
+    for value in values:
+        relative = safe_relative(value, "local artifact")
+        key = portable_key(relative)
+        if key in seen:
+            raise ValueError("duplicate local artifact: " + key)
+        seen.add(key)
+        if relative.parts[0] == ".ai-human" or (len(relative.parts) == 1 and key in STATE_FILES):
+            raise ValueError("controlled state is not a local task artifact: " + key)
+        path = path_without_symlinks(worker, relative, "local artifact")
+        if path.is_file():
+            if path.stat().st_size == 0:
+                raise ValueError("local artifact is empty: " + key)
+        elif path.is_dir():
+            files = []
+            for child in sorted(path.rglob("*")):
+                if child.is_symlink():
+                    raise ValueError("local artifact directory contains a symbolic link: " + key)
+                if child.is_file() and child.stat().st_size > 0:
+                    files.append(child)
+            if not files:
+                raise ValueError("local artifact directory has no non-empty files: " + key)
+        else:
+            raise ValueError("local artifact does not exist: " + key)
+        verified.append(key)
+    return verified
+
+
+def task_complete(args):
+    worker = safe_worker(args.worker)
+    task_id = safe_identity(args.task_id, "task id")
+    current = live_task_id(worker)
+    if not current:
+        raise ValueError("no live task is available to complete")
+    if current != task_id:
+        raise ValueError("live task differs: expected " + current)
+    register_rows = {
+        row[0]: row for row in parse_table_rows(worker / "OPEN_REGISTER.md") if len(row) >= 7
+    }
+    if task_id not in register_rows:
+        raise ValueError("live task is missing its open-register row: " + task_id)
+    artifacts = validate_local_artifacts(worker, args.artifact)
+    outcome = clean(args.outcome, "task outcome")
+    verification = clean(args.verification, "verification")
+    undo = clean(args.undo, "undo")
+    before = clean(
+        args.before or "Task was live; the requested local result had not yet been verified",
+        "before state",
+    )
+    if placeholder(outcome) or placeholder(verification) or placeholder(undo):
+        raise ValueError("outcome, verification and undo must contain concrete task-specific proof")
+    normalized_undo = " ".join(undo.casefold().split())
+    if (
+        re.search(r"\bno other (?:files?|artifacts?|changes?)\b", normalized_undo)
+        or re.search(r"\bnothing else (?:changed|was changed|touched|was touched)\b", normalized_undo)
+        or re.search(
+            r"\bonly (?:this |the )?(?:file|artifact) (?:changed|was changed|was touched)\b",
+            normalized_undo,
+        )
+    ):
+        raise ValueError(
+            "undo must describe reversing the requested artifact without claiming that "
+            "no other files changed; lifecycle state and internal receipts change by design"
+        )
+    timestamp = now_utc()
+    title = register_rows[task_id][2]
+    artifact_proof = "Local readback: " + "; ".join(artifacts) + " exists and is non-empty"
+    cursor = (worker / "MASTER_CURSOR.md").read_text(encoding="utf-8")
+    cursor = replace_markdown_section(cursor, "LIVE TASK", "**NOT SET**")
+    cursor = replace_markdown_section(cursor, "NEXT ACTION", "None. Await the mission owner's next request.")
+    cursor = replace_markdown_section(
+        cursor, "EXIT EVIDENCE", "See `EVIDENCE_LOG.md` row `" + task_id + "`."
+    )
+    cursor = replace_markdown_section(
+        cursor,
+        "LAST CHECKPOINT",
+        "`" + task_id + "` closed atomically after artifact readback and final worker validation.",
+    )
+    register = update_task_table(
+        (worker / "OPEN_REGISTER.md").read_text(encoding="utf-8"), task_id
+    )
+    today = update_task_table((worker / "TODAY.md").read_text(encoding="utf-8"), task_id)
+    remaining_today_ids = [
+        row[0]
+        for line in today.splitlines()
+        if line.strip().startswith("|")
+        for row in [[
+            cell.replace("\\|", "|").strip()
+            for cell in re.split(r"(?<!\\)\|", line.strip().strip("|"))
+        ]]
+        if row and row[0] not in {"ID", "Task ID", "---"}
+        and not all(re.fullmatch(r":?-{3,}:?", cell) for cell in row)
+    ]
+    if not remaining_today_ids and "No live work." not in today:
+        today = today.replace("# TODAY\n", "# TODAY\n\nNo live work.\n", 1)
+    evidence = update_task_table(
+        (worker / "EVIDENCE_LOG.md").read_text(encoding="utf-8"),
+        task_id,
+        [task_id, timestamp, before, outcome, verification, "PASS", artifact_proof, undo],
+    )
+    ledger = update_task_table(
+        (worker / "COMPLETED_LEDGER.md").read_text(encoding="utf-8"),
+        task_id,
+        [task_id, title, timestamp, before, outcome, "EVIDENCE_LOG.md " + task_id, undo],
+    )
+    run_task_state_change(
+        worker,
+        task_id,
+        "complete",
+        {
+            "COMPLETED_LEDGER.md": ledger,
+            "EVIDENCE_LOG.md": evidence,
+            "MASTER_CURSOR.md": cursor,
+            "OPEN_REGISTER.md": register,
+            "TODAY.md": today,
+        },
+    )
+    print("AI-HUMAN TASK COMPLETE: PASS")
+    print("- result: " + outcome)
+    print(
+        "- response guidance: return the requested result only; omit internal process "
+        "details and no-network housekeeping unless the user asked; "
+        "never claim that nothing else changed"
+    )
 
 
 def capability_path(worker, identifier):
@@ -3026,6 +3384,24 @@ def parser():
     state_commit_p.add_argument("--expected-state-hash", required=True)
     state_commit_p.add_argument("--changes", required=True)
     state_commit_p.set_defaults(handler=state_commit)
+
+    task_start_p = sub.add_parser("task-start")
+    task_start_p.add_argument("worker")
+    task_start_p.add_argument("--title", required=True)
+    task_start_p.add_argument("--task-id")
+    task_start_p.add_argument("--source")
+    task_start_p.add_argument("--next-action")
+    task_start_p.add_argument("--exit-evidence")
+    task_start_p.set_defaults(handler=task_start)
+    task_complete_p = sub.add_parser("task-complete")
+    task_complete_p.add_argument("worker")
+    task_complete_p.add_argument("--task-id", required=True)
+    task_complete_p.add_argument("--artifact", action="append", required=True)
+    task_complete_p.add_argument("--outcome", required=True)
+    task_complete_p.add_argument("--verification", required=True)
+    task_complete_p.add_argument("--undo", required=True)
+    task_complete_p.add_argument("--before")
+    task_complete_p.set_defaults(handler=task_complete)
 
     proposal_p = sub.add_parser("capability-propose")
     proposal_p.add_argument("worker")

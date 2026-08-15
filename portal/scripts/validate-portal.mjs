@@ -14,10 +14,10 @@ if (packageLock.packages?.[""]?.engines?.node !== packageManifest.engines?.node)
   issues.push("package-lock root Node runtime does not match package.json");
 }
 const required = new Set([
-  "AI-HUMAN-v200-REUSABLE-EDITION-PUBLIC-KIT.zip",
-  "AI-HUMAN-v200-REUSABLE-EDITION-PUBLIC-KIT.zip.sha256",
-  "KAIRALI-AI-HUMAN-v200-EMPLOYEE-EDITION-PUBLIC-KIT.zip",
-  "KAIRALI-AI-HUMAN-v200-EMPLOYEE-EDITION-PUBLIC-KIT.zip.sha256",
+  "AI-HUMAN-v201-REUSABLE-EDITION-PUBLIC-KIT.zip",
+  "AI-HUMAN-v201-REUSABLE-EDITION-PUBLIC-KIT.zip.sha256",
+  "KAIRALI-AI-HUMAN-v201-EMPLOYEE-EDITION-PUBLIC-KIT.zip",
+  "KAIRALI-AI-HUMAN-v201-EMPLOYEE-EDITION-PUBLIC-KIT.zip.sha256",
   "KAIRALI-AI-METHOD-ROLLOUT-v151-PUBLIC-KIT.zip",
   "KAIRALI-AI-METHOD-DECK-v16-PUBLIC-KIT.pptx",
   "KAIRALI-AI-METHOD-ADVANCED-CLI-BONUS-v8-PUBLIC-KIT.pptx",
@@ -59,7 +59,7 @@ const robots = await readFile(path.join(root, "app", "robots.ts"), "utf8");
 const sitemap = await readFile(path.join(root, "app", "sitemap.ts"), "utf8");
 const visible = `${page}\n${await readFile(path.join(root, "content", "site-data.ts"), "utf8")}`;
 
-for (const phrase of ["Kairali employee edition", "Reusable edition", "Install in five steps", "DONE WHEN", "Mac", "Windows", "Extract All", "Suspend", "Resume", "Uninstall", "Revoke access", "Troubleshooting", "Polite pushback, then a useful path forward", "nearest compliant next step", "SUSPENDED", "UNINSTALLED", "Plugin uninstall can also leave its connector connected", "Use the Setup Helper", "No universal compliance shortcut.", "exact legal entity", "Historical charts", "Unanswered compliance questions block ACTIVE.", "separate worker folders and profiles", "One kind of data, one file of record", "gate-profile.json", "COMPLETED_LEDGER.md", "daily Email Importance Brief", "chosen-time daily email brief", "FULL DRIVE INDEX", "Saturday LinkedIn Message Assistant", "right-level local control", "human-only LinkedIn access and sending", "Available here. Live only after your proof.", "LIVE FOR ME", "TEST 25 proves setup only", "NOT ENABLED BY CHOICE", "@Computer", "YOUR TURN ON LINKEDIN", "The portal cannot grant computer access", "GitHub stays the approved source of truth", "CHECK FOR KAIRALI UPDATE", "UPDATE NOW", "Fetch/Pull", "read-only", "Monitor", "Employee-owned state stays preserved"]) {
+for (const phrase of ["Kairali employee edition", "Reusable edition", "Install in five steps", "DONE WHEN", "Mac", "Windows", "Extract All", "Suspend", "Resume", "Uninstall", "Revoke access", "Troubleshooting", "Polite pushback, then a useful path forward", "nearest compliant next step", "SUSPENDED", "UNINSTALLED", "Plugin uninstall can also leave its connector connected", "Use the Setup Helper", "Use the smallest path that matches the effect.", "One document with 150 rows uploads intact", "Creating 150 GitHub issues", "No universal compliance shortcut.", "exact legal entity", "Historical charts", "Unanswered compliance questions block ACTIVE.", "separate worker folders and profiles", "One kind of data, one file of record", "gate-profile.json", "COMPLETED_LEDGER.md", "daily Email Importance Brief", "chosen-time daily email brief", "FULL DRIVE INDEX", "Saturday LinkedIn Message Assistant", "right-level local control", "human-only LinkedIn access and sending", "Available here. Live only after your proof.", "LIVE FOR ME", "TEST 25 proves setup only", "NOT ENABLED BY CHOICE", "@Computer", "YOUR TURN ON LINKEDIN", "The portal cannot grant computer access", "GitHub stays the approved source of truth", "CHECK FOR KAIRALI UPDATE", "CHECK FOR AI-HUMAN UPDATE", "UPDATE NOW", "Fetch/Pull", "read-only", "Monitor", "v2.0.1", "user-owned state preserved"]) {
   if (!visible.includes(phrase)) issues.push(`visible portal copy lacks: ${phrase}`);
 }
 if (!layout.includes("metadataBase: new URL(SITE_URL)") || !layout.includes('canonical: "/"')) issues.push("canonical metadata is missing");

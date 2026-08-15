@@ -128,16 +128,17 @@ no more than twenty-five items and ends with a saved checkpoint.
 
 ## Scene 13 - Check Drive proof and weekly choice
 
-**Screen:** `DRIVE-INDEX.jsonl` + one Sheet-or-CSV register + same generation/counts +
-full scope + set-or-decline weekly refresh.
+**Screen:** `DRIVE-INDEX.jsonl` + exactly one Sheet-or-CSV register + receipt and cursor
+agreement + validator PASS + full scope + set-or-decline weekly refresh.
 
-**Narration:** Drive Index J son Lines is the A I file of record. One approved Google
-Sheet, or otherwise Drive Register C S V, is generated from it. Test Twenty Five is
-only a sample. Full mode continues in batches of at most twenty-five until every
-supported scope ends. Both registers reopen and must agree on generation, unique and
-relationship counts before the cursor advances. After full proof, choose a weekly day
-and exact local time, or decline it. No file content is opened and Drive is unchanged
-except an explicitly approved register Sheet.
+**Narration:** Drive Index J son Lines is the A I file of record. Exactly one human
+register, an approved Google Sheet or otherwise Drive Register C S V, is generated
+from it. Test Twenty Five is only a sample. Full mode continues in batches of at most
+twenty-five until every supported scope ends. The A I and human registers reopen and
+must agree with the receipt and cursor on generation, unique and relationship counts,
+and the validator must pass before the cursor advances. After full proof, choose a
+weekly day and exact local time, or decline it. No file content is opened and Drive is
+unchanged except an explicitly approved register Sheet.
 
 ## Scene 14 - Optional LinkedIn setup
 

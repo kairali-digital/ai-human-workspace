@@ -131,8 +131,8 @@ Replace [TYPE YOUR NAME] before sending.
 My name is [TYPE YOUR NAME]. This is task DRIVE-HW-001.
 
 Read AGENTS.md, AI-HUMAN.md, PARAMETERS.md, MASTER_CURSOR.md, OPEN_REGISTER.md,
-TODAY.md, TOOLBOX.md, GATES.md, WORK-GATES.md, DECISIONS.md, AUTOMATIONS.md and
-WEEKLY-DRIVE-REFRESH-PROMPT.md.
+TODAY.md, TOOLBOX.md, GATES.md, WORK-GATES.md, DECISIONS.md, AUTOMATIONS.md,
+DRIVE-REGISTER-SCHEMA.md and WEEKLY-DRIVE-REFRESH-PROMPT.md.
 
 First, replace “Kairali employee using this copy” with my name in this project's
 owner fields only. Do not change the worker's name, purpose, task, limits or gates.
@@ -156,7 +156,8 @@ successful run until the outputs are created, reopened and reconciled:
   per stable item ID and these fields: generation_id, item_id, name, file_type,
   owner_or_relationship, owned_or_created_by_me, shared_with_me, shared_by_me,
   modified_time, parent_or_location, sharing_status, web_link, source_scope,
-  visibility_status, first_indexed_at_utc, last_seen_at_utc and review_note;
+  visibility_status, first_indexed_at_utc, last_seen_at_utc, indexed_at_utc,
+  generation_id and review_note;
 - one human register generated from that exact JSONL data. If a Google Sheets app is
   already connected and I explicitly approve its write permission and exact target,
   ask whether I want GOOGLE SHEET or LOCAL CSV. Otherwise create DRIVE-REGISTER.csv
@@ -166,9 +167,12 @@ successful run until the outputs are created, reopened and reconciled:
   account label, chosen mode, coverage, batch and unique/relationship/overlap/unknown/
   duplicate/added/updated/unchanged counts, unavailable fields, freshness and a
   plain-language later-use guide; and
-- DRIVE-INDEX-CURSOR.md, with the same generation ID, mode, human-register type and
-  locator, last reconciled batch, connector next-page state, unique count, last
-  successful refresh and exact next action. Never store a secret.
+- DRIVE-INDEX-RECEIPT.json, with the same generation ID, mode, selected human-register
+  type and locator, readback generation/row count/time, scope coverage and all counts;
+  and
+- DRIVE-INDEX-CURSOR.json, with the same generation ID, mode and counts, last
+  reconciled batch, connector next-page state, last successful refresh and exact next
+  action. Never store a secret.
 
 Use the connector's stable item ID to upsert DRIVE-INDEX.jsonl and prevent duplicates.
 If a saved cursor expires or a supported change feed is unavailable, restart a bounded
@@ -194,12 +198,14 @@ was scanned.
 
 After the selected mode finishes, reopen DRIVE-INDEX.jsonl, parse every non-empty line,
 count objects and unique IDs, and reject malformed JSON or duplicate IDs. Reopen the
-selected human register and count its data rows. Compare both with DRIVE-INDEX.md and
-DRIVE-INDEX-CURSOR.md. Generation ID, unique and relationship/overlap/unknown and
+selected human register and count its data rows. Compare both with DRIVE-INDEX.md,
+DRIVE-INDEX-RECEIPT.json and DRIVE-INDEX-CURSOR.json. Generation ID, unique and relationship/overlap/unknown and
 added/updated/unchanged counts must agree everywhere. Missing, empty, malformed or
 disagreeing output fails closed and the cursor does not advance. Use TRUE, FALSE or
 UNKNOWN for each relationship flag and never add overlapping relationship counts as
 if they were unique items.
+Run validate_drive_register.py. If it fails, report FAILED — REGISTER NOT READY,
+preserve the prior successful cursor and keep the task open.
 
 Put this exact sentence in DRIVE-INDEX.md: “No Drive file content was opened or
 downloaded, and no Drive item was created, edited, renamed, moved, shared, unshared,

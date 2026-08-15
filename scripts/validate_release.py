@@ -915,8 +915,12 @@ def validate(root, candidate=False):
                 failures.append("Email Triage starter contains unsafe instruction: " + forbidden)
     drive_root = homework_root / "02-Drive-Inventory-AI-Human"
     if drive_root.is_dir():
-        if not (drive_root / "WEEKLY-DRIVE-REFRESH-PROMPT.md").is_file():
-            failures.append("Drive Index starter missing WEEKLY-DRIVE-REFRESH-PROMPT.md")
+        for required_file in (
+            "DRIVE-REGISTER-SCHEMA.md", "WEEKLY-DRIVE-REFRESH-PROMPT.md",
+            "validate_drive_register.py",
+        ):
+            if not (drive_root / required_file).is_file():
+                failures.append("Drive Index starter missing " + required_file)
         drive_text = "\n".join(
             path.read_text(encoding="utf-8", errors="replace")
             for path in sorted(drive_root.iterdir()) if path.is_file()
@@ -924,13 +928,15 @@ def validate(root, candidate=False):
         for required in (
             "TEST 25", "FULL DRIVE INDEX", "DRIVE-INDEX.jsonl",
             "DRIVE-REGISTER.csv", "GOOGLE SHEET", "file of record",
-            "DRIVE-INDEX-CURSOR.md", "no more than 25", "checkpoint",
+            "DRIVE-INDEX-RECEIPT.json", "DRIVE-INDEX-CURSOR.json",
+            "DRIVE-REGISTER-SCHEMA.md", "validate_drive_register.py",
+            "no more than 25", "checkpoint",
             "connector coverage gap", "item ID", "never store a password",
             "generation ID", "reopen", "malformed JSON", "duplicate IDs",
             "owned_or_created_by_me", "shared_with_me", "shared_by_me",
             "NOT SEEN THIS RUN — VERIFY", "SET WEEKLY REFRESH", "Sunday night",
             "exact local time", "time zone", "WEEKLY-DRIVE-REFRESH-PROMPT.md",
-            "RUN DRIVE REFRESH NOW", "does not advance",
+            "RUN DRIVE REFRESH NOW", "exactly one human register", "does not advance",
         ):
             if required.casefold() not in drive_text.casefold():
                 failures.append("Drive Index starter lacks: " + required)

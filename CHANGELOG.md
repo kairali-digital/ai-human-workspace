@@ -30,6 +30,20 @@ All notable changes are recorded here in plain language.
 - Refresh the beginner guide, DOCX, PDF, video, captions, prompts, component bundle,
   edition downloads, validators and portal under one governed v2.2.0 release.
 
+## [2.1.0] - 2026-08-16
+
+- Upgrade Drive Inventory so `TEST 25` and `FULL DRIVE INDEX` cannot pass until the
+  generated registers reopen and reconcile. Keep one normalized `DRIVE-INDEX.jsonl` as
+  the AI-readable metadata file of record and validate the selected human register
+  from the same stable-ID records.
+- When Google Sheets is already connected and the employee explicitly approves the
+  resolved write, allow it as the human register. Require its URL, generation ID and
+  row count to be read back; otherwise keep a formula-safe CSV as the human register.
+- Add receipt, cursor and validator proof for unique and relationship counts, plus an
+  optional employee-confirmed weekly refresh after full-index proof.
+- Retain the v2.0.2 lease-order correction and its forced concurrent-start and
+  concurrent-completion regressions without weakening Gate 0 or the 25-item batch cap.
+
 ## [2.0.2] - 2026-08-16
 
 - Hold v2.0.1 after an independent post-publication Monitor test found that two task

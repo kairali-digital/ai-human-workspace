@@ -60,8 +60,8 @@ and state.
 My name is [TYPE YOUR NAME]. This is task DRIVE-HW-001.
 
 Read AGENTS.md, AI-HUMAN.md, PARAMETERS.md, MASTER_CURSOR.md, OPEN_REGISTER.md,
-TODAY.md, TOOLBOX.md, GATES.md, WORK-GATES.md, DECISIONS.md, AUTOMATIONS.md and
-WEEKLY-DRIVE-REFRESH-PROMPT.md.
+TODAY.md, TOOLBOX.md, GATES.md, WORK-GATES.md, DECISIONS.md, AUTOMATIONS.md,
+DRIVE-REGISTER-SCHEMA.md and WEEKLY-DRIVE-REFRESH-PROMPT.md.
 
 First, replace “Kairali employee using this copy” with my name in this project's
 owner fields only. Do not change the worker's name, purpose, task, limits or gates.
@@ -85,7 +85,8 @@ successful run until the outputs are created, reopened and reconciled:
   per stable item ID and these fields: generation_id, item_id, name, file_type,
   owner_or_relationship, owned_or_created_by_me, shared_with_me, shared_by_me,
   modified_time, parent_or_location, sharing_status, web_link, source_scope,
-  visibility_status, first_indexed_at_utc, last_seen_at_utc and review_note;
+  visibility_status, first_indexed_at_utc, last_seen_at_utc, indexed_at_utc,
+  generation_id and review_note;
 - one human register generated from that exact JSONL data. If a Google Sheets app is
   already connected and I explicitly approve its write permission and exact target,
   ask whether I want `GOOGLE SHEET` or `LOCAL CSV`. Otherwise create
@@ -98,10 +99,13 @@ successful run until the outputs are created, reopened and reconciled:
   overlap count, unknown-relationship count, duplicate count, unavailable fields,
   added/updated/unchanged/unknown counts, last successful refresh time and a
   plain-language guide for asking Codex or Claude to find a file later; and
-- `DRIVE-INDEX-CURSOR.md`, with the same generation ID, chosen mode, human-register
-  type and locator, current source scope, last reconciled batch, connector next-page
-  state when safely available, unique item count, last successful refresh and exact
-  next action. Never store a password, one-time code or access token.
+- `DRIVE-INDEX-RECEIPT.json`, with the same generation ID, mode, selected human-register
+  type and locator, its readback generation/row count/time, source-scope coverage and
+  all relationship and refresh counts; and
+- `DRIVE-INDEX-CURSOR.json`, with the same generation ID, chosen mode and counts,
+  current source scope, last reconciled batch, connector next-page state when safely
+  available, last successful refresh and exact next action. Never store a password,
+  one-time code or access token.
 
 Use the connector's stable item ID to upsert the JSONL file of record and prevent
 duplicates. If a saved page cursor expires or a supported change feed is unavailable,
@@ -132,11 +136,13 @@ line, count its objects and unique item IDs, and reject malformed JSON or duplic
 IDs. Reopen the selected human register and count its non-header data rows. For a
 Google Sheet, read back the exact approved sheet range; for CSV, reopen
 `DRIVE-REGISTER.csv`. Compare both readbacks with `DRIVE-INDEX.md` and
-`DRIVE-INDEX-CURSOR.md`. The generation ID, unique total and relationship,
+`DRIVE-INDEX-RECEIPT.json` and `DRIVE-INDEX-CURSOR.json`. The generation ID, unique total and relationship,
 overlap/unknown and added/updated/unchanged totals must agree everywhere. Missing,
 empty, malformed or disagreeing output fails closed and the cursor does not advance.
 Relationship flags use TRUE, FALSE or UNKNOWN only; one item may be true in more than
 one relationship, so never add relationship counts as if they were unique items.
+Run `validate_drive_register.py`. If it fails, report `FAILED — REGISTER NOT READY`,
+preserve the prior successful cursor and keep the task open.
 
 Put this exact sentence in DRIVE-INDEX.md: “No Drive file content was opened or
 downloaded, and no Drive item was created, edited, renamed, moved, shared, unshared,
@@ -160,8 +166,8 @@ workspace.
 
 ## Done when
 
-- `DRIVE-INDEX.jsonl`, one selected human register, `DRIVE-INDEX.md` and
-  `DRIVE-INDEX-CURSOR.md` are visible.
+- `DRIVE-INDEX.jsonl`, one selected human register, `DRIVE-INDEX.md`,
+  `DRIVE-INDEX-RECEIPT.json` and `DRIVE-INDEX-CURSOR.json` are visible and non-empty.
 - Both registers were reopened; JSONL object/unique-ID count and Sheet or CSV data-row
   count equal the recorded unique totals.
 - Generation ID, relationship flags, unique, overlap, unknown and refresh counts are
@@ -171,9 +177,9 @@ workspace.
 - `TEST 25` clearly says the full Drive was not indexed; `FULL DRIVE INDEX` ends only
   after every supported connector scope has no next page and lists coverage gaps.
 - The index says file contents were not opened and Drive was not changed.
+- `validate_drive_register.py` and the workspace validator pass.
 - After full mode, the employee either verified the weekly automation card or recorded
   `NOT ENABLED BY CHOICE`; an unconfirmed schedule is never called active.
-- Codex says the workspace validator passed.
 
 Mark this worker **LIVE FOR ME** only after `FULL DRIVE INDEX` and the final validator
 pass. `TEST 25` remains a valid bounded setup proof, but it does not complete the

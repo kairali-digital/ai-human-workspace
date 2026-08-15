@@ -1,8 +1,9 @@
 # AI-Human Workspace v2.2.0
 
 v2.2.0 turns the universal homework into a durable personal-work assistant while also
-shipping the held lifecycle-race correction. It is backward-compatible for configured
-v2.0.0 and held v2.0.1 workers and preserves employee-owned state.
+carrying forward the lifecycle-race correction and the v2.1.0 Drive proof. It is
+backward-compatible for configured v2.0.0, held v2.0.1, v2.0.2 and v2.1.0 workers and
+preserves employee-owned state.
 
 ## Personal Work Memory + Daily Email EA
 
@@ -47,9 +48,9 @@ receipt and final validator result.
 
 ## Install or recover
 
-- Configured v2.0.0 or held v2.0.1 workers use the normal read-only version check and
-  approve v2.2.0 only at a safe checkpoint.
-- The unpublished v2.0.2 candidate is superseded by this combined release.
+- Configured v2.0.0, held v2.0.1, v2.0.2 or v2.1.0 workers use the normal read-only
+  version check and approve v2.2.0 only at a safe checkpoint.
+- v2.2.0 supersedes the earlier v2 release lines without changing employee-owned state.
 - Pre-v2 workers still complete the guided exact-scope Gate 0 migration first.
 - New users choose exactly one edition. Kairali staff use the Kairali Employee Edition;
   everyone else uses the company-neutral Reusable Edition.

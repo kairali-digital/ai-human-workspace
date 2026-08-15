@@ -15,7 +15,8 @@ DRIVE INDEX`.
 ## EXIT EVIDENCE
 
 `DRIVE-INDEX.jsonl`, one approved Google Sheet or otherwise `DRIVE-REGISTER.csv`,
-`DRIVE-INDEX.md` and `DRIVE-INDEX-CURSOR.md` exist and reopen. Their generation ID,
+`DRIVE-INDEX.md`, `DRIVE-INDEX-RECEIPT.json` and `DRIVE-INDEX-CURSOR.json` exist and
+reopen. Their generation ID,
 JSONL object/unique-ID count, human-register data-row count, relationship flags,
 overlap/unknown and refresh totals agree.
 Every batch is at most 25 and checkpointed; item IDs prevent duplicates; supported
@@ -26,6 +27,7 @@ next page. Test mode says the full Drive was not indexed. The worker is marked *
 FOR ME** only after full mode and the final validator pass. After full proof, the
 weekly job is either card-verified at the employee-confirmed day/time/time zone or
 recorded `NOT ENABLED BY CHOICE`.
+`validate_drive_register.py` and the workspace validator both pass.
 
 ## LAST CHECKPOINT
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fail-closed validator for generated Drive Inventory register artifacts."""
+"""Fail-closed validator for the Drive Master Index and its one human register."""
 
 import argparse
 import csv
@@ -10,15 +10,17 @@ from pathlib import Path
 
 
 FIELDS = (
-    "item_id", "name", "file_type", "owned_or_created_by_me", "shared_with_me",
-    "shared_by_me", "modified_time", "parent_or_location", "sharing_status",
-    "web_link", "source_scope", "first_indexed_at_utc", "last_seen_at_utc",
+    "item_id", "name", "file_type", "owner_or_relationship",
+    "owned_or_created_by_me", "shared_with_me", "shared_by_me", "modified_time",
+    "parent_or_location", "sharing_status", "web_link", "source_scope",
+    "visibility_status", "first_indexed_at_utc", "last_seen_at_utc",
     "indexed_at_utc", "generation_id", "review_note",
 )
 RELATIONSHIPS = (
     "owned_or_created_by_me", "shared_with_me", "shared_by_me",
 )
 SCOPES = ("owned_or_created_by_me", "shared_with_me", "shared_by_me", "shared_drives")
+REFRESH_COUNTS = ("added_items", "updated_items", "unchanged_items", "unknown_items")
 UNCHANGED = (
     "No Drive file content was opened or downloaded, and no Drive item was created, "
     "edited, renamed, moved, shared, unshared, deleted or organized."
@@ -67,7 +69,8 @@ def validate(root):
         "receipt": root / "DRIVE-INDEX-RECEIPT.json",
         "cursor": root / "DRIVE-INDEX-CURSOR.json",
     }
-    for label, path in paths.items():
+    for label in ("jsonl", "summary", "receipt", "cursor"):
+        path = paths[label]
         if not path.is_file() or path.stat().st_size == 0:
             failures.append(label + " file is missing or empty: " + path.name)
     if failures:
@@ -117,35 +120,67 @@ def validate(root):
         failures.append("generation_id is missing or unsafe")
 
     try:
-        with paths["csv"].open("r", encoding="utf-8-sig", newline="") as stream:
-            reader = csv.DictReader(stream)
-            if tuple(reader.fieldnames or ()) != FIELDS:
-                failures.append("CSV columns do not exactly match DRIVE-REGISTER-SCHEMA.md")
-            csv_rows = list(reader)
-        if len(csv_rows) != len(records):
-            failures.append("CSV and JSONL row counts disagree")
-        csv_by_id = {row.get("item_id", ""): row for row in csv_rows}
-        if len(csv_by_id) != len(csv_rows):
-            failures.append("CSV contains empty or duplicate item_id values")
-        for record in records:
-            row = csv_by_id.get(str(record["item_id"]))
-            if row is None:
-                failures.append("CSV lacks item_id " + str(record["item_id"]))
-                continue
-            for field in FIELDS:
-                expected = relation(record[field]) if field in RELATIONSHIPS else human_cell(record[field])
-                if row.get(field) != expected:
-                    failures.append("CSV disagrees for item_id " + str(record["item_id"]) + " field " + field)
-                    break
-    except Exception as exc:
-        failures.append("CSV cannot be read: " + str(exc))
-
-    try:
         receipt = load_json(paths["receipt"])
         cursor = load_json(paths["cursor"])
     except Exception as exc:
         failures.append("receipt or cursor cannot be read: " + str(exc))
         return failures
+
+    human_register = receipt.get("human_register")
+    if human_register not in {"CSV", "GOOGLE_SHEET"}:
+        failures.append("human_register must be CSV or GOOGLE_SHEET")
+    elif human_register == "CSV":
+        if not paths["csv"].is_file() or paths["csv"].stat().st_size == 0:
+            failures.append("CSV was selected but DRIVE-REGISTER.csv is missing or empty")
+        else:
+            try:
+                with paths["csv"].open("r", encoding="utf-8-sig", newline="") as stream:
+                    reader = csv.DictReader(stream)
+                    if tuple(reader.fieldnames or ()) != FIELDS:
+                        failures.append("CSV columns do not exactly match DRIVE-REGISTER-SCHEMA.md")
+                    csv_rows = list(reader)
+                if len(csv_rows) != len(records):
+                    failures.append("CSV and JSONL row counts disagree")
+                csv_by_id = {row.get("item_id", ""): row for row in csv_rows}
+                if len(csv_by_id) != len(csv_rows) or "" in csv_by_id:
+                    failures.append("CSV contains empty or duplicate item_id values")
+                for record in records:
+                    row = csv_by_id.get(str(record["item_id"]))
+                    if row is None:
+                        failures.append("CSV lacks item_id " + str(record["item_id"]))
+                        continue
+                    for field in FIELDS:
+                        expected = (
+                            relation(record[field])
+                            if field in RELATIONSHIPS
+                            else human_cell(record[field])
+                        )
+                        if row.get(field) != expected:
+                            failures.append(
+                                "CSV disagrees for item_id " + str(record["item_id"]) +
+                                " field " + field
+                            )
+                            break
+            except Exception as exc:
+                failures.append("CSV cannot be read: " + str(exc))
+        if receipt.get("human_register_locator") != "DRIVE-REGISTER.csv":
+            failures.append("CSV mode must identify DRIVE-REGISTER.csv as its locator")
+        if receipt.get("google_sheet_url"):
+            failures.append("CSV mode also declares a Google Sheet human register")
+    elif human_register == "GOOGLE_SHEET":
+        if paths["csv"].exists():
+            failures.append("Google Sheet mode also contains DRIVE-REGISTER.csv; exactly one human register is allowed")
+        locator = str(receipt.get("human_register_locator", ""))
+        if not re.match(r"^https://docs\.google\.com/spreadsheets/d/", locator):
+            failures.append("Google Sheet mode lacks the exact approved spreadsheet locator")
+
+    if human_register in {"CSV", "GOOGLE_SHEET"}:
+        if receipt.get("human_register_generation_id") != generation:
+            failures.append("human-register generation ID was not read back or disagrees")
+        if receipt.get("human_register_row_count") != len(records):
+            failures.append("human-register row count was not read back or disagrees")
+        if not receipt.get("human_register_verified_utc"):
+            failures.append("human-register mode lacks readback time")
 
     true_counts = {
         field: sum(record[field] is True for record in records) for field in RELATIONSHIPS
@@ -160,13 +195,27 @@ def validate(root):
         ),
         "unique_items": len(records),
     }
+    receipt_counts = receipt.get("counts", {})
+    cursor_counts = cursor.get("counts", {})
     if receipt.get("generation_id") != generation or cursor.get("generation_id") != generation:
         failures.append("JSONL, receipt and cursor generation IDs disagree")
     for key, value in calculated.items():
-        if receipt.get("counts", {}).get(key) != value:
+        if receipt_counts.get(key) != value:
             failures.append("receipt count disagrees: " + key)
-    if cursor.get("unique_items") != len(records):
-        failures.append("cursor unique_items disagrees with JSONL")
+    for key in REFRESH_COUNTS:
+        value = receipt_counts.get(key)
+        if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+            failures.append("receipt refresh count is missing or invalid: " + key)
+    if all(isinstance(receipt_counts.get(key), int) for key in REFRESH_COUNTS):
+        classified = sum(receipt_counts[key] for key in REFRESH_COUNTS[:3])
+        if classified != len(records):
+            failures.append("added, updated and unchanged counts do not equal unique items")
+        if receipt_counts["unknown_items"] > len(records):
+            failures.append("unknown_items exceeds unique items")
+    for key in (*calculated.keys(), *REFRESH_COUNTS):
+        if cursor_counts.get(key) != receipt_counts.get(key):
+            failures.append("cursor and receipt counts disagree: " + key)
+
     mode = receipt.get("mode")
     if mode not in {"TEST 25", "FULL DRIVE INDEX"} or cursor.get("mode") != mode:
         failures.append("receipt and cursor must share a valid mode")
@@ -181,33 +230,35 @@ def validate(root):
             if coverage.get(scope) not in {"END", "UNKNOWN — CONNECTOR COVERAGE GAP"}:
                 failures.append("full mode lacks terminal coverage for " + scope)
 
-    human_register = receipt.get("human_register")
-    if human_register not in {"CSV", "GOOGLE_SHEET"}:
-        failures.append("human_register must be CSV or GOOGLE_SHEET")
-    if human_register == "GOOGLE_SHEET":
-        if not re.match(r"^https://docs\.google\.com/spreadsheets/d/", str(receipt.get("google_sheet_url", ""))):
-            failures.append("Google Sheet mode lacks a resolved spreadsheet URL")
-        if receipt.get("google_sheet_generation_id") != generation:
-            failures.append("Google Sheet generation ID was not read back")
-        if receipt.get("google_sheet_row_count") != len(records):
-            failures.append("Google Sheet row count was not read back or disagrees")
-        if not receipt.get("human_register_verified_utc"):
-            failures.append("Google Sheet mode lacks readback time")
-
     serialized_cursor = json.dumps(cursor, sort_keys=True).casefold()
     for forbidden in ("password", "one-time code", "access_token", "refresh_token", "secret"):
         if forbidden in serialized_cursor:
             failures.append("cursor contains a forbidden secret field or value: " + forbidden)
+
     summary = paths["summary"].read_text(encoding="utf-8")
-    summary_counts = (
-        "Unique items: " + str(calculated["unique_items"]),
-        "Owned or created by me: " + str(calculated["owned_or_created_by_me"]),
-        "Shared with me: " + str(calculated["shared_with_me"]),
-        "Shared by me: " + str(calculated["shared_by_me"]),
-        "Relationship overlap items: " + str(calculated["relationship_overlap_items"]),
-        "Relationship unknown items: " + str(calculated["relationship_unknown_items"]),
-    )
-    for required in (generation, "Mode: " + str(mode), *summary_counts, UNCHANGED):
+    labels = {
+        "unique_items": "Unique items",
+        "owned_or_created_by_me": "Owned or created by me",
+        "shared_with_me": "Shared with me",
+        "shared_by_me": "Shared by me",
+        "relationship_overlap_items": "Relationship overlap items",
+        "relationship_unknown_items": "Relationship unknown items",
+        "added_items": "Added items",
+        "updated_items": "Updated items",
+        "unchanged_items": "Unchanged items",
+        "unknown_items": "Unknown items",
+    }
+    for required in (
+        generation,
+        "Mode: " + str(mode),
+        "Human register: " + str(human_register),
+        UNCHANGED,
+    ):
+        if required not in summary:
+            failures.append("summary lacks required readback: " + required)
+    for key, label in labels.items():
+        expected = receipt_counts.get(key)
+        required = label + ": " + str(expected)
         if required not in summary:
             failures.append("summary lacks required readback: " + required)
     return failures

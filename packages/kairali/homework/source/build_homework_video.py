@@ -129,9 +129,9 @@ SCENES = [
     {
         "title": "Check Drive proof",
         "label": "RESUMABLE METADATA INDEX",
-        "actions": ["DRIVE-INDEX.jsonl + one Sheet-or-CSV register", "Same generation + counts  ·  both reopened", "Full proof  →  set or decline weekly refresh"],
-        "done": "Full mode, dual-register reconciliation and schedule decision are visible.",
-        "narration": "Drive Index J son Lines is the A I file of record. One approved Google Sheet, or otherwise Drive Register C S V, is generated from it. Test Twenty Five is only a sample. Full mode continues in batches of at most twenty-five until every supported scope ends. Both registers reopen and must agree on generation, unique and relationship counts before the cursor advances. After full proof, choose a weekly day and exact local time, or decline it. No file content is opened and Drive is unchanged except an explicitly approved register Sheet.",
+        "actions": ["DRIVE-INDEX.jsonl + exactly one Sheet-or-CSV register", "Receipt + cursor agree  ·  validator passes", "Full proof  →  set or decline weekly refresh"],
+        "done": "Full mode, AI-to-human register reconciliation and schedule decision are visible.",
+        "narration": "Drive Index J son Lines is the A I file of record. Exactly one human register, an approved Google Sheet or otherwise Drive Register C S V, is generated from it. Test Twenty Five is only a sample. Full mode continues in batches of at most twenty-five until every supported scope ends. The A I and human registers reopen and must agree with the receipt and cursor on generation, unique and relationship counts, and the validator must pass before the cursor advances. After full proof, choose a weekly day and exact local time, or decline it. No file content is opened and Drive is unchanged except an explicitly approved register Sheet.",
     },
     {
         "title": "Optional: set up Saturday LinkedIn review",

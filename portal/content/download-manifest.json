@@ -32,6 +32,16 @@
       "size": 112
     },
     {
+      "name": "AI-HUMAN-v210-REUSABLE-EDITION-PUBLIC-KIT.zip",
+      "sha256": "b59af4a285402f832977279469df10544a819b4f0f4898c4d0d912ee4f1f603c",
+      "size": 68816
+    },
+    {
+      "name": "AI-HUMAN-v210-REUSABLE-EDITION-PUBLIC-KIT.zip.sha256",
+      "sha256": "e4b0dc5d51db98fcf662c830b651668fc60c7f8eaf72445d1a8f16e83d3fa6b7",
+      "size": 112
+    },
+    {
       "name": "AI-HUMAN-v220-REUSABLE-EDITION-PUBLIC-KIT.zip",
       "sha256": "2e29b5f47b686e82fe29fc3825a89d84a92411fd137d8616b5c95dddbdd6d0b7",
       "size": 68818
@@ -53,23 +63,23 @@
     },
     {
       "name": "EVERYONE-ELSE-AI-HUMAN-HOMEWORK-GUIDE.docx",
-      "sha256": "80126acdca92621c0a3dfba087e6ba8214be4e735d0d64edb4d7f64ba15a7702",
-      "size": 51983
+      "sha256": "65927b33ed11d69637fe1e992576718bf81842e4a3cef9703a4264ee62b03ba0",
+      "size": 52367
     },
     {
       "name": "EVERYONE-ELSE-AI-HUMAN-HOMEWORK-GUIDE.pdf",
-      "sha256": "22f16e1e14458a491717f8520fe801733d5e6bf2cdf5fe88e399add91773f86c",
-      "size": 266064
+      "sha256": "fd71d230670e532aaf61adbcd2ed638cba820e55a47399491fc6bbf9b0badce9",
+      "size": 266849
     },
     {
       "name": "EVERYONE-ELSE-AI-HUMAN-HOMEWORK-PACK.sha256",
-      "sha256": "50016a10c0020e39c4d27a1607b33fa25ac107ffa9257ec9a06533400a5ebc00",
+      "sha256": "a3e64d2870e215ec27474e76b4404ff70daea3f50f929329e918ea8da9661338",
       "size": 107
     },
     {
       "name": "EVERYONE-ELSE-AI-HUMAN-HOMEWORK-PACK.zip",
-      "sha256": "e11040a3838613f5634e802996a9e55c2d58f7c68add195f295d5c9f2ce5e31a",
-      "size": 11594993
+      "sha256": "d782f66bd5aa5d2296b9e1c2519d7e6805df332018fc2ce327ce676184ff8b0c",
+      "size": 12636733
     },
     {
       "name": "FACILITATOR-RUNBOOK-v9-PUBLIC-KIT.docx",
@@ -102,13 +112,23 @@
       "size": 120
     },
     {
+      "name": "KAIRALI-AI-HUMAN-v210-EMPLOYEE-EDITION-PUBLIC-KIT.zip",
+      "sha256": "f7c72f3763396ee152b016781f2a896054e4f3849987e9ec37edc971e5420c6d",
+      "size": 21615057
+    },
+    {
+      "name": "KAIRALI-AI-HUMAN-v210-EMPLOYEE-EDITION-PUBLIC-KIT.zip.sha256",
+      "sha256": "9a6e49a87712e9dc2b1f6190f74f5adb16e1e5f629fc9b59d9ddeed0ce9d3b60",
+      "size": 120
+    },
+    {
       "name": "KAIRALI-AI-HUMAN-v220-EMPLOYEE-EDITION-PUBLIC-KIT.zip",
-      "sha256": "0d59ab5b2c724ba8caef535fbd6340a75e76c9e0ec89f362df10150bf4edc245",
-      "size": 23310806
+      "sha256": "7c0af7095b8cf90d19155ba319234c053bbe11d0d10e3f77d436fcf13ee3c45e",
+      "size": 25393110
     },
     {
       "name": "KAIRALI-AI-HUMAN-v220-EMPLOYEE-EDITION-PUBLIC-KIT.zip.sha256",
-      "sha256": "977000f82f5df343b5332fee3257f8e171a67b471d65df17c0c5080e33dd3717",
+      "sha256": "d85e7e417330253e0e24e9b914bca08fb090bffa05777c68f34874bdb3f1237f",
       "size": 120
     },
     {

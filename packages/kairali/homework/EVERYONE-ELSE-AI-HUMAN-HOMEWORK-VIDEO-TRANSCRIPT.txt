@@ -52,8 +52,8 @@ Open Settings, then Apps, and select Google Drive. If it is not connected, choos
 DONE WHEN: TEST 25 proves setup; FULL DRIVE completes homework; every batch is at most 25.
 
 SCENE 13: Check Drive proof
-Drive Index J son Lines is the A I file of record. One approved Google Sheet, or otherwise Drive Register C S V, is generated from it. Test Twenty Five is only a sample. Full mode continues in batches of at most twenty-five until every supported scope ends. Both registers reopen and must agree on generation, unique and relationship counts before the cursor advances. After full proof, choose a weekly day and exact local time, or decline it. No file content is opened and Drive is unchanged except an explicitly approved register Sheet.
-DONE WHEN: Full mode, dual-register reconciliation and schedule decision are visible.
+Drive Index J son Lines is the A I file of record. Exactly one human register, an approved Google Sheet or otherwise Drive Register C S V, is generated from it. Test Twenty Five is only a sample. Full mode continues in batches of at most twenty-five until every supported scope ends. The A I and human registers reopen and must agree with the receipt and cursor on generation, unique and relationship counts, and the validator must pass before the cursor advances. After full proof, choose a weekly day and exact local time, or decline it. No file content is opened and Drive is unchanged except an explicitly approved register Sheet.
+DONE WHEN: Full mode, AI-to-human register reconciliation and schedule decision are visible.
 
 SCENE 14: Optional: set up Saturday LinkedIn review
 The LinkedIn project is optional. Do it only after Email and Drive pass. Copy starter zero three, open it separately, and paste Prompt Three. Choose the local Saturday time and confirm the time zone. Close every LinkedIn tab. Choose Computer from the at tools menu and approve only this local project and current task. Keep Ask for approval. Never choose Full access or Always allow.

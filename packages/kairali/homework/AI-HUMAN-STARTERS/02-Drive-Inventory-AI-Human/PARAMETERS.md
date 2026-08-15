@@ -14,4 +14,4 @@
 | Unattended mode | Disabled unless the full index reconciles and an employee-confirmed day, exact local time, time zone, project and prompt match an `ACTIVE` `AUTOMATIONS.md` row |
 | External actions | Google Drive changes are disabled; one Google Sheet write is allowed only after the exact target and connector write permission are explicitly approved; local CSV is the default |
 | Checkpoint rule | After every batch, material state change, and before ending a session |
-| Completion rule | JSONL and the selected human register exist and are non-empty; both reopen; generation ID, unique count, relationship/overlap/unknown and refresh counts agree with summary/cursor; the weekly schedule is verified or `NOT ENABLED BY CHOICE`; ledger, evidence and validator pass |
+| Completion rule | JSONL and exactly one selected human register exist and are non-empty; both reopen; generation ID, unique count, relationship/overlap/unknown and refresh counts agree with receipt, summary and JSON cursor; `validate_drive_register.py` passes; the weekly schedule is verified or `NOT ENABLED BY CHOICE`; ledger, evidence and workspace validator pass |

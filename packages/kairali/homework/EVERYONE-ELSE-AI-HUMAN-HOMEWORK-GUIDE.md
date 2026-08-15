@@ -427,7 +427,8 @@ records `NOT ENABLED BY CHOICE`; you may add it later.
 
 Stop when all of these are visible:
 
-- `DRIVE-INDEX.jsonl`, `DRIVE-INDEX.md`, `DRIVE-INDEX-CURSOR.md` and exactly one human
+- `DRIVE-INDEX.jsonl`, `DRIVE-INDEX.md`, `DRIVE-INDEX-RECEIPT.json`,
+  `DRIVE-INDEX-CURSOR.json` and exactly one human
   register exist: an explicitly approved Google Sheet or otherwise
   `DRIVE-REGISTER.csv`.
 - JSONL and the human register were reopened; their generation ID, JSONL
@@ -446,7 +447,7 @@ Stop when all of these are visible:
   exact local time and time zone, or the decision says `NOT ENABLED BY CHOICE`.
 - Pause, edit, remove and missed-run recovery are visible; a failed refresh does not
   advance the last-success cursor.
-- The workspace validator passed.
+- `validate_drive_register.py` and the workspace validator passed.
 
 **DONE WHEN:** You can show the human register, AI register, summary, receipt and cursor
 on your screen. A connected Drive account alone is not completion. The JSONL helps

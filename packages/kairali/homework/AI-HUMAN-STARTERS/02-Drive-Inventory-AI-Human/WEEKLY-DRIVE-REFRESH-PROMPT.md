@@ -3,7 +3,8 @@
 Run `DRIVE-WEEKLY-001` inside this Drive Master Index project.
 
 1. Read `PARAMETERS.md`, `MASTER_CURSOR.md`, `AUTOMATIONS.md`,
-   `DRIVE-INDEX-CURSOR.md`, `TOOLBOX.md`, `GATES.md` and `WORK-GATES.md`. Stop before
+   `DRIVE-REGISTER-SCHEMA.md`, `DRIVE-INDEX-CURSOR.json`,
+   `DRIVE-INDEX-RECEIPT.json`, `TOOLBOX.md`, `GATES.md` and `WORK-GATES.md`. Stop before
    Drive access if the automation row is not `ACTIVE`, the approved company account
    or exact project cannot be verified, a writer holds the state lease, or the last
    successful full-index generation is missing or unreconciled.
@@ -20,14 +21,15 @@ Run `DRIVE-WEEKLY-001` inside this Drive Master Index project.
    Google Sheet and `DRIVE-REGISTER.csv` without separate employee approval.
 5. Reopen and parse every non-empty JSONL line; reject malformed JSON or duplicate
    item IDs. Reopen the exact Google Sheet range or CSV and count data rows. Require
-   both registers, summary and cursor to agree on generation ID, unique count,
+   JSONL, the selected human register, receipt, summary and cursor to agree on generation ID, unique count,
    relationship/overlap/unknown totals and added/updated/unchanged/unknown counts.
 6. Advance the last-success cursor only after both register readbacks reconcile.
    Otherwise leave the prior successful cursor unchanged, record the exact failure and
    one recovery action, and keep the task open.
 7. Replace `DRIVE-INDEX.md` with the new coverage, freshness, generation, counts,
    human-register locator, any connector gaps and the Drive-unchanged sentence. Update
-   state and evidence, then validate the workspace.
+   `DRIVE-INDEX-RECEIPT.json`, `DRIVE-INDEX-CURSOR.json`, state and evidence. Run
+   `validate_drive_register.py`, then validate the workspace.
 
 If a scheduled run was missed because the computer, ChatGPT, folder or connector was
 unavailable, do not pretend it ran. The employee may say `RUN DRIVE REFRESH NOW` for a

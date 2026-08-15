@@ -4,7 +4,8 @@
 
 - Version: `2.2.0`
 - Lane: `APPROVED_BY_OWNER` / `RELEASED`
-- Compatibility: backward-compatible from configured v2.0.0 and held v2.0.1 workers
+- Compatibility: backward-compatible from configured v2.0.0, held v2.0.1, v2.0.2 and
+  v2.1.0 workers
 - Automatic update eligible: no
 - Publication authority: explicit owner instruction on 16 August 2026
 
@@ -23,15 +24,15 @@
 
 ## Verification evidence
 
-- Complete lifecycle suite: PASS, 63 tests.
+- Complete lifecycle suite: PASS, 65 tests.
 - Local candidate and public release validators: PASS.
 - Secret and personal absolute-path scan: PASS.
 - Zero-knowledge beginner rollout gate: PASS for 11 role prompts, Mac and Windows
   recovery, exact rescue prompt and no employee command-line actions.
 - Homework document QA: PASS, 13 PDF pages inspected and structurally extracted.
 - Homework video QA: PASS, 18 scenes, 18 transcript sections, 18 caption blocks,
-  1920×1080 H.264/AAC, 454.11 seconds, full decode PASS.
-- Portal gate and optimized Next.js production build: PASS; 35 downloads reconciled.
+  1920×1080 H.264/AAC, 502.88 seconds, full decode PASS.
+- Portal gate and optimized Next.js production build: PASS; 39 downloads reconciled.
 - Public release assets: PASS, six deterministic artifacts with SHA-256 inventory.
 - Hosted GitHub checks and exact production URL verification are recorded in the
   repository history and deployment evidence after publication.

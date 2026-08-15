@@ -23,11 +23,11 @@
   time zone.
 - LinkedIn: PASS. LinkedIn access and sending remain human-only. Only explicitly
   confirmed concise learnings may be retained, with correction and forget controls.
-- Adversarial and lifecycle suite: PASS, 63 tests. Ordinary, empty, high-volume,
+- Adversarial and lifecycle suite: PASS, 65 tests. Ordinary, empty, high-volume,
   stale/conflicting-memory, privacy, Gate 0, newsletter, filter, reply, malformed-index,
   schedule, missed-run and recovery paths are covered.
 - Artifact QA: PASS. The 13-page PDF and editable DOCX were regenerated and inspected
-  page by page. The 18-scene 1920×1080 H.264/AAC video is 454.11 seconds; all 18 frames,
+  page by page. The 18-scene 1920×1080 H.264/AAC video is 502.88 seconds; all 18 frames,
   transcript sections and caption blocks were inspected and decoded without error.
 - Release and portal gates: PASS. Public v2.2.0 validation, secret/absolute-path scan,
   beginner rollout gate, portal download reconciliation and optimized Next.js build

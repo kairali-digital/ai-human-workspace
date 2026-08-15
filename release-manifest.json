@@ -13,7 +13,7 @@
       "target": ".ai-human/system/AI-HUMAN.md"
     },
     {
-      "sha256": "0114c6b06fcc12e3f9b1299647c1ba97aabdad5c6b7206e5af1c8ccb528ce456",
+      "sha256": "0564f6a05aa75d2fd3db1a8288a9585001c6c13e60cae7a09e3b509558094825",
       "source": "core/AGENT-RULES.md",
       "target": ".ai-human/system/AGENT-RULES.md"
     },
@@ -43,12 +43,12 @@
       "target": ".ai-human/system/TOOLBOX-TEMPLATE.md"
     },
     {
-      "sha256": "fe840f52fb5578d3f77eb497115eb02c6036601c3a53e60df7995c7276baa77a",
+      "sha256": "b4b16faea52dc04ccfe32f7b342094855923ebf599a3cac1940470a2d6d7c261",
       "source": "core/VERSION",
       "target": ".ai-human/VERSION"
     },
     {
-      "sha256": "88a72542b3383a17a7153963771d542582545e44eb072e8b916cfbf3fe2ef431",
+      "sha256": "dbbc7e53c82a74837149971cf5a8cb9d8b918a31864615659dc1047b8d0881e0",
       "source": "scripts/ai_human.py",
       "target": ".ai-human/bin/ai_human.py"
     }
@@ -85,5 +85,5 @@
   "release_status": "RELEASED",
   "repository": "kairali-digital/ai-human-workspace",
   "schema": "ai-human.workspace-release/v1",
-  "version": "2.0.1"
+  "version": "2.0.2"
 }

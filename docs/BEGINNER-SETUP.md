@@ -93,11 +93,11 @@ update is recorded and deferred instead.
 Open the existing worker in Codex, start a new chat and paste `CHECK FOR AI-HUMAN
 UPDATE`. The exact full prompt is in the Reusable Edition's `START-HERE.md`. The check
 is read-only. If a compatible update is available and no task is live, say `UPDATE NOW`
-at a safe checkpoint. A configured v2.0.0 worker can take the v2.0.1 patch while its
-company, Gate 0 profile and user state stay preserved. A pre-v2 worker first follows
-the guided exact-scope Gate 0 migration.
+at a safe checkpoint. A configured v2.0.0 worker or held v2.0.1 worker can take the
+v2.0.2 correction while its company, Gate 0 profile and user state stay preserved. A
+pre-v2 worker first follows the guided exact-scope Gate 0 migration.
 
-**DONE WHEN:** the worker shows version `2.0.1`, validator `PASS`, the update receipt,
+**DONE WHEN:** the worker shows version `2.0.2`, validator `PASS`, the update receipt,
 preserved-state result and recovery location. If a task is live, DONE for this session
 means the update is visibly deferred without changing the worker.
 

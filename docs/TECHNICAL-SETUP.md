@@ -44,13 +44,14 @@ unresolved compliance, expired review, profile tampering or hand-edited rendered
 Task-specific operating locks belong in `WORK-GATES.md`; they may narrow work but never
 replace the entity profile.
 
-## Update v2.0.0 or migrate an older pre-profile worker
+## Update v2.0.0 or held v2.0.1, or migrate an older pre-profile worker
 
-Version 2.0.1 is `BACKWARD_COMPATIBLE` from a configured v2.0.0 worker and preserves
-user-owned state. Use the normal read-only check and checkpoint update for that path.
-If the worker predates v2.0.0 or has no confirmed entity profile, the first v2 step is
-still `SETUP_MIGRATION_REQUIRED`. At a real checkpoint, run the released lifecycle with
-the same exact identity/profile arguments before applying the managed update:
+Version 2.0.2 is `BACKWARD_COMPATIBLE` from a configured v2.0.0 or v2.0.1 worker and
+preserves user-owned state. Use the normal read-only check and checkpoint update for
+that path. If the worker predates v2.0.0 or has no confirmed entity profile, the first
+v2 step is still `SETUP_MIGRATION_REQUIRED`. At a real checkpoint, run the released
+lifecycle with the same exact identity/profile arguments before applying the managed
+update:
 
 ```bash
 python3 scripts/ai_human.py configure-gate-profile "/absolute/existing/worker" \

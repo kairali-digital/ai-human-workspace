@@ -12,10 +12,12 @@ import stat
 import subprocess
 import sys
 import tempfile
+import threading
 import unittest
 import warnings
 import zipfile
 from pathlib import Path
+from types import SimpleNamespace
 from unittest import mock
 
 
@@ -115,6 +117,60 @@ class LifecycleTests(unittest.TestCase):
                 result.stdout + "\nSTDERR:\n" + result.stderr
             )
         return result
+
+    def run_serialized_acquire_race(self, operation):
+        """Let both callers reach acquisition, then admit them one after the other."""
+        original_acquire = AI_HUMAN.acquire_worker_lease
+        second_at_acquire = threading.Event()
+        first_finished = threading.Event()
+        order_lock = threading.Lock()
+        result_lock = threading.Lock()
+        call_count = 0
+        first_thread_id = None
+        results = []
+
+        def staged_acquire(worker, session_id, actor):
+            nonlocal call_count, first_thread_id
+            with order_lock:
+                index = call_count
+                call_count += 1
+                if index == 0:
+                    first_thread_id = threading.get_ident()
+            if index == 0:
+                if not second_at_acquire.wait(5):
+                    raise RuntimeError("second concurrent caller did not reach lease acquisition")
+                return original_acquire(worker, session_id, actor)
+            second_at_acquire.set()
+            if not first_finished.wait(10):
+                raise RuntimeError("first concurrent caller did not finish")
+            return original_acquire(worker, session_id, actor)
+
+        def invoke(label):
+            try:
+                operation(label)
+                outcome = (label, "PASS", "")
+            except Exception as exc:  # The losing caller must fail cleanly.
+                outcome = (label, "FAIL", str(exc))
+            finally:
+                if threading.get_ident() == first_thread_id:
+                    first_finished.set()
+            with result_lock:
+                results.append(outcome)
+
+        with (
+            mock.patch.object(AI_HUMAN, "acquire_worker_lease", side_effect=staged_acquire),
+            mock.patch("builtins.print"),
+        ):
+            threads = [
+                threading.Thread(target=invoke, args=("A",)),
+                threading.Thread(target=invoke, args=("B",)),
+            ]
+            for thread in threads:
+                thread.start()
+            for thread in threads:
+                thread.join(15)
+            self.assertFalse(any(thread.is_alive() for thread in threads), "concurrency test hung")
+        return results
 
     def write_gate_profile(
         self,
@@ -506,6 +562,99 @@ class LifecycleTests(unittest.TestCase):
         self.assertEqual(len(receipts_after - receipts_before), 2)
         self.assertFalse((worker / ".ai-human/control/session-lease.json").exists())
 
+    def test_concurrent_task_starts_have_one_winner_without_state_loss(self):
+        worker = self.base / "concurrent-task-start"
+        self.install(worker)
+
+        def start(label):
+            AI_HUMAN.task_start(
+                SimpleNamespace(
+                    worker=str(worker),
+                    task_id=None,
+                    title="Concurrent local task " + label,
+                    source=None,
+                    next_action=None,
+                    exit_evidence=None,
+                )
+            )
+
+        results = self.run_serialized_acquire_race(start)
+        winners = [result for result in results if result[1] == "PASS"]
+        losers = [result for result in results if result[1] == "FAIL"]
+        self.assertEqual(len(winners), 1, results)
+        self.assertEqual(len(losers), 1, results)
+        self.assertIn("another task is live", losers[0][2])
+        winner_label = winners[0][0]
+        self.assertEqual(AI_HUMAN.live_task_id(worker), "LOCAL-001")
+        register_rows = [
+            row for row in AI_HUMAN.parse_table_rows(worker / "OPEN_REGISTER.md")
+            if row[0] == "LOCAL-001"
+        ]
+        today_rows = [
+            row for row in AI_HUMAN.parse_table_rows(worker / "TODAY.md")
+            if row[0] == "LOCAL-001"
+        ]
+        self.assertEqual(len(register_rows), 1)
+        self.assertEqual(len(today_rows), 1)
+        self.assertEqual(register_rows[0][2], "Concurrent local task " + winner_label)
+        self.assertEqual(today_rows[0][1], "Concurrent local task " + winner_label)
+        self.assertNotIn("LOCAL-001", AI_HUMAN.parse_table_ids(worker / "COMPLETED_LEDGER.md"))
+        self.assertEqual(len(list((worker / ".ai-human/control/receipts").glob("task-start-*.json"))), 1)
+        self.assertFalse((worker / ".ai-human/control/session-lease.json").exists())
+        self.assertEqual(self.run_cli("validate", worker).returncode, 0)
+
+    def test_concurrent_task_completions_have_one_winner_without_state_loss(self):
+        worker = self.base / "concurrent-task-complete"
+        self.install(worker)
+        started = self.run_cli(
+            "task-start", worker, "--title", "Create one concurrency proof artifact"
+        )
+        task_id = self.output_value(started.stdout, "task id")
+        (worker / "RACE-PROOF.md").write_text(
+            "# Race proof\n\nOne verified local artifact.\n", encoding="utf-8"
+        )
+        receipts_before = set((worker / ".ai-human/control/receipts").glob("*.json"))
+
+        def complete(label):
+            AI_HUMAN.task_complete(
+                SimpleNamespace(
+                    worker=str(worker),
+                    task_id=task_id,
+                    artifact=["RACE-PROOF.md"],
+                    outcome="Concurrent completion " + label + " stored the verified local result",
+                    verification="Read back the heading and verified local artifact body",
+                    undo="Delete RACE-PROOF.md to remove the requested local result",
+                    before=None,
+                )
+            )
+
+        results = self.run_serialized_acquire_race(complete)
+        winners = [result for result in results if result[1] == "PASS"]
+        losers = [result for result in results if result[1] == "FAIL"]
+        self.assertEqual(len(winners), 1, results)
+        self.assertEqual(len(losers), 1, results)
+        self.assertIn("no live task is available to complete", losers[0][2])
+        winner_label = winners[0][0]
+        self.assertEqual(AI_HUMAN.live_task_id(worker), "")
+        self.assertNotIn(task_id, AI_HUMAN.parse_table_ids(worker / "OPEN_REGISTER.md"))
+        self.assertNotIn(task_id, AI_HUMAN.parse_table_ids(worker / "TODAY.md"))
+        ledger_rows = [
+            row for row in AI_HUMAN.parse_table_rows(worker / "COMPLETED_LEDGER.md")
+            if row[0] == task_id
+        ]
+        evidence_rows = [
+            row for row in AI_HUMAN.parse_table_rows(worker / "EVIDENCE_LOG.md")
+            if row[0] == task_id
+        ]
+        self.assertEqual(len(ledger_rows), 1)
+        self.assertEqual(len(evidence_rows), 1)
+        self.assertIn("Concurrent completion " + winner_label, ledger_rows[0][4])
+        self.assertEqual(evidence_rows[0][5], "PASS")
+        receipts_after = set((worker / ".ai-human/control/receipts").glob("*.json"))
+        self.assertEqual(len(receipts_after - receipts_before), 1)
+        self.assertFalse((worker / ".ai-human/control/session-lease.json").exists())
+        self.assertEqual(self.run_cli("validate", worker).returncode, 0)
+
     def test_local_task_close_failure_stays_open_and_truthful(self):
         worker = self.base / "local-fast-path-failure"
         self.install(worker)
@@ -658,6 +807,12 @@ class LifecycleTests(unittest.TestCase):
         self.assertIn("Unverified leads", sources)
         self.assertIn("cannot support an active gate", sources)
         self.assertIn("Old internal compliance chart", sources)
+
+    def test_missing_artifact_fields_remain_explicitly_unknown(self):
+        rules = (ROOT / "core/AGENT-RULES.md").read_text(encoding="utf-8")
+        self.assertIn("Not provided in source", rules)
+        for field in ("audience", "objective", "channel", "date", "claim", "owner"):
+            self.assertIn(field, rules)
 
     def test_windows_manifest_separator_normalizes_for_required_targets(self):
         self.assertEqual(

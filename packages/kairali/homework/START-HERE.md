@@ -6,8 +6,8 @@ homework page.
 ## Where this pack comes from
 
 The preferred source is the protected public
-`kairali-digital/ai-human-workspace` release v2.1.0. The complete
-`kairali-company-rollout-2.1.0.zip` contains this homework, all approved people/setup
+`kairali-digital/ai-human-workspace` release v2.2.0. The complete
+`kairali-company-rollout-2.2.0.zip` contains this homework, all approved people/setup
 prompts and the two governed role skills. Public access needs no invitation or
 collaborator seat, and the kit contains no live company work or secrets.
 

@@ -6,7 +6,7 @@ Use this guide only if you attended the meeting and do not already have a named 
 or homework page.
 
 This homework is part of the protected public
-`kairali-digital/ai-human-workspace` v2.1.0 company kit. The public kit is the clean
+`kairali-digital/ai-human-workspace` v2.2.0 company kit. The public kit is the clean
 setup and update source; it contains no live company work or secrets, so no GitHub
 invitation or collaborator seat is needed. Ask the Setup Helper to obtain and verify
 the kit. Then copy the Email and Drive starters into separate local work folders. Do
@@ -56,7 +56,7 @@ choose your times or activate your workers. Open
 
 ## The whole loop at a glance
 
-1. Ask the Setup Helper to find the verified public v2.1.0 company kit on your screen.
+1. Ask the Setup Helper to find the verified public v2.2.0 company kit on your screen.
 2. Make an `AI Humans` folder inside Documents.
 3. Copy the Email and Drive starter folders into it.
 4. Open one starter folder as a local project in the ChatGPT desktop app.
@@ -121,7 +121,7 @@ state.
 
 # Step 1 - find and open the verified company kit
 
-The preferred file is named `kairali-company-rollout-2.1.0.zip`. If your facilitator
+The preferred file is named `kairali-company-rollout-2.2.0.zip`. If your facilitator
 gave you the smaller homework-only file, it is named
 `EVERYONE-ELSE-AI-HUMAN-HOMEWORK-PACK.zip`. Both routes open this same homework. You
 do not need a GitHub invitation.
@@ -163,7 +163,7 @@ do not need a GitHub invitation.
    **DONE WHEN:** You can see `AI-HUMAN-STARTERS` and this guide.
 
 If the ZIP is not visible, do not search the whole computer. Paste the Setup Helper
-rescue. The helper checks Downloads, obtains the protected public v2.1.0 kit when safe,
+rescue. The helper checks Downloads, obtains the protected public v2.2.0 kit when safe,
 and asks Ambuj only if the approved source or access decision is missing.
 
 # Step 2 - make one home for your AI humans

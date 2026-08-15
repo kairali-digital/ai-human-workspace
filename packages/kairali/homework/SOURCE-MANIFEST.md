@@ -65,7 +65,7 @@
   Sources: https://www.linkedin.com/legal/user-agreement and
   https://www.linkedin.com/help/linkedin/answer/a1341387 and
   https://www.linkedin.com/help/linkedin/answer/a1340567
-- Protected public `kairali-digital/ai-human-workspace` release v2.1.0 - complete
+- Protected public `kairali-digital/ai-human-workspace` release v2.2.0 - complete
   integrity-checked Kairali reference kit, public distribution boundary, three homework
   starters, all approved people/setup prompts and two explicit role-opt-in skills.
 - `work/MULTI-COMPANY-AI-HUMAN-CORE-001/repo/packages/kairali/README.md` - the public

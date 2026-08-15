@@ -2,7 +2,7 @@
 
 All notable changes are recorded here in plain language.
 
-## [2.1.0] - 2026-08-16
+## [2.2.0] - 2026-08-16
 
 - Upgrade the required Email worker into a fixed-time Personal Work Memory + Daily
   Email EA. Its neat brief shows priorities, follow-ups, useful reading, newsletter and
@@ -28,7 +28,7 @@ All notable changes are recorded here in plain language.
   exclusive lease before reading or preparing state, and forced two-caller races prove
   one winner, one clean refusal and no state loss.
 - Refresh the beginner guide, DOCX, PDF, video, captions, prompts, component bundle,
-  edition downloads, validators and portal under one governed v2.1.0 release.
+  edition downloads, validators and portal under one governed v2.2.0 release.
 
 ## [2.0.2] - 2026-08-16
 

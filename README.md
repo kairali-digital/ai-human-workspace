@@ -56,7 +56,7 @@ personal files.
 - Governed capability and fleet-update control plane:
   [`docs/GOVERNED-CAPABILITIES-AND-FLEET.md`](docs/GOVERNED-CAPABILITIES-AND-FLEET.md)
 
-v2.1.0 is the current owner-approved lifecycle-correction and personal-assistant
+v2.2.0 is the current owner-approved lifecycle-correction and personal-assistant
 release. It is backward-compatible for configured v2.0.0, held v2.0.1 and v2.0.2
 workers and keeps automatic update eligibility off. A pre-v2 worker still needs the
 guided exact-scope Gate 0 setup migration before entering the v2 line. The release

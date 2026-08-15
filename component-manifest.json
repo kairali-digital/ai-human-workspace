@@ -7,7 +7,7 @@
       "id": "kairali-company-rollout",
       "install_policy": "COMPANY_PROFILE",
       "source": "packages/kairali",
-      "tree_sha256": "41d890b2d9cd3c4db0334a37ae9c8034fb07917489b7c02ae41e20fde8b13ae5",
+      "tree_sha256": "499cdde0a3cfb3893591e2186f190d0be3d9a157beea0d03f78d6b074b78e6a9",
       "type": "reference-pack"
     },
     {
@@ -32,5 +32,5 @@
   "release_status": "RELEASED",
   "repository": "kairali-digital/ai-human-workspace",
   "schema": "ai-human.component-release/v1",
-  "version": "2.1.0"
+  "version": "2.2.0"
 }

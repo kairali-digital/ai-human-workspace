@@ -1002,14 +1002,14 @@ class LifecycleTests(unittest.TestCase):
         worker = self.base / "worker"
         self.install(worker)
 
-        new_release = self.base / "release-2.2.0"
+        new_release = self.base / "release-2.3.0"
         shutil.copytree(self.release, new_release, ignore=shutil.ignore_patterns(".git", "__pycache__", "release-proof.json", "portal"))
         agent_rules = new_release / "core/AGENT-RULES.md"
         agent_rules.write_text(
-            agent_rules.read_text(encoding="utf-8") + "\nRelease-test marker 2.2.0.\n",
+            agent_rules.read_text(encoding="utf-8") + "\nRelease-test marker 2.3.0.\n",
             encoding="utf-8",
         )
-        refresh_release(new_release, "2.2.0")
+        refresh_release(new_release, "2.3.0")
 
         cursor = worker / "MASTER_CURSOR.md"
         cursor.write_text("# Master Cursor\n\n## LIVE TASK\n`TEST-1` — test checkpoint\n", encoding="utf-8")
@@ -1034,14 +1034,14 @@ class LifecycleTests(unittest.TestCase):
             (worker / ".ai-human/VERSION").read_text(encoding="utf-8"),
             before_defer_version,
         )
-        self.assertIn("CORE-UPDATE-2.2.0", register.read_text(encoding="utf-8"))
+        self.assertIn("CORE-UPDATE-2.3.0", register.read_text(encoding="utf-8"))
 
         before_update_state = state_hashes(worker)
         updated = self.run_cli("update", worker, "--source", new_release, "--at-checkpoint")
         self.assertIn("AI-HUMAN UPDATE: PASS", updated.stdout)
         self.assertEqual(
             (worker / ".ai-human/VERSION").read_text(encoding="utf-8").strip(),
-            "2.2.0",
+            "2.3.0",
         )
         self.assertEqual(state_hashes(worker), before_update_state)
         self.assertIn(
@@ -1066,9 +1066,9 @@ class LifecycleTests(unittest.TestCase):
         self.assertIn("AI-HUMAN UPDATE: PASS", repeated.stdout)
         self.assertEqual(
             (worker / ".ai-human/VERSION").read_text(encoding="utf-8").strip(),
-            "2.2.0",
+            "2.3.0",
         )
-        matching_backups = list((worker / ".ai-human/backups").glob(f"{CURRENT_VERSION}-before-2.2.0-*"))
+        matching_backups = list((worker / ".ai-human/backups").glob(f"{CURRENT_VERSION}-before-2.3.0-*"))
         self.assertEqual(len(matching_backups), 2)
 
     def test_component_catalog_skill_install_upgrade_and_remove(self):
@@ -2094,11 +2094,11 @@ class LifecycleTests(unittest.TestCase):
                     self.assertNotIn("employee", path.read_text(encoding="utf-8").casefold(), str(path))
 
     def test_monthly_automatic_update_runs_at_ten_local_and_defers_live_task(self):
-        new_release = self.base / "release-2.2.0-auto"
+        new_release = self.base / "release-2.3.0-auto"
         shutil.copytree(self.release, new_release)
         rules = new_release / "core/AGENT-RULES.md"
         rules.write_text(rules.read_text(encoding="utf-8") + "\nAutomatic update marker.\n", encoding="utf-8")
-        refresh_release(new_release, "2.2.0")
+        refresh_release(new_release, "2.3.0")
         approve_test_release(new_release, automatic=True)
 
         idle = self.base / "idle-worker"
@@ -2110,7 +2110,7 @@ class LifecycleTests(unittest.TestCase):
         )
         self.assertIn("AUTOMATIC UPDATE: UPDATED", updated.stdout)
         self.assertEqual(
-            (idle / ".ai-human/VERSION").read_text(encoding="utf-8").strip(), "2.2.0"
+            (idle / ".ai-human/VERSION").read_text(encoding="utf-8").strip(), "2.3.0"
         )
         self.assertEqual(state_hashes(idle), before_state)
         updated_metadata = json.loads((idle / ".ai-human/install.json").read_text(encoding="utf-8"))
@@ -2140,11 +2140,11 @@ class LifecycleTests(unittest.TestCase):
         )
 
     def test_suspended_worker_defers_direct_and_fleet_automatic_updates(self):
-        new_release = self.base / "release-2.2.0-suspended"
+        new_release = self.base / "release-2.3.0-suspended"
         shutil.copytree(self.release, new_release)
         rules = new_release / "core/AGENT-RULES.md"
         rules.write_text(rules.read_text(encoding="utf-8") + "\nSuspended update marker.\n", encoding="utf-8")
-        refresh_release(new_release, "2.2.0")
+        refresh_release(new_release, "2.3.0")
         approve_test_release(new_release, automatic=True)
 
         suspended = self.base / "suspended-worker"
@@ -2194,11 +2194,11 @@ class LifecycleTests(unittest.TestCase):
         self.assertEqual(preserved_work_hashes(suspended), before)
 
     def test_fleet_pilots_email_then_isolates_a_general_worker_failure(self):
-        new_release = self.base / "release-2.2.0-fleet"
+        new_release = self.base / "release-2.3.0-fleet"
         shutil.copytree(self.release, new_release)
         rules = new_release / "core/AGENT-RULES.md"
         rules.write_text(rules.read_text(encoding="utf-8") + "\nFleet update marker.\n", encoding="utf-8")
-        refresh_release(new_release, "2.2.0")
+        refresh_release(new_release, "2.3.0")
         approve_test_release(new_release, automatic=True)
         pilot = self.base / "pilot"
         broken = self.base / "broken"
@@ -2233,7 +2233,7 @@ class LifecycleTests(unittest.TestCase):
         self.assertIn("general-001: MISMATCH", result.stdout)
         self.assertIn("general-002: UPDATED", result.stdout)
         self.assertEqual(
-            (safe / ".ai-human/VERSION").read_text(encoding="utf-8").strip(), "2.2.0"
+            (safe / ".ai-human/VERSION").read_text(encoding="utf-8").strip(), "2.3.0"
         )
         self.assertEqual(
             (broken / ".ai-human/VERSION").read_text(encoding="utf-8").strip(),
@@ -2245,11 +2245,11 @@ class LifecycleTests(unittest.TestCase):
         self.install(worker, automatic=True, worker_id="rollback-001")
         before_state = state_hashes(worker)
         before_rules = (worker / ".ai-human/system/AGENT-RULES.md").read_text(encoding="utf-8")
-        new_release = self.base / "release-2.2.0-rollback"
+        new_release = self.base / "release-2.3.0-rollback"
         shutil.copytree(self.release, new_release)
         rules = new_release / "core/AGENT-RULES.md"
         rules.write_text(rules.read_text(encoding="utf-8") + "\nMust roll back.\n", encoding="utf-8")
-        refresh_release(new_release, "2.2.0")
+        refresh_release(new_release, "2.3.0")
         approve_test_release(new_release, automatic=True)
         manifest = json.loads((new_release / "release-manifest.json").read_text(encoding="utf-8"))
         with mock.patch.object(
@@ -2341,11 +2341,11 @@ class LifecycleTests(unittest.TestCase):
     def test_update_refuses_a_symlinked_managed_parent_without_writing_outside(self):
         worker = self.base / "symlink-update-worker"
         self.install(worker)
-        new_release = self.base / "release-2.2.0-symlink"
+        new_release = self.base / "release-2.3.0-symlink"
         shutil.copytree(self.release, new_release)
         rules = new_release / "core/AGENT-RULES.md"
         rules.write_text(rules.read_text(encoding="utf-8") + "\nSymlink attack marker.\n", encoding="utf-8")
-        refresh_release(new_release, "2.2.0")
+        refresh_release(new_release, "2.3.0")
 
         outside_system = self.base / "outside-system"
         shutil.copytree(worker / ".ai-human/system", outside_system)

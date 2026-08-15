@@ -54,7 +54,7 @@ Fix the highest-impact defects, up to 25.
 For each one: before, after, how to undo it.
 ```
 
-You and Vikash are paired. Compare your two audits before you bring them to Abilash.
+You and Vikash are paired. Compare your two audits before you bring them to Abhilash.
 ---
 
 ## Every time you finish
@@ -63,7 +63,7 @@ You and Vikash are paired. Compare your two audits before you bring them to Abil
 I am closing this session.
 1. Write my row into COMPLETED_LEDGER.md with the proof attached.
 2. Remove that row from OPEN_REGISTER.md.
-3. Update MASTER_CURSOR.md with what is next, or leave it clear for Abilash.
+3. Update MASTER_CURSOR.md with what is next, or leave it clear for Abhilash.
 4. List anything I left open, with the reason in one line.
 Show me all of it before you save.
 ```

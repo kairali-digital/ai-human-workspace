@@ -1,6 +1,13 @@
 # Kairali boundaries
 
-## Gate 0 — flag, never fix or approve
+## Exact local Gate 0 and public skill risk routing
+
+The active Gate 0 comes only from the current worker's confirmed `GATES.md`. Name the
+crossed gate ID and follow its approval/evidence path. This public skill does not define
+one Kairali-wide compliance list.
+
+Until the exact local profile and compliance owner explicitly cover them, conservatively
+hold the following risk categories for review. This routing list is not itself Gate 0.
 
 Do not authorise or invent:
 

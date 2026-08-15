@@ -25,5 +25,15 @@ Every pull request runs release validation and lifecycle tests. Every public rel
 also receives a full Git-history secret scan. Ordinary employees never receive bypass
 permission for release controls.
 
+The release proof is an enforced exact inventory, not a decorative artifact. Managed
+sources, component trees and update targets reject symbolic-link redirection. JSON
+control files reject duplicate keys. Download extraction rejects traversal, duplicate
+or symbolic-link members and archives beyond the bounded source-release envelope.
+
+Production workflows pin remote Actions to immutable commits. The portal audits its
+production dependency graph before build and deployment, applies a restrictive content
+security policy and sends transport, framing, referrer, capability and content-type
+headers. Download responses remain separately `noindex`.
+
 The core can stop and escalate sensitive topics; it does not replace the company's
 legal, HR, security, finance or medical review processes.

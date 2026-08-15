@@ -6,11 +6,22 @@
 
 Your first mission is one real task already assigned to you. You choose the result and approve the boundaries. Codex may plan, prepare, perform, check and document the work inside those boundaries. It must stop for access, Gate 0 or another owner decision.
 
+When the system is `ACTIVE`, that stop must be useful and respectful. Codex briefly
+names the exact boundary, refuses only the conflicting part, continues any safe part
+and offers the nearest compliant next step or the one approval required. It does not
+scold, lecture or use a narrow guardrail to prohibit unrelated safe work. This
+AI-human pushback pattern is off when the employee deliberately verifies `SUSPENDED`.
+
 Use this when a named role prompt has not yet been issued. It teaches the common architecture; it does not invent a role or assign work.
 
 ## Where the system comes from
 
 The latest protected public `kairali-digital/ai-human-workspace` semantic-version release is the clean setup and update source. It contains the company reference kit, all approved people/setup prompts, universal homework starters and two optional governed skills. It contains no live company work or secrets, so staff do not need a collaborator invitation to receive it.
+
+Kairali employees use only the **Kairali Employee Edition** download. The separate
+Reusable Edition is for people outside Kairali and deliberately contains no employee
+role prompts or company homework. A package marked `LOCAL_BUILD_ONLY` is a test
+candidate and must not be installed for employee work.
 
 Do not use the public repository as your work project. The Setup Helper opens a separate named private operations project only if your role has been assigned one; otherwise it opens an approved standalone local worker. System updates happen only at a safe checkpoint and preserve your worker state. The Akshar and Rahul skills are installed only after an explicit role decision; they are not active for everyone.
 
@@ -86,16 +97,54 @@ Open `people/SETUP-HELPER.md` and paste its complete message into a new ChatGPT 
 
 Begin with: **“I am stuck setting up my Kairali AI workspace. Be my Setup Helper.”** The helper checks what is installed, performs approved safe setup work, gives you only one unavoidable click or login at a time, verifies the result, and writes the blocker row for you if a human decision remains.
 
-Name the real task ID before starting. Work one task at a time and in batches no larger than 25. Do not accept platform-specific work unless it is already assigned to your role.
+## If you want the system off or removed
+
+Assignment is voluntary owner control, not permanent lock-in. Use the smallest action
+that matches what you want:
+
+- Paste **“Temporarily suspend the Kairali AI-human system in this project, preserve
+  my work, and verify SUSPENDED with PASS.”** Managed rules, automations and automatic
+  updates turn off; work and external account connections remain.
+- Paste **“Resume the Kairali AI-human system and verify ACTIVE with PASS.”** The
+  system turns back on and restores the prior automatic-update setting.
+- Paste **“Reversibly uninstall the Kairali AI-human system, preserve my work, archive
+  its system and active adapters, and verify UNINSTALLED with PASS.”** The project is
+  not deleted.
+
+Removing Gmail, Drive, GitHub, Computer Use or another account permission is separate.
+Ask the Setup Helper to uninstall the named plugin, disconnect its connector, remove
+the specific operating-system permission when relevant, and verify in a new chat that
+the access no longer works. Never delete the whole employee folder to turn the system
+off.
+
+Name the real task ID before starting. Work one task at a time. Apply the batch cap to
+no more than 25 separately executed items or repeated external changes, then
+checkpoint. Do not accept platform-specific work unless it is already assigned to your
+role.
+
+### What the 25-item cap counts
+
+Assignment is not execution. Codex may read, count, sort, store or upload one complete
+authorized assignment file even when that file contains more than 25 rows. It must keep
+the artifact intact and verify the whole result; it must not silently stop at row 25.
+
+The cap begins when Codex performs the listed jobs one by one or creates/changes
+separate external records. For example, uploading one document containing 150 issue
+descriptions is one artifact action. Turning those descriptions into separate GitHub
+Issues, or resolving them separately, is execution and must checkpoint after every 25.
+Receiving the complete list never authorizes doing the work inside it.
 
 ## Every time you finish
 
 ```
 1. Write my row into COMPLETED_LEDGER.md with the proof attached.
 2. Remove that row from OPEN_REGISTER.md.
-3. Update MASTER_CURSOR.md with what is next, or leave it clear for Abilash.
+3. Update MASTER_CURSOR.md with what is next, or leave it clear for Abhilash.
 4. List anything I left open, with the reason in one line.
 Show me all of it before you save.
 ```
 
-Gate 0 has no override: medical claims, dosage, certification, legal text and spend are flagged, never fixed.
+The confirmed local Gate 0 has no override. Read the active gate IDs in `GATES.md`,
+flag the exact crossed ID and follow its approval/evidence path. There is no single
+Kairali-wide list; a different legal entity, unit, jurisdiction or purpose uses a
+separate confirmed profile.

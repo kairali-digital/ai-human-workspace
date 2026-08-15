@@ -1,0 +1,50 @@
+{
+  "company": "REPLACE WITH COMPANY OR GROUP",
+  "compliance_owner": "REPLACE WITH CONFIRMING PERSON OR ROLE",
+  "confirmed_by": "NOT CONFIRMED",
+  "confirmed_utc": "2000-01-01T00:00:00Z",
+  "gates": [
+    {
+      "action": "STOP_AND_ESCALATE",
+      "approval_owner": "REPLACE WITH APPROVAL OWNER",
+      "evidence_required": [
+        "REPLACE WITH REQUIRED APPROVAL OR PROOF"
+      ],
+      "gate_id": "REPLACE-GATE-001",
+      "name": "REPLACE WITH GATE NAME",
+      "requirement": "REPLACE WITH THE REQUIRED STOP OR APPROVAL PATH",
+      "source_ids": [
+        "REPLACE-SOURCE-001"
+      ],
+      "trigger": "REPLACE WITH THE EXACT TRIGGER"
+    }
+  ],
+  "jurisdictions": [
+    "REPLACE WITH COUNTRY / STATE / LOCAL JURISDICTION"
+  ],
+  "legal_entity": "REPLACE WITH EXACT LEGAL ENTITY",
+  "operating_units": [
+    "REPLACE WITH EXACT OPERATING UNIT"
+  ],
+  "profile_id": "replace-profile-id",
+  "purpose_scope": "REPLACE WITH THIS WORKER'S EXACT PURPOSE",
+  "review_due": "2000-01-01",
+  "schema": "ai-human.gate-profile/v1",
+  "sources": [
+    {
+      "authority": "REPLACE WITH ISSUING AUTHORITY",
+      "checked_utc": "2000-01-01T00:00:00Z",
+      "kind": "LAW_OR_REGULATION",
+      "locator": "REPLACE WITH OFFICIAL URL OR CONTROLLED DOCUMENT LOCATOR",
+      "source_id": "REPLACE-SOURCE-001",
+      "status": "VERIFIED_CURRENT",
+      "title": "REPLACE WITH CURRENT AUTHORITATIVE SOURCE TITLE"
+    }
+  ],
+  "status": "DRAFT",
+  "unknowns": [
+    "Research the current requirements and obtain compliance-owner confirmation."
+  ],
+  "unverified_leads": [],
+  "user_relationship": "REPLACE WITH EMPLOYEE / OWNER / CONTRACTOR / EXTERNAL USER / OTHER"
+}

@@ -33,11 +33,11 @@ Change nothing yet.
 
 ## 1. Confirm the ruled site (only after Sunaj's inventory sheet exists)
 
-The standing sort is already ruled: brochure sites port; shops, booking and membership sites stay on WordPress; blogs wait for a later run. Do not reopen that decision. Abilash rules which specific site is first.
+The standing sort is already ruled: brochure sites port; shops, booking and membership sites stay on WordPress; blogs wait for a later run. Do not reopen that decision. Abhilash rules which specific site is first.
 
 ```
 Read agents/web/AGENTS.md, agents/web/BRIEF.md and the current Web-lane state.
-Confirm that Sunaj's inventory exists and name the one brochure-site task Abilash has ruled live.
+Confirm that Sunaj's inventory exists and name the one brochure-site task Abhilash has ruled live.
 If no site is ruled live, stop and record the missing owner decision. Change nothing.
 ```
 
@@ -105,11 +105,12 @@ Final check on this site:
 Give me go or no-go, and the reason.
 ```
 
-**Standing answers — do not come to Abilash for these.** Structural fidelity, not
+**Standing answers — do not come to Abhilash for these.** Structural fidelity, not
 pixel-perfect. Brand tokens beat legacy colours. Content copies across as-is. Tweaks
 are limited to tokens, type, spacing and images — anything else is a post-launch task.
 Forms are never cloned. Escalate only for: a site that fits no sort rule, a rule that
-keeps failing you, or anything touching medical claims, dosage, certification, legal or spend.
+keeps failing you, an active local Gate 0 ID, or an uncertain compliance status that
+the named compliance owner has not confirmed.
 
 ---
 
@@ -119,7 +120,7 @@ keeps failing you, or anything touching medical claims, dosage, certification, l
 I am closing this session.
 1. Write my row into COMPLETED_LEDGER.md with the proof attached.
 2. Remove that row from OPEN_REGISTER.md.
-3. Show Abilash the proof and next safe action. Wait for Abilash to rule the cursor; Codex may record that ruling. Do not overwrite MASTER_CURSOR.md yourself.
+3. Show Abhilash the proof and next safe action. Wait for Abhilash to rule the cursor; Codex may record that ruling. Do not overwrite MASTER_CURSOR.md yourself.
 4. List anything I left open, with the reason in one line.
 Show me all of it before you save.
 ```

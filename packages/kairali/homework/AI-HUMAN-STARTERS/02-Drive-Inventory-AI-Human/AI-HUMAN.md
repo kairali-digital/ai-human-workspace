@@ -6,7 +6,7 @@ in this folder is authoritative.
 ## Start every session
 
 1. Read `PARAMETERS.md`, `MASTER_CURSOR.md`, `OPEN_REGISTER.md`, and `TODAY.md`.
-2. Read `FACTS.md`, `DECISIONS.md`, `TOOLBOX.md`, and `GATES.md` only as needed for the
+2. Read `FACTS.md`, `DECISIONS.md`, `TOOLBOX.md`, `GATES.md` and `WORK-GATES.md` only as needed for the
    live task.
 3. Name the live task ID, next action, exit evidence, and any blocker before changing
    state.
@@ -18,7 +18,7 @@ in this folder is authoritative.
 1. Work on one task ID at a time.
 2. Keep each batch within the cap in `PARAMETERS.md`.
 3. Record a new idea in `OPEN_REGISTER.md`; do not execute it mid-task.
-4. Use only tools and actions allowed by `TOOLBOX.md` and `GATES.md`.
+4. Use only tools and actions allowed by `TOOLBOX.md`, `GATES.md` and `WORK-GATES.md`.
 5. After each batch or state change, update the cursor, today table, and evidence.
 6. Mark work complete only after the result and its proof are available.
 

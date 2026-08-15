@@ -4,17 +4,14 @@ import "./globals.css";
 
 const geist = Geist({ subsets: ["latin"], variable: "--font-sans" });
 const geistMono = Geist_Mono({ subsets: ["latin"], variable: "--font-mono" });
-
-const siteUrl = "https://kairali-ai-method.vercel.app";
+const SITE_URL = "https://kairali-ai-method.vercel.app";
 
 export const metadata: Metadata = {
-  metadataBase: new URL(siteUrl),
-  title: "Kairali AI Method | AI-Human Workspace",
-  description: "The public AI-Human Workspace portal for approved Kairali training, setup, homework, updates, and technical resources.",
-  applicationName: "Kairali AI Method",
-  alternates: {
-    canonical: "/",
-  },
+  metadataBase: new URL(SITE_URL),
+  title: "AI-Human Workspace",
+  description: "Choose the Kairali employee or reusable AI-Human edition, install it in five visible steps, and prove when it is on, off or removed.",
+  applicationName: "AI-Human Workspace",
+  alternates: { canonical: "/" },
   robots: {
     index: true,
     follow: true,
@@ -28,11 +25,10 @@ export const metadata: Metadata = {
   },
   referrer: "no-referrer",
   openGraph: {
-    title: "Kairali AI Method | AI-Human Workspace",
-    description: "The public portal for the Kairali AI Method and its approved AI-Human Workspace resources.",
+    title: "AI-Human Workspace",
+    description: "Two clean editions with beginner setup, troubleshooting and reversible lifecycle controls.",
     type: "website",
-    url: siteUrl,
-    siteName: "Kairali AI Method",
+    url: "/",
   },
 };
 

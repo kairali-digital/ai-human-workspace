@@ -6,6 +6,14 @@ import hashlib
 import json
 from pathlib import Path
 
+from validate_release import (
+    path_uses_symlink,
+    portable_path,
+    read_json,
+    release_inventory,
+    safe_relative,
+)
+
 
 def sha256(path):
     digest = hashlib.sha256()
@@ -41,40 +49,47 @@ def main():
     args = parser.parse_args()
     root = Path(args.root).resolve()
     manifest_path = root / "release-manifest.json"
-    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest = read_json(manifest_path)
     for record in manifest["managed_files"]:
-        record["sha256"] = sha256(root / record["source"])
+        source = str(record.get("source", ""))
+        if not safe_relative(source):
+            raise ValueError("unsafe managed source: " + repr(source))
+        if path_uses_symlink(root, source):
+            raise ValueError("managed source may not use symbolic links: " + source)
+        source_path = root / Path(portable_path(source))
+        if not source_path.is_file():
+            raise ValueError("managed source missing: " + source)
+        record["sha256"] = sha256(source_path)
     atomic_json(manifest_path, manifest)
 
     component_path = root / "component-manifest.json"
-    components = json.loads(component_path.read_text(encoding="utf-8"))
+    components = read_json(component_path)
     if components.get("version") != manifest.get("version"):
         raise ValueError("component and release manifest versions differ")
     if components.get("repository") != manifest.get("repository"):
         raise ValueError("component and release manifest repositories differ")
     for component in components["components"]:
-        digest, count = tree_sha256(root / component["source"])
+        source = str(component.get("source", ""))
+        if not safe_relative(source):
+            raise ValueError("unsafe component source: " + repr(source))
+        if path_uses_symlink(root, source):
+            raise ValueError("component source may not use symbolic links: " + source)
+        component_root = root / Path(portable_path(source))
+        if not component_root.is_dir():
+            raise ValueError("component source missing: " + source)
+        digest, count = tree_sha256(component_root)
         component["tree_sha256"] = digest
         component["file_count"] = count
     atomic_json(component_path, components)
 
-    included = {}
-    # Portal source and hosted training binaries have their own manifest and CI
-    # gate. They must not enter the installable workspace release proof.
-    ignored_parts = {".git", ".pytest_cache", "__pycache__", "dist", "portal"}
-    for path in sorted(root.rglob("*")):
-        if (
-            not path.is_file()
-            or any(part in ignored_parts for part in path.parts)
-            or path.name == "release-proof.json"
-            or path.suffix == ".pyc"
-            or path.name.endswith((".write-temp", ".update-temp", ".build-temp"))
-        ):
-            continue
-        included[str(path.relative_to(root))] = sha256(path)
+    included, inventory_failures = release_inventory(root)
+    if inventory_failures:
+        raise ValueError("; ".join(inventory_failures))
     proof = {
         "approval_status": manifest["approval_status"],
+        "automatic_update_eligible": manifest.get("automatic_update_eligible", False),
         "files": included,
+        "release_status": manifest.get("release_status", "RELEASED"),
         "repository": manifest["repository"],
         "schema": "ai-human.workspace-release-proof/v1",
         "version": manifest["version"],

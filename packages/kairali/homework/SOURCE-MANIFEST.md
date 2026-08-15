@@ -17,7 +17,7 @@
   with a durable checkpoint after each batch and never opens or changes Drive files.
 - Owner instruction H-36, 13 Aug 2026: Email Triage asks each employee for a preferred
   daily local time, produces a concise importance brief through the Gmail connector,
-  and follows Abilash's proven separation of briefing, conservative reversible filing
+  and follows Abhilash's proven separation of briefing, conservative reversible filing
   and false-positive audit. The employee explicitly rules brief-only or safe-filing
   mode; permanent Gmail filters remain human-reviewed and are not silently changed.
 - Owner instruction H-37, 13 Aug 2026: the optional LinkedIn worker asks each employee
@@ -38,6 +38,10 @@
   only after validation. The shared kit being available must not be confused with an
   employee worker being activated. Email and Full Drive are required; `TEST 25` is
   Drive setup proof only; Saturday LinkedIn remains optional.
+- Owner instruction H-44, 15 Aug 2026: supersede the portal-wide noindex choice. The
+  portal source is indexable with a canonical URL, robots.txt and sitemap; download
+  binaries retain a scoped noindex header. Indexability is not release approval, and
+  the v2 candidate remains local until a separate rollout ruling.
 - Owner instruction H-41, 13 Aug 2026: every announced release uses a read-only
   `CHECK FOR KAIRALI UPDATE`, live-task deferral, explicit `UPDATE NOW` approval at a
   safe checkpoint, verified backup and hashes, separately managed layers, an update

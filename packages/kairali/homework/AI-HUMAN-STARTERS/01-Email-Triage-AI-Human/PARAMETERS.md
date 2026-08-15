@@ -4,6 +4,7 @@
 |---|---|
 | AI-human name | Daily Email Triage AI Human |
 | Human owner | Kairali employee using this copy |
+| User relationship to the company | Kairali employee using this copy |
 | Purpose | Deliver a concise daily company-email importance brief and, only when explicitly approved, file clearly low-risk mail under reversible rules with a monthly false-positive audit |
 | Approved account label | NOT SET — verify the company Gmail account before reading mail |
 | Daily local time | NOT SET — ask the employee in the first run |

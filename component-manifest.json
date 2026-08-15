@@ -3,11 +3,11 @@
   "components": [
     {
       "description": "Complete Kairali people, homework and governed-skill reference kit",
-      "file_count": 98,
+      "file_count": 100,
       "id": "kairali-company-rollout",
       "install_policy": "COMPANY_PROFILE",
       "source": "packages/kairali",
-      "tree_sha256": "909563f6942a879f5edccf531ee6a846bf7f479205debcc9803a2f8f49bf54df",
+      "tree_sha256": "ac548854859b6465b7cddf8c7deeca212a19627a7eb2ed5e954fe38848afc0b8",
       "type": "reference-pack"
     },
     {
@@ -16,7 +16,7 @@
       "id": "kairali-akshar-marketing-science",
       "install_policy": "EXPLICIT_ROLE_OPT_IN",
       "source": "packages/kairali/skills/kairali-akshar-marketing-science",
-      "tree_sha256": "3a06ff3f621d7637daca29f6cde34ce5e64924c56f01d7ecb8cef148c733193e",
+      "tree_sha256": "882b6aaeedd70fe26757f76d84b9a66fa02d6306777bf0a1b2a9bfa28ba50c2d",
       "type": "skill"
     },
     {
@@ -25,11 +25,12 @@
       "id": "kairali-rahul-sales-system",
       "install_policy": "EXPLICIT_ROLE_OPT_IN",
       "source": "packages/kairali/skills/kairali-rahul-sales-system",
-      "tree_sha256": "0800ecf09f2576628f0cc31d6a72f0884053d5e55053339692d032f3fe31314e",
+      "tree_sha256": "44185a213b8c5d01a0b860ce95b25ff868bc9f3a4011f9b66930fa3fd53ff962",
       "type": "skill"
     }
   ],
+  "release_status": "RELEASED",
   "repository": "kairali-digital/ai-human-workspace",
   "schema": "ai-human.component-release/v1",
-  "version": "1.5.1"
+  "version": "2.0.0"
 }

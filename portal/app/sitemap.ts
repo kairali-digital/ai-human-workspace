@@ -1,13 +1,7 @@
 import type { MetadataRoute } from "next";
 
-const siteUrl = "https://kairali-ai-method.vercel.app";
+const SITE_URL = "https://kairali-ai-method.vercel.app";
 
 export default function sitemap(): MetadataRoute.Sitemap {
-  return [
-    {
-      url: siteUrl,
-      changeFrequency: "monthly",
-      priority: 1,
-    },
-  ];
+  return [{ url: SITE_URL }];
 }

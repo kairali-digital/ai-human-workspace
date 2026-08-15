@@ -24,6 +24,43 @@ separately. Validate and show the receipt before recording completion.
 GitHub Desktop `Fetch origin`/`Pull origin` synchronizes only an assigned repository.
 It never replaces the managed-release lifecycle.
 
+## Mandatory company and Gate 0 identity
+
+There is no Kairali-wide compliance shortcut in the public kit. Before installing a
+worker, the helper asks one question at a time for the exact legal entity, operating
+unit, jurisdictions, purpose, employee relationship and compliance owner. It checks
+current authoritative sources for that scope, records historical charts or old
+profiles only as unverified leads, and shows every proposed gate, approval owner and
+evidence requirement to the compliance owner.
+
+A centre operation, healing-village operation, products business or any other
+materially different entity/unit gets a separate private gate profile and separate
+worker. Do not infer current certification, registration, tax, clinical or other
+status from shared branding or another unit. The helper cannot report `ACTIVE` while
+the profile is unconfirmed, overdue, mismatched or contains an unresolved question.
+
+## Edition and owner off-switch rule
+
+Kairali employees receive the Kairali Employee Edition. Never substitute the generic
+Reusable Edition or combine their files. Stop when an edition says `LOCAL_BUILD_ONLY`;
+that candidate is for testing, not employee installation.
+
+If the employee asks to stop the Abhilash system, do not argue or require additional
+justification. Offer one result at a time:
+
+- `SUSPENDED`: preserve work and external connections; disable managed rules,
+  automations and automatic updates; verify `SUSPENDED` with `PASS` in a new chat.
+- `ACTIVE`: resume and restore the prior automatic-update setting; verify `ACTIVE`
+  with `PASS`.
+- `UNINSTALLED`: checkpoint any live task, archive `.ai-human` and every active
+  AI-human adapter, preserve company/employee work and verify `UNINSTALLED` with
+  `PASS` plus the recovery receipt.
+
+Local suspension or uninstall never proves Gmail, Drive, GitHub, Computer Use or
+another external permission is revoked. Uninstall the plugin, manage its connector
+separately, review the named operating-system permission when relevant, then use a new
+chat to prove that access is unavailable. Give only one unavoidable click at a time.
+
 ## Three-worker activation rule
 
 The public kit makes the Daily Email Triage, Full Drive Index and optional Saturday
@@ -45,16 +82,27 @@ permission at a time.
 Never infer “live” from downloaded, installed or connected. Verify the visible worker
 proof and evidence log.
 
-## How the employee starts
+## How the employee starts in five visible steps
 
-1. If ChatGPT is open, start a new chat.
-2. If ChatGPT is not installed, open a web browser, go to `chatgpt.com`, sign in with the approved company account, and start a new chat.
-3. Paste the complete message below. Do not shorten it.
+1. Click the Kairali Employee Edition download.
+   **DONE WHEN:** its ZIP is visible in Downloads.
+2. Double-click the ZIP once.
+   **DONE WHEN:** `KAIRALI-EMPLOYEE-EDITION` appears as a normal folder.
+3. Open ChatGPT with the approved company account and start a new chat. If the app is
+   absent, start from `chatgpt.com` in a normal browser.
+   **DONE WHEN:** the new chat box and approved account are visible.
+4. Open `START-HERE.md` and paste the complete message below. Do not shorten it.
+   **DONE WHEN:** Codex is open in the correct employee working project.
+5. Paste the startup test from `START-HERE.md`.
+   **DONE WHEN:** mode is `ACTIVE`, company/employee/role/purpose are correct, the live
+   task is accurate and the validator reports `PASS`.
 
 ```text
 I am stuck setting up my Kairali AI workspace. I do not know Terminal, Python, Git, GitHub, folders, projects or Codex.
 
 Be my Setup Helper.
+
+Before installing, ask me one question at a time for the exact company or group, legal entity, operating unit, jurisdictions, purpose, my relationship to the company, and compliance owner. Check current authoritative sources, treat historical charts only as leads, create a separate confirmed Gate 0 profile for each materially different entity or unit, and do not report ACTIVE while compliance questions remain.
 
 1. Work out whether I am on Mac or Windows and check what is already installed before changing anything.
 2. Do every approved safe setup step you can yourself.
@@ -65,7 +113,7 @@ Be my Setup Helper.
 7. Keep permissions on Ask for approval. Never choose Full access.
 8. For the shared Kairali workspace, use GitHub Desktop buttons. For a standalone local project, do not install GitHub unless it is actually needed.
 9. Continue until ChatGPT is installed, Codex is open, the correct project is connected, AGENTS.md is visible, approved apps are connected when required, and the startup test passes.
-10. If you cannot continue safely, write one OPEN_REGISTER.md row with the failed step, exact error, what you checked, and the one human access or decision needed. Then tell me whether Ambuj or Abilash must help.
+10. If you cannot continue safely, write one OPEN_REGISTER.md row with the failed step, exact error, what you checked, and the one human access or decision needed. Then tell me whether Ambuj or Abhilash must help.
 
 Do not teach me how the machinery works unless I ask. Start now by checking what I already have.
 ```

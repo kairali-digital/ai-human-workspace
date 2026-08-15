@@ -30,13 +30,19 @@ jobs:
       VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
       VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Refuse an unapproved release or candidate-only portal
+        working-directory: ${{ github.workspace }}
+        run: |
+          python3 scripts/validate_release.py .
+          python3 scripts/validate_portal_deploy.py .
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: "22"
           cache: npm
           cache-dependency-path: portal/package-lock.json
       - run: npm ci
+      - run: npm audit --omit=dev
       - run: npm run validate
       - run: npm run typecheck
       - name: Install pinned Vercel CLI

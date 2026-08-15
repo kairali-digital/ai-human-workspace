@@ -46,7 +46,7 @@ replace the entity profile.
 
 ## Update v2.0.0 or held v2.0.1, or migrate an older pre-profile worker
 
-Version 2.1.0 is `BACKWARD_COMPATIBLE` from a configured v2.0.0 or held v2.0.1 worker and
+Version 2.1.0 is `BACKWARD_COMPATIBLE` from a configured v2.0.0, held v2.0.1 or v2.0.2 worker and
 preserves user-owned state. Use the normal read-only check and checkpoint update for
 that path. If the worker predates v2.0.0 or has no confirmed entity profile, the first
 v2 step is still `SETUP_MIGRATION_REQUIRED`. At a real checkpoint, run the released

@@ -36,7 +36,10 @@
    each one is a batch unit. Stop each execution batch at the cap and checkpoint.
 4. A change is not complete until the result is verified and recorded.
 5. Capture new ideas in `OPEN_REGISTER.md`; do not interrupt the live task.
-6. Never invent a number, fact, source, permission, approval or completion.
+6. Never invent a number, fact, source, permission, approval or completion. Use only
+   what the named source states. When a requested artifact field is absent, write
+   `Not provided in source` or use a clearly labelled placeholder; do not infer an
+   audience, objective, channel, date, claim, owner or other fact from context.
 7. An available tool is not permission; check `TOOLBOX.md`, `GATES.md` and
    `WORK-GATES.md`. The starter's standing worker-local read and reversible-artifact
    permissions apply only inside the declared task and never authorize an external,

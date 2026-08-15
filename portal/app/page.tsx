@@ -74,7 +74,7 @@ export default async function Home() {
               Reusable edition
             </a>
           </div>
-          <p className="release-note">These are separate, verified public downloads. Configured v2.0.0 and held v2.0.1 workers can take v2.1.0 at a safe checkpoint with user-owned state preserved. Pre-v2 workers first use the guided exact-scope Gate 0 migration.</p>
+          <p className="release-note">These are separate, verified public downloads. Configured v2.0.0, held v2.0.1 and v2.0.2 workers can take v2.1.0 at a safe checkpoint with user-owned state preserved. Pre-v2 workers first use the guided exact-scope Gate 0 migration.</p>
         </div>
         <div className="hero-media">
           <Image
@@ -283,7 +283,7 @@ export default async function Home() {
           <article>
             <span>4</span>
             <h3>Prove the exact worker.</h3>
-            <p>A configured v2.0.0 or held v2.0.1 worker moves to v2.1.0 with user-owned state preserved. A pre-v2 worker completes the guided Gate 0 migration first. Keep the version, validation receipt and preserved-state proof.</p>
+            <p>A configured v2.0.0, held v2.0.1 or v2.0.2 worker moves to v2.1.0 with user-owned state preserved. A pre-v2 worker completes the guided Gate 0 migration first. Keep the version, validation receipt and preserved-state proof.</p>
           </article>
         </div>
         <div className="update-boundary">
@@ -343,7 +343,7 @@ export default async function Home() {
         <div>
           <p className="eyebrow">Technical and owner path</p>
           <h2 id="technical-heading">GitHub stays the approved source of truth.</h2>
-          <p>v2.1.0 is the approved public release. Its exact source, checksums and release evidence are published together. Fetch/Pull updates a repository checkout, not an installed worker; configured v2.0.0 or held v2.0.1 workers use the checked update path and pre-v2 workers use the guided migration.</p>
+          <p>v2.1.0 is the approved public release. Its exact source, checksums and release evidence are published together. Fetch/Pull updates a repository checkout, not an installed worker; configured v2.0.0, held v2.0.1 and v2.0.2 workers use the checked update path and pre-v2 workers use the guided migration.</p>
         </div>
         <div className="technical-links">
           <a href={assetLink(release, "ai-human-workspace-")} target="_blank" rel="noreferrer">

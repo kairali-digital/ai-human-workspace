@@ -13,7 +13,7 @@
       "target": ".ai-human/system/AI-HUMAN.md"
     },
     {
-      "sha256": "0114c6b06fcc12e3f9b1299647c1ba97aabdad5c6b7206e5af1c8ccb528ce456",
+      "sha256": "0564f6a05aa75d2fd3db1a8288a9585001c6c13e60cae7a09e3b509558094825",
       "source": "core/AGENT-RULES.md",
       "target": ".ai-human/system/AGENT-RULES.md"
     },

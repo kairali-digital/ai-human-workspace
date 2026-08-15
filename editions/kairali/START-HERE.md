@@ -65,7 +65,7 @@ verified `SUSPENDED`.
 Open the existing employee worker in Codex, start a new chat and paste `CHECK FOR
 KAIRALI UPDATE`. Use the complete checked prompt in
 `workspace/packages/kairali/UPDATE-WORKFLOW.md`. The check changes nothing. If the
-worker is configured v2.0.0 or held v2.0.1 and idle, say `UPDATE NOW` to apply v2.1.0
+worker is configured v2.0.0, held v2.0.1 or v2.0.2 and idle, say `UPDATE NOW` to apply v2.1.0
 with a backup, managed-file-only update and validation. A pre-v2 worker first completes
 the guided exact-scope Gate 0 migration.
 

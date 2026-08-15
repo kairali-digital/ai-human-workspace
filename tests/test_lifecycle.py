@@ -808,6 +808,12 @@ class LifecycleTests(unittest.TestCase):
         self.assertIn("cannot support an active gate", sources)
         self.assertIn("Old internal compliance chart", sources)
 
+    def test_missing_artifact_fields_remain_explicitly_unknown(self):
+        rules = (ROOT / "core/AGENT-RULES.md").read_text(encoding="utf-8")
+        self.assertIn("Not provided in source", rules)
+        for field in ("audience", "objective", "channel", "date", "claim", "owner"):
+            self.assertIn(field, rules)
+
     def test_windows_manifest_separator_normalizes_for_required_targets(self):
         self.assertEqual(
             AI_HUMAN.portable_key(r".ai-human\system\AI-HUMAN.md"),

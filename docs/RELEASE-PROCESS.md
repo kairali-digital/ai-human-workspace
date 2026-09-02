@@ -18,8 +18,10 @@ Before release:
    incomplete or extra proof entry and every symbolic link in the governed payload.
 3. Run release validation, lifecycle/component tests, beginner regression and a Git-history secret
    scan.
-4. Review the complete diff and public repository contents.
-5. Tag exactly the validated commit and create release notes from the changelog.
+4. Build the six GitHub release assets, extract the workspace ZIP and require it to
+   pass the same immutable release proof as the tagged repository.
+5. Review the complete diff and public repository contents.
+6. Tag exactly the validated commit and create release notes from the changelog.
 
 A local candidate uses `approval_status` and `release_status` equal to
 `LOCAL_BUILD_ONLY`, keeps `automatic_update_eligible` false and runs

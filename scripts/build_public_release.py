@@ -11,7 +11,10 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-IGNORED_PARTS = {".git", ".pytest_cache", "__pycache__", "dist", "portal"}
+IGNORED_PARTS = {
+    ".git", ".next", ".pytest_cache", ".vercel", "__pycache__", "dist",
+    "node_modules", "tsconfig.tsbuildinfo",
+}
 ZIP_TIME = (2026, 8, 15, 0, 0, 0)
 
 
@@ -84,6 +87,26 @@ def verify_archive(path, expected_prefix, expected_count):
             raise ValueError("public release ZIP CRC verification failed: " + path.name)
 
 
+def verify_workspace_matches_proof(files, proof):
+    recorded = proof.get("files")
+    if not isinstance(recorded, dict):
+        raise ValueError("release proof files must be a JSON object")
+    actual = {relative: path for path, relative in files}
+    expected_paths = set(recorded) | {"release-proof.json"}
+    if set(actual) != expected_paths:
+        missing = sorted(expected_paths - set(actual))
+        extra = sorted(set(actual) - expected_paths)
+        detail = []
+        if missing:
+            detail.append("missing " + ", ".join(missing))
+        if extra:
+            detail.append("extra " + ", ".join(extra))
+        raise ValueError("public workspace ZIP differs from release proof: " + "; ".join(detail))
+    for relative, expected_hash in recorded.items():
+        if sha256(actual[relative]) != expected_hash:
+            raise ValueError("public workspace ZIP source hash differs from proof: " + relative)
+
+
 def build(root, output):
     manifest = read_json(root / "release-manifest.json")
     components = read_json(root / "component-manifest.json")
@@ -115,6 +138,7 @@ def build(root, output):
     notes_name = notes_source.name
     vet_name = vet_source.name
     workspace_files = collect_files(root, root, IGNORED_PARTS)
+    verify_workspace_matches_proof(workspace_files, proof)
     company_root = root / "packages/kairali"
     company_files = collect_files(company_root, company_root, {"__pycache__"})
 

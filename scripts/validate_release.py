@@ -139,6 +139,7 @@ INTRINSIC_NEVER_MANAGED = LOCAL_STATE | {
 }
 PROOF_IGNORED_PARTS = {
     ".git", ".next", ".pytest_cache", ".vercel", "__pycache__", "dist", "node_modules",
+    "tsconfig.tsbuildinfo",
 }
 PROOF_REQUIRED_KEYS = {
     "approval_status", "automatic_update_eligible", "files", "release_status",

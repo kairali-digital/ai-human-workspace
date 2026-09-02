@@ -3604,6 +3604,10 @@ class LifecycleTests(unittest.TestCase):
         self.assertEqual(self.run_cli("validate", worker).returncode, 0)
 
     def test_release_proof_matches_the_exact_tracked_payload(self):
+        portal = self.release / "portal"
+        portal.mkdir()
+        generated_cache = portal / "tsconfig.tsbuildinfo"
+        generated_cache.write_text("generated build cache\n", encoding="utf-8")
         build = subprocess.run(
             [sys.executable, str(ROOT / "scripts/build_release.py"), str(self.release)],
             cwd=ROOT, text=True, capture_output=True, check=False,
@@ -3614,6 +3618,7 @@ class LifecycleTests(unittest.TestCase):
 
         proof_path = self.release / "release-proof.json"
         proof = json.loads(proof_path.read_text(encoding="utf-8"))
+        self.assertNotIn("portal/tsconfig.tsbuildinfo", proof["files"])
         proof["files"]["AGENTS.md"] = "0" * 64
         proof_path.write_text(json.dumps(proof, indent=2, sort_keys=True) + "\n", encoding="utf-8")
         failures = VALIDATOR.validate_release_proof(self.release, manifest)

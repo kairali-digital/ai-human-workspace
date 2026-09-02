@@ -41,7 +41,7 @@
   - Python 3.9.6: `python3 -m unittest discover -s tests -v` — 96 tests, `OK`, 53.356s.
   - Python 3.12: `python3.12 -m unittest discover -s tests -v` — 96 tests, `OK`, 51.050s.
 - Public release validator: `python3 scripts/validate_release.py .` — `PASS`, 12 managed
-  files, three component entries, secret/absolute-path scan `PASS`. The 282-file release
+  files, three component entries, secret/absolute-path scan `PASS`. The 281-file release
   proof includes portal source, both current ZIPs, their checksums and review evidence;
   only generated/build/cache directories are excluded.
 - Editions and readback:

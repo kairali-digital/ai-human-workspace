@@ -65,6 +65,15 @@ the repetition and value. The user chooses `PROPOSE`, `LATER` or `REJECT`. Only 
 designated supervisor may activate a fully specified, proof-tested proposal or approve
 it for a future company release. Proposals never contain secrets or credentials.
 
+## Quarterly improvement
+
+The optional quarterly loop reviews only user-approved worker evidence and dated,
+linked research choices. It keeps configuration, schedule proof, research receipts and
+read-only recommendations in private user-owned state. A recommendation always returns
+to human review through `PROPOSE`, `LATER` or `REJECT`; it never installs or activates
+a capability by itself. Scheduler availability, the visible Scheduled card and the
+next run are verified separately from local configuration.
+
 ## Isolation
 
 Every user, specialist or project uses a separate worker folder. Shared facts have

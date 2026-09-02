@@ -30,6 +30,7 @@ Public repository and approved releases
 Company A / user worker           Company B / user worker
   ├── .ai-human/system/           ├── .ai-human/system/   updated
   ├── .ai-human/control/          ├── .ai-human/control/  isolated Gate 0 profile
+  ├── .ai-human/improvement/      ├── .ai-human/improvement/ private and preserved
   ├── COMPANY.md                  ├── COMPANY.md          preserved
   ├── GATES.md                    ├── GATES.md            generated and verified
   ├── PARAMETERS.md               ├── PARAMETERS.md       preserved
@@ -38,8 +39,8 @@ Company A / user worker           Company B / user worker
 ```
 
 Updates are allowed to manage only the files named in `release-manifest.json`. They do
-not manage company facts, role instructions, task state, credentials, evidence or
-personal files.
+not manage company facts, role instructions, task state, credentials, evidence,
+private improvement state or personal files.
 
 ## Start here
 
@@ -56,9 +57,9 @@ personal files.
 - Governed capability and fleet-update control plane:
   [`docs/GOVERNED-CAPABILITIES-AND-FLEET.md`](docs/GOVERNED-CAPABILITIES-AND-FLEET.md)
 
-v2.2.0 is the current owner-approved lifecycle-correction and personal-assistant
-release. It is backward-compatible for configured v2.0.0, held v2.0.1, v2.0.2 and
-v2.1.0 workers and keeps automatic update eligibility off. A pre-v2 worker still needs the
+v2.3.0 is the current owner-approved quarterly-improvement release. It is
+backward-compatible for configured v2.0.0, held v2.0.1, v2.0.2, v2.1.0 and v2.2.0
+workers and keeps automatic update eligibility off. A pre-v2 worker still needs the
 guided exact-scope Gate 0 setup migration before entering the v2 line. The release
 manifests are `APPROVED_BY_OWNER` / `RELEASED`; protected GitHub checks and live
 verification remain the publication evidence for each distribution channel.

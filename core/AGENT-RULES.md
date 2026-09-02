@@ -79,3 +79,7 @@
 13. A reusable capability remains a proposal until the user chooses `PROPOSE` and
     the designated supervisor approves its proof and scope. `LATER` and `REJECT` never
     activate it.
+14. Follow `QUARTERLY-IMPROVEMENT.md` for personalized improvement. Treat configuration
+    separately from scheduler proof, use only the user's approved source categories,
+    keep research source-linked and instruction-neutral, and return recommendations as
+    `REVIEW_REQUIRED` / `NOT_ACTIVATED`. Never silently install or activate a skill.

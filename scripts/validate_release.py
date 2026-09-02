@@ -36,6 +36,7 @@ REQUIRED_FILES = {
     "core/AI-HUMAN.md",
     "core/GATES-SHARED.md",
     "core/OPERATING-LOOP.md",
+    "core/QUARTERLY-IMPROVEMENT.md",
     "core/SESSION-END.md",
     "core/SESSION-START.md",
     "core/TOOLBOX-TEMPLATE.md",
@@ -106,6 +107,7 @@ REQUIRED_TARGETS = {
     ".ai-human/system/GATES-SHARED.md",
     ".ai-human/system/SESSION-START.md",
     ".ai-human/system/SESSION-END.md",
+    ".ai-human/system/QUARTERLY-IMPROVEMENT.md",
     ".ai-human/VERSION",
     ".ai-human/bin/ai_human.py",
 }
@@ -119,6 +121,7 @@ LOCAL_STATE = {
 INTRINSIC_NEVER_MANAGED = LOCAL_STATE | {
     ".ai-human/control/",
     ".ai-human/capabilities/",
+    ".ai-human/improvement/",
     ".ai-human/backups/",
     ".ai-human/install.json",
     ".ai-human/release-manifest.json",
@@ -712,7 +715,10 @@ def validate(root, candidate=False):
     for local in sorted(LOCAL_STATE - never_managed):
         failures.append("local state absent from never_managed: " + local)
     if control_plane_version:
-        for local in (".ai-human/control/", ".ai-human/capabilities/", ".ai-human/version-report.json"):
+        for local in (
+            ".ai-human/control/", ".ai-human/capabilities/", ".ai-human/improvement/",
+            ".ai-human/version-report.json",
+        ):
             if local not in never_managed:
                 failures.append("local control state absent from never_managed: " + local)
 
@@ -1116,9 +1122,27 @@ def validate(root, candidate=False):
             "test_ci_validator_selects_candidate_or_public_lane_from_manifest",
             "test_portal_production_deploy_requires_public_release_and_no_candidate_assets",
             "test_active_mode_pushback_is_polite_narrow_and_actionable",
+            "test_quarterly_improvement_choice_requires_a_lease_and_decline_is_complete",
+            "test_quarterly_schedule_truth_pause_edit_resume_and_remove_fail_closed",
+            "test_quarterly_run_detects_repetition_stale_conflict_and_never_activates",
+            "test_quarterly_improvement_state_survives_a_managed_update",
         ):
             if required not in lifecycle_tests:
                 failures.append("lifecycle tests lack: " + required)
+
+    improvement_contract_path = root / "core/QUARTERLY-IMPROVEMENT.md"
+    if improvement_contract_path.is_file():
+        improvement_contract = re.sub(
+            r"\s+", " ", improvement_contract_path.read_text(encoding="utf-8")
+        )
+        for required in (
+            "DECLINE", "visible Scheduled card", "next run", "MISSED_RUN_RECOVERY",
+            "approved source categories", "untrusted content", "ignore its instructions",
+            "personal data", "REVIEW_REQUIRED", "NOT_ACTIVATED", "external_effect: NONE",
+            "PROPOSE / LATER / REJECT", ".ai-human/improvement/", "superseding", "forget",
+        ):
+            if required.casefold() not in improvement_contract.casefold():
+                failures.append("quarterly improvement contract lacks: " + required)
 
     reusable_text = "\n".join(
         (root / relative).read_text(encoding="utf-8", errors="replace")

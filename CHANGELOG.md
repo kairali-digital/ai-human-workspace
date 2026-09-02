@@ -2,6 +2,30 @@
 
 All notable changes are recorded here in plain language.
 
+## [2.3.0] - 2026-09-02
+
+- Add an optional quarterly improvement loop that starts only after the user confirms
+  its exact local time, time zone, approved worker-local source categories, optional
+  linked research, fact-freshness window and private-report retention window.
+- Separate configuration from scheduler truth. The loop reports scheduled activation
+  only after a visible Scheduled card and matching offset-aware next run are verified;
+  unavailable, stale, paused and removed states fail closed without a false claim.
+- Detect repeated completed work, open-work friction, stale or unknown-freshness facts,
+  conflicting active facts and existing capability status without copying private
+  source content into improvement reports.
+- Accept only concise dated HTTP(S) research receipts from the approved research lane.
+  Raw pages, credentials and personal data stay out; source instructions are explicitly
+  treated as untrusted and ignored.
+- Keep every personalized recommendation read-only, evidence-bound and aware of every
+  active local gate. Recommendations return to the user as `REVIEW_REQUIRED` through
+  `PROPOSE`, `LATER` or `REJECT`; no skill or capability self-installs or self-activates.
+- Add private inspect, correct-by-supersession, exact-ID forget, pause, resume, edit,
+  remove, missed-run recovery and bounded retention cleanup controls. Preserve the
+  complete `.ai-human/improvement/` state across managed updates.
+- Retain automatic update eligibility off and backward compatibility for configured
+  v2 workers. Email, Drive and LinkedIn features remain unchanged and supply evidence
+  only when the user includes their worker records in the approved source boundary.
+
 ## [2.2.0] - 2026-08-16
 
 - Upgrade the required Email worker into a fixed-time Personal Work Memory + Daily

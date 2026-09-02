@@ -51,7 +51,9 @@ targets under `.ai-human/`.
 
 Company, owner, role, purpose, facts, decisions, tools, gates, cursor, register, today,
 ledger, evidence, automation records, credentials, browser sessions and personal files
-are never managed by a release.
+are never managed by a release. Private quarterly configuration, schedule proof,
+research receipts and read-only reports under `.ai-human/improvement/` are also
+preserved.
 
 The scheduled read-only check runs once on the first calendar day at 10:00 AM in the
 worker's confirmed local time zone. When that worker's automatic-update setting is

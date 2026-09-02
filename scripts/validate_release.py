@@ -17,7 +17,7 @@ REPOSITORY = "kairali-digital/ai-human-workspace"
 GOVERNED_WORKFLOW_SHA256 = {
     ".github/workflows/portal-deploy.yml": "a373f4a02abcbbccc73cd3d8954826ce801f5e588a2e5e27ced04b82bfee043c",
     ".github/workflows/portal.yml": "475f188109f987ec00072d235d704475ee09dc726e6eba1d688a46cb0ac69012",
-    ".github/workflows/validate.yml": "6b8189e91548a5916839d8afb3b022990422b842987011d0d57cb4fffc433f0e",
+    ".github/workflows/validate.yml": "a719dd0dae7428e3044c126b0f7b631b74f9e75cb0af42670533789761f37a90",
 }
 REQUIRED_FILES = {
     ".github/CODEOWNERS",
@@ -61,6 +61,7 @@ REQUIRED_FILES = {
     "editions/reusable/INSTALL-DISABLE-REMOVE.md",
     "editions/reusable/START-HERE.md",
     "release-manifest.json",
+    "requirements.txt",
     "packages/kairali/README.md",
     "packages/kairali/homework/COPY-PASTE-PROMPTS.txt",
     "packages/kairali/homework/EVERYONE-ELSE-AI-HUMAN-HOMEWORK-GUIDE.docx",

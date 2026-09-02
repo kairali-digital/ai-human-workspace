@@ -35,6 +35,9 @@ safer. It does not pretend that a project file can authorize a silent external a
 - Scheduled runs require the real current clock plus fresh visible proof of the following
   occurrence. Suspend and uninstall both require the external improvement schedule to
   be visibly removed first.
+- Cross-platform validation and both public editions include a hash-pinned first-party
+  IANA time-zone prerequisite so Windows applies the same schedule checks as macOS and
+  Linux; the Setup Helper handles it for beginners.
 
 ## Explicitly unavailable
 

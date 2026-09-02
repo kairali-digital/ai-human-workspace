@@ -14,8 +14,8 @@ It contains only the reusable workspace, lifecycle controls and generic starter 
    **DONE WHEN:** the new chat box is visible.
 4. Paste the Setup Helper message below. The helper checks the computer, creates one
    working copy in Documents, identifies the exact company/entity scope and its
-   confirmed Gate 0 profile, installs the local workspace and opens that working folder
-   in Codex. You do not type a command.
+   confirmed Gate 0 profile, installs the pinned time-zone prerequisite and local
+   workspace, and opens that working folder in Codex. You do not type a command.
    **DONE WHEN:** Codex is open with the new working folder as its local project.
 5. Paste the startup test below.
    **DONE WHEN:** the answer reports `ACTIVE`, names the exact entity, unit,

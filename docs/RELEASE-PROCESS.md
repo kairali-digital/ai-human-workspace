@@ -14,7 +14,7 @@ Before release:
 1. Update `core/VERSION`, `CHANGELOG.md`, `release-manifest.json` and
    `component-manifest.json` together.
 2. Run the release builder to refresh managed-file hashes, component-tree hashes and
-   the exact non-portal payload proof. Public validation rejects a missing, stale,
+   the exact source-and-portal payload proof. Public validation rejects a missing, stale,
    incomplete or extra proof entry and every symbolic link in the governed payload.
 3. Run release validation, lifecycle/component tests, beginner regression and a Git-history secret
    scan.

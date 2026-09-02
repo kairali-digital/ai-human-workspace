@@ -37,17 +37,17 @@
 
 ## Verification evidence
 
-- Full lifecycle suite after convergence fixes:
-  - Python 3.9.6: `python3 -m unittest discover -s tests -v` — 96 tests, `OK`, 53.356s.
-  - Python 3.12: `python3.12 -m unittest discover -s tests -v` — 96 tests, `OK`, 51.050s.
+- Full lifecycle suite after convergence fixes and the Windows dependency correction:
+  - Python 3.9.6: `python3 -m unittest discover -s tests -v` — 96 tests, `OK`, 56.550s.
+  - Python 3.12: `python3.12 -m unittest discover -s tests -v` — 96 tests, `OK`, 47.699s.
 - Public release validator: `python3 scripts/validate_release.py .` — `PASS`, 12 managed
-  files, three component entries, secret/absolute-path scan `PASS`. The 281-file release
+  files, three component entries, secret/absolute-path scan `PASS`. The 282-file release
   proof includes portal source, both current ZIPs, their checksums and review evidence;
   only generated/build/cache directories are excluded.
 - Editions and readback:
   - deterministic edition rebuild completed after the final source fixes;
-  - reusable checksum `aa207752c1ca0422de598fc11c55af789d54f2e3fa70a3f85009086a51225afb`;
-  - Kairali checksum `91eff73ea0552c3f8b92847c58e6f2a6ea7d372487058f8906205eba1abbb617`;
+  - reusable checksum `6bb4facccb68c70f1c99f20e6f5fd4eba80bb82f5e396983e69f8a12953a0f91`;
+  - Kairali checksum `44bf2035d2702d547f5895075d44d9abe4fb286cb489178cecc39ecfaf6b210c`;
   - both checksum files report `OK`;
   - Kairali archived runtime SHA-256 equals the managed runtime SHA-256
     `ed84d52a11e7522480556300f32f97dbc86eee168cf89e16e8addd5421e5384f`;
@@ -65,7 +65,7 @@
 - Secret checks:
   - current tracked tree after removing generated `.next`: no leaks;
   - both v2.4 archives, including nested archive depth 2: no leaks;
-  - Git history: 44 commits scanned, no leaks.
+  - Pre-publication committed history: no leaks.
 - Adversarial review records:
   - both Codex round-one reviews found and drove closure of update/recovery, publisher,
     fleet-proof, schedule, research, value and safe-disabled defects;
@@ -85,7 +85,7 @@
 
 | Area | Result | Evidence |
 |---|---|---|
-| Configuration and secrets | PASS | No embedded credential; current tree, nested v2.4 archives and 44-commit history scans clean |
+| Configuration and secrets | PASS | No embedded credential; current tree, nested v2.4 archives and committed-history scans clean |
 | Dependencies | PASS | Node 22 clean install and production audit with zero vulnerabilities |
 | Reliability and recovery | PASS | Mutex, preemptive stop, transaction journal, trusted-release rollback, downgrade export, explicit lease-divergence recovery |
 | Data/state safety | PASS | Managed-only update, state hash checks, retained decisions, bounded cleanup, recoverable component removal |

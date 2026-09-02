@@ -1875,6 +1875,7 @@ class LifecycleTests(unittest.TestCase):
             self.assertIn("AI-HUMAN-REUSABLE-EDITION/START-HERE.md", names)
             self.assertIn("AI-HUMAN-REUSABLE-EDITION/INSTALL-DISABLE-REMOVE.md", names)
             self.assertIn("AI-HUMAN-REUSABLE-EDITION/workspace/scripts/ai_human.py", names)
+            self.assertIn("AI-HUMAN-REUSABLE-EDITION/workspace/requirements.txt", names)
             self.assertIn(
                 "AI-HUMAN-REUSABLE-EDITION/workspace/company-profiles/template/GATE-PROFILE.example.json",
                 names,
@@ -1898,6 +1899,7 @@ class LifecycleTests(unittest.TestCase):
                 names,
             )
             self.assertIn("KAIRALI-EMPLOYEE-EDITION/workspace/scripts/ai_human.py", names)
+            self.assertIn("KAIRALI-EMPLOYEE-EDITION/workspace/requirements.txt", names)
             self.assertIn(
                 "KAIRALI-EMPLOYEE-EDITION/workspace/company-profiles/template/GATE-PROFILE.example.json",
                 names,
@@ -4154,7 +4156,7 @@ class LifecycleTests(unittest.TestCase):
         self.assertFalse((worker / ".ai-human/improvement").exists())
         self.assertTrue((worker / ".ai-human/control/downgrade-preparation.json").is_file())
         installed_contract = worker / ".ai-human/system/AI-HUMAN.md"
-        contract_before = installed_contract.read_text(encoding="utf-8")
+        contract_before = installed_contract.read_bytes()
         installed_contract.write_text("tampered managed contract\n", encoding="utf-8")
         failed_restore = self.run_cli("restore-downgrade", worker, expect=1)
         self.assertIn("restored worker validation failed", failed_restore.stderr)
@@ -4164,7 +4166,7 @@ class LifecycleTests(unittest.TestCase):
             "EXPORTED FOR DOWNGRADE",
             (worker / "AUTOMATIONS.md").read_text(encoding="utf-8"),
         )
-        installed_contract.write_text(contract_before, encoding="utf-8")
+        installed_contract.write_bytes(contract_before)
         restored = self.run_cli("restore-downgrade", worker)
         self.assertIn("RESTORE: PASS", restored.stdout)
         self.assertEqual(sha256(worker / ".ai-human/improvement/config.json"), config_hash)

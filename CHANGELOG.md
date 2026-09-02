@@ -38,6 +38,8 @@ All notable changes are recorded here in plain language.
   that local files can authorize an external effect.
 - Keep automatic update eligibility off for the v2.4 release while preserving configured
   v2 worker state through the manual checkpointed update path.
+- Pin the first-party IANA time-zone data dependency, ship its requirement in both public
+  editions and exercise the same schedule rules on Windows, macOS and Linux.
 
 ## [2.3.0] - 2026-09-02
 

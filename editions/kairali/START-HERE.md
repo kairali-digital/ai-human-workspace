@@ -16,8 +16,9 @@ skill.
    **DONE WHEN:** the approved account and new chat box are visible.
 4. Paste the exact Setup Helper message below. The helper preserves the download as the
    source copy, confirms the exact legal entity/unit/jurisdictions and its private Gate
-   0 profile, creates or opens the correct employee worker, installs only the approved
-   Kairali parts and gives one unavoidable click or login at a time. You never type a command.
+   0 profile, creates or opens the correct employee worker, installs the pinned time-zone
+   prerequisite and approved Kairali parts, and gives one unavoidable click or login at
+   a time. You never type a command.
    **DONE WHEN:** Codex is open in the employee's correct working project.
 5. Paste the startup test below.
    **DONE WHEN:** the answer reports `ACTIVE`, the approved legal entity, unit,

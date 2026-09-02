@@ -127,6 +127,7 @@ def workspace_files(reusable=False):
     files["component-manifest.json"] = (
         json.dumps(components, indent=2, sort_keys=True).encode("utf-8") + b"\n"
     )
+    files["requirements.txt"] = file_bytes(ROOT / "requirements.txt")
     return files
 
 

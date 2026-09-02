@@ -29,8 +29,9 @@ candidate and must stop before real installation.
 4. Open `START-HERE.md` inside the extracted edition folder and paste its complete
    Setup Helper message. The helper checks the computer first, preserves the download
    as the source copy, confirms the exact company/entity/unit/jurisdictions and private
-   Gate 0 profile, creates the working copy and opens the correct local project in
-   Codex. It gives only one unavoidable click, login or permission at a time.
+   Gate 0 profile, checks the pinned time-zone prerequisite, creates the working copy
+   and opens the correct local project in Codex. It gives only one unavoidable click,
+   login or permission at a time.
    **DONE WHEN:** Codex shows the correct working folder as the active local project.
 5. Paste the startup test from the same `START-HERE.md` file.
    **DONE WHEN:** the readback names the exact entity, unit, jurisdictions, user

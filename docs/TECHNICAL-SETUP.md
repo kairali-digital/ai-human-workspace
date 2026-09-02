@@ -3,6 +3,11 @@
 Technical users may use Git, GitHub Desktop or an IDE. The repository and release
 rules are identical regardless of client.
 
+The lifecycle requires Python 3.9 or later plus the IANA time-zone database. The
+checked `requirements.txt` pins the Python Software Foundation `tzdata` package and
+its wheel hash so Windows has the same time-zone rules as macOS and Linux. The Setup
+Helper checks and installs this prerequisite; a beginner never types a command.
+
 GitHub Desktop `Fetch origin`/`Pull origin` updates only the selected checkout. It does
 not install or update `.ai-human` in another worker, the company reference kit, or an
 opt-in skill. Use the lifecycle below after the release is tagged and checked.

@@ -13,6 +13,7 @@ import subprocess
 import sys
 import tempfile
 import unicodedata
+import urllib.parse
 import urllib.request
 import zipfile
 from pathlib import Path
@@ -34,6 +35,9 @@ INTACT_ARTIFACT_BATCH_KINDS = {"artifact-upload", "assignment-intake"}
 LEASE_PATH = Path(".ai-human/control/session-lease.json")
 CONTROL_RECEIPTS = Path(".ai-human/control/receipts")
 CAPABILITY_ROOT = Path(".ai-human/capabilities")
+IMPROVEMENT_ROOT = Path(".ai-human/improvement")
+IMPROVEMENT_CONFIG_PATH = IMPROVEMENT_ROOT / "config.json"
+IMPROVEMENT_SCHEDULE_PATH = IMPROVEMENT_ROOT / "schedule.json"
 MODE_PATH = Path(".ai-human/control/mode.json")
 GATE_PROFILE_PATH = Path(".ai-human/control/gate-profile.json")
 MODE_ACTIVE = "ACTIVE"
@@ -54,7 +58,9 @@ ADAPTER_MARKERS = {
 MODE_GUARDED_COMMANDS = {
     "checkpoint", "update", "rollback", "session-acquire", "session-recover",
     "configure-control", "state-commit", "capability-propose", "capability-choice",
-    "capability-activate", "task-start", "task-complete",
+    "capability-activate", "task-start", "task-complete", "improvement-choice",
+    "improvement-schedule", "improvement-control", "improvement-research-record",
+    "improvement-run", "improvement-forget", "improvement-show",
 }
 COORDINATION_STATE_FILES = (
     "MASTER_CURSOR.md", "OPEN_REGISTER.md", "TODAY.md",
@@ -78,6 +84,7 @@ STATE_FILES = (
 INTRINSIC_NEVER_MANAGED = set(STATE_FILES) | {
     ".ai-human/control/",
     ".ai-human/capabilities/",
+    ".ai-human/improvement/",
     ".ai-human/backups/",
     ".ai-human/install.json",
     ".ai-human/release-manifest.json",
@@ -113,6 +120,16 @@ GATE_SOURCE_KINDS = {
 }
 ISO_UTC = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
 ISO_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+LOCAL_CLOCK = re.compile(r"^(?:[01]\d|2[0-3]):[0-5]\d$")
+IMPROVEMENT_SOURCES = {
+    "CAPABILITY_PROPOSALS", "COMPLETED_LEDGER", "DECISIONS", "EVIDENCE_LOG",
+    "FACTS", "OPEN_REGISTER", "APPROVED_RESEARCH",
+}
+IMPROVEMENT_CATEGORIES = {
+    "CAPABILITY_PROPOSAL", "KNOWLEDGE_REFRESH", "SKILL_GAP",
+    "SOURCE_CONFLICT", "TOOLING", "WORKFLOW_SIMPLIFICATION",
+}
+IMPROVEMENT_RESEARCH_TRUST = {"OFFICIAL", "PRIMARY", "REPUTABLE_SECONDARY"}
 MAX_ARCHIVE_MEMBERS = 10_000
 MAX_ARCHIVE_UNCOMPRESSED_BYTES = 512 * 1024 * 1024
 
@@ -665,11 +682,275 @@ def gate_setup_from_args(args):
     return expected, profile
 
 
+def parse_offset_datetime(value, label):
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(label + " must be an offset-aware ISO date-time")
+    try:
+        moment = datetime.datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
+    except ValueError as error:
+        raise ValueError(label + " must be an offset-aware ISO date-time") from error
+    if moment.tzinfo is None or moment.utcoffset() is None:
+        raise ValueError(label + " must include its UTC offset")
+    return moment
+
+
+def parse_recorded_utc(value, label):
+    if not isinstance(value, str):
+        raise ValueError(label + " must be a UTC timestamp")
+    for pattern in ("%Y%m%dT%H%M%SZ", "%Y-%m-%dT%H:%M:%SZ"):
+        try:
+            return datetime.datetime.strptime(value, pattern).replace(tzinfo=datetime.timezone.utc)
+        except ValueError:
+            pass
+    raise ValueError(label + " must be a UTC timestamp")
+
+
+def contains_secret_material(value):
+    serialized = json.dumps(value, sort_keys=True)
+    patterns = (
+        r"-----BEGIN [A-Z ]*PRIVATE KEY-----",
+        r"\b(?:api[_-]?key|password|secret|token)\s*[:=]\s*[^\s,}\]]+",
+        r"\bgh" + r"p_[A-Za-z0-9]+",
+        r"\bsk-" + r"proj-[A-Za-z0-9_-]+",
+    )
+    return any(re.search(pattern, serialized, flags=re.I) for pattern in patterns)
+
+
+def improvement_target(worker, relative, label):
+    relative = safe_relative(relative, label)
+    key = portable_key(relative)
+    prefix = portable_key(IMPROVEMENT_ROOT) + "/"
+    if not key.startswith(prefix):
+        raise ValueError(label + " is outside the improvement state")
+    return worker_target(worker, relative, label)
+
+
+def improvement_config(worker, required=True):
+    path = worker / IMPROVEMENT_CONFIG_PATH
+    if not path.is_file():
+        if required:
+            raise ValueError("quarterly improvement choice is not configured")
+        return None
+    value = read_json(path)
+    if value.get("schema") != "ai-human.improvement-config/v1":
+        raise ValueError("unsupported quarterly improvement config schema")
+    status = value.get("status")
+    if status not in {"DECLINED", "ENABLED", "PAUSED", "REMOVED"}:
+        raise ValueError("invalid quarterly improvement status")
+    required_fields = {
+        "schema", "status", "owner", "created_utc", "updated_utc",
+    }
+    if status in {"ENABLED", "PAUSED", "REMOVED"}:
+        required_fields.update(
+            {
+                "approved_sources", "frequency", "freshness_days", "local_time",
+                "research", "retention_days", "timezone",
+            }
+        )
+    missing = required_fields - set(value)
+    if missing:
+        raise ValueError(
+            "quarterly improvement config is missing: " + ", ".join(sorted(missing))
+        )
+    for field in ("owner", "created_utc", "updated_utc"):
+        if not isinstance(value.get(field), str) or not value[field].strip():
+            raise ValueError("quarterly improvement config has invalid " + field)
+    parse_recorded_utc(value["created_utc"], "improvement created_utc")
+    parse_recorded_utc(value["updated_utc"], "improvement updated_utc")
+    if status in {"ENABLED", "PAUSED", "REMOVED"}:
+        validate_timezone(str(value["timezone"]))
+        if not LOCAL_CLOCK.fullmatch(str(value["local_time"])):
+            raise ValueError("quarterly improvement local time must be HH:MM")
+        if value["frequency"] != "QUARTERLY":
+            raise ValueError("quarterly improvement frequency must be QUARTERLY")
+        if value["research"] not in {"DISABLED", "APPROVED_LINKED_SOURCES"}:
+            raise ValueError("invalid quarterly improvement research choice")
+        for field in ("freshness_days", "retention_days"):
+            if not isinstance(value[field], int) or isinstance(value[field], bool) or value[field] < 1:
+                raise ValueError("quarterly improvement " + field + " must be a positive integer")
+        sources = value["approved_sources"]
+        if (
+            not isinstance(sources, list) or not sources
+            or len(sources) != len(set(sources))
+            or any(source not in IMPROVEMENT_SOURCES for source in sources)
+        ):
+            raise ValueError("quarterly improvement approved sources are invalid")
+        research_enabled = value["research"] == "APPROVED_LINKED_SOURCES"
+        if research_enabled != ("APPROVED_RESEARCH" in sources):
+            raise ValueError(
+                "APPROVED_RESEARCH must be selected exactly when linked research is enabled"
+            )
+    return value
+
+
+def improvement_schedule(worker, required=False):
+    path = worker / IMPROVEMENT_SCHEDULE_PATH
+    if not path.is_file():
+        if required:
+            raise ValueError("quarterly improvement schedule has not been verified")
+        return None
+    value = read_json(path)
+    if value.get("schema") != "ai-human.improvement-schedule/v1":
+        raise ValueError("unsupported quarterly improvement schedule schema")
+    status = value.get("status")
+    allowed = {
+        "STALE_AFTER_CONFIGURATION_CHANGE", "UNAVAILABLE", "VERIFIED_ACTIVE",
+        "VERIFIED_PAUSED", "VERIFIED_REMOVED",
+    }
+    if status not in allowed:
+        raise ValueError("invalid quarterly improvement schedule status")
+    if not isinstance(value.get("verified_utc"), str):
+        raise ValueError("quarterly improvement schedule lacks verified_utc")
+    parse_recorded_utc(value["verified_utc"], "schedule verified_utc")
+    if status == "UNAVAILABLE" and (
+        not isinstance(value.get("reason"), str) or not value["reason"].strip()
+    ):
+        raise ValueError("unavailable schedule requires a reason")
+    if status == "STALE_AFTER_CONFIGURATION_CHANGE":
+        if value.get("previous_status") not in allowed - {"STALE_AFTER_CONFIGURATION_CHANGE"}:
+            raise ValueError("stale schedule lacks a valid previous status")
+        if not isinstance(value.get("reason"), str) or not value["reason"].strip():
+            raise ValueError("stale schedule requires a reason")
+    if status.startswith("VERIFIED_"):
+        for field in ("adapter", "external_id", "local_time", "timezone"):
+            if not isinstance(value.get(field), str) or not value[field].strip():
+                raise ValueError("verified schedule lacks " + field)
+        safe_identity(value["external_id"], "schedule external id")
+        validate_timezone(value["timezone"])
+        if not LOCAL_CLOCK.fullmatch(value["local_time"]):
+            raise ValueError("verified schedule local time must be HH:MM")
+        if value.get("visible_card") is not True:
+            raise ValueError("verified schedule requires a visible Scheduled card")
+    if status == "VERIFIED_ACTIVE":
+        parse_offset_datetime(value.get("next_run_local"), "schedule next run")
+    return value
+
+
+def validate_research_payload(data):
+    required = {
+        "accessed_utc", "claim_summary", "instruction_content_ignored",
+        "personal_data_excluded", "published_or_updated", "receipt_id", "schema",
+        "source_title", "source_url", "trust",
+    }
+    if not isinstance(data, dict) or set(data) != required:
+        raise ValueError("research receipt fields differ from the required schema")
+    if data.get("schema") != "ai-human.research-receipt/v1":
+        raise ValueError("unsupported research receipt schema")
+    safe_identity(str(data["receipt_id"]), "research receipt id")
+    parse_recorded_utc(data["accessed_utc"], "research accessed_utc")
+    published = data["published_or_updated"]
+    if published != "NOT_PROVIDED_BY_SOURCE" and not ISO_DATE.fullmatch(str(published)):
+        raise ValueError("research publication date must be YYYY-MM-DD or NOT_PROVIDED_BY_SOURCE")
+    parsed = urllib.parse.urlparse(str(data["source_url"]))
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc or parsed.username or parsed.password:
+        raise ValueError("research source URL must be a public HTTP(S) URL without credentials")
+    if data["trust"] not in IMPROVEMENT_RESEARCH_TRUST:
+        raise ValueError("research trust classification is invalid")
+    if data["instruction_content_ignored"] is not True:
+        raise ValueError("research must record that source instructions were ignored")
+    if data["personal_data_excluded"] is not True:
+        raise ValueError("research receipt must exclude personal data")
+    clean(data["source_title"], "research source title")
+    claims = data["claim_summary"]
+    if (
+        not isinstance(claims, list) or not claims or len(claims) > BATCH_CAP
+        or any(not isinstance(item, str) or not item.strip() or len(item) > 500 for item in claims)
+    ):
+        raise ValueError("research claim summary must contain 1 to 25 concise text claims")
+    if contains_secret_material(data):
+        raise ValueError("research receipt appears to contain secret material")
+    return data
+
+
+def validate_improvement_state(worker):
+    failures = []
+    root = worker / IMPROVEMENT_ROOT
+    if not root.exists():
+        return failures
+    if root.is_symlink() or not root.is_dir():
+        return ["quarterly improvement state must be a real directory"]
+    for path in root.rglob("*"):
+        if path.is_symlink():
+            failures.append(
+                "quarterly improvement state may not contain a symbolic link: "
+                + path.relative_to(worker).as_posix()
+            )
+    try:
+        config = improvement_config(worker)
+    except Exception as exc:
+        config = None
+        failures.append("invalid quarterly improvement config: " + str(exc))
+    try:
+        schedule = improvement_schedule(worker)
+    except Exception as exc:
+        schedule = None
+        failures.append("invalid quarterly improvement schedule: " + str(exc))
+    if schedule and not config:
+        failures.append("quarterly improvement schedule exists without a valid config")
+    if config:
+        try:
+            automation_path = worker / "AUTOMATIONS.md"
+            if automation_path.read_text(encoding="utf-8") != render_improvement_automation(
+                worker, config, schedule
+            ):
+                failures.append(
+                    "visible quarterly automation row differs from private improvement state"
+                )
+        except Exception as exc:
+            failures.append("invalid visible quarterly automation row: " + str(exc))
+    research_root = root / "research"
+    if research_root.is_dir():
+        for path in research_root.glob("*.json"):
+            try:
+                record = read_json(path)
+                payload = {key: record[key] for key in (
+                    "accessed_utc", "claim_summary", "instruction_content_ignored",
+                    "personal_data_excluded", "published_or_updated", "receipt_id", "schema",
+                    "source_title", "source_url", "trust",
+                )}
+                validate_research_payload(payload)
+                if path.stem != record["receipt_id"]:
+                    raise ValueError("research receipt filename differs from its id")
+                if record.get("status") not in {"ACTIVE", "SUPERSEDED"}:
+                    raise ValueError("research receipt status is invalid")
+                parse_recorded_utc(record.get("recorded_utc"), "research recorded_utc")
+            except Exception as exc:
+                failures.append(
+                    "invalid quarterly improvement research receipt " + path.name + ": " + str(exc)
+                )
+    runs_root = root / "runs"
+    if runs_root.is_dir():
+        for path in runs_root.glob("*.json"):
+            try:
+                record = read_json(path)
+                if record.get("schema") != "ai-human.improvement-run/v1":
+                    raise ValueError("unsupported run schema")
+                if record.get("status") != "COMPLETED_READ_ONLY":
+                    raise ValueError("run is not read-only complete")
+                parse_recorded_utc(record.get("created_utc"), "run created_utc")
+                recommendations = record.get("recommendations")
+                if not isinstance(recommendations, list) or len(recommendations) > BATCH_CAP:
+                    raise ValueError("run recommendations exceed the batch cap")
+                if any(item.get("decision") != "REVIEW_REQUIRED" for item in recommendations):
+                    raise ValueError("run contains a recommendation without human review")
+                if any(item.get("activation") != "NOT_ACTIVATED" for item in recommendations):
+                    raise ValueError("run contains an activated recommendation")
+            except Exception as exc:
+                failures.append(
+                    "invalid quarterly improvement run " + path.name + ": " + str(exc)
+                )
+    return failures
+
+
 def controlled_state_paths(worker):
     paths = [worker / name for name in COORDINATION_STATE_FILES]
+    paths.append(worker / "AUTOMATIONS.md")
     capability_root = worker / CAPABILITY_ROOT
     if capability_root.is_dir():
         paths.extend(path for path in capability_root.rglob("*.json") if path.is_file())
+    improvement_root = worker / IMPROVEMENT_ROOT
+    if improvement_root.is_dir():
+        paths.extend(path for path in improvement_root.rglob("*.json") if path.is_file())
     return sorted(paths, key=lambda path: path.relative_to(worker).as_posix())
 
 
@@ -1294,6 +1575,7 @@ def validate_worker(worker, quiet=False):
             failures.append("live task is missing from OPEN_REGISTER.md: " + task_id)
         if task_id and task_id not in parse_table_ids(worker / "TODAY.md"):
             failures.append("live task is missing from TODAY.md: " + task_id)
+    failures.extend(validate_improvement_state(worker))
     failures.extend(validate_completion_records(worker))
     lease = None
     try:
@@ -2252,6 +2534,688 @@ def capability_activate(args):
     if args.scope == "company":
         print("- distribution: NOT PUBLISHED; include in a separately approved release")
     print("- new expected-state hash: " + refreshed["state_hash"])
+
+
+def render_improvement_automation(worker, config, schedule, last_run=None):
+    path = worker / "AUTOMATIONS.md"
+    content = path.read_text(encoding="utf-8")
+    existing_rows = {
+        row[0]: row for row in parse_table_rows(path) if len(row) >= 7
+    }
+    previous = existing_rows.get("USER-QUARTERLY-IMPROVEMENT-001")
+    previous_last_run = previous[6] if previous else "NOT RUN"
+    if config["status"] == "DECLINED":
+        trigger = "No unattended trigger"
+        source = "None; user declined"
+        allowed = "No run authorized"
+        status = "NOT ENABLED BY CHOICE"
+    else:
+        trigger = "Quarterly at " + config["local_time"] + " in " + config["timezone"]
+        source = "Approved categories: " + ", ".join(config["approved_sources"])
+        allowed = "Read-only evidence scan and recommendations awaiting human review"
+        schedule_status = schedule["status"] if schedule else None
+        if config["status"] == "REMOVED":
+            status = "REMOVED"
+        elif config["status"] == "PAUSED" and schedule_status == "VERIFIED_ACTIVE":
+            status = "VERIFIED_ACTIVE — LOCAL RESUME PENDING"
+        elif config["status"] == "ENABLED" and schedule_status == "VERIFIED_PAUSED":
+            status = "VERIFIED_PAUSED — LOCAL PAUSE PENDING"
+        elif config["status"] in {"ENABLED", "PAUSED"} and schedule_status == "VERIFIED_REMOVED":
+            status = "VERIFIED_REMOVED — LOCAL REMOVE PENDING"
+        elif config["status"] == "PAUSED":
+            status = "PAUSED"
+        elif not schedule:
+            status = "CONFIGURED — NOT SCHEDULED"
+        else:
+            status = schedule["status"]
+    stop = (
+        "Declined, paused, removed, unavailable or stale schedule; missing visible card "
+        "or next run; permission denial; Gate 0; hostile source; failed validator"
+    )
+    return update_task_table(
+        content,
+        "USER-QUARTERLY-IMPROVEMENT-001",
+        [
+            "USER-QUARTERLY-IMPROVEMENT-001", trigger, source, allowed, stop, status,
+            last_run or previous_last_run,
+        ],
+    )
+
+
+def commit_improvement_files(
+    worker, lease, session_id, before_hash, writes=None, deletes=None,
+    local_writes=None, action="change",
+):
+    writes = writes or {}
+    deletes = deletes or []
+    local_writes = local_writes or {}
+    if set(local_writes) - {"AUTOMATIONS.md"}:
+        raise ValueError("quarterly improvement may update only its visible automation row")
+    if len(writes) + len(deletes) + len(local_writes) > BATCH_CAP:
+        raise ValueError("quarterly improvement change exceeds the batch cap")
+    normalized_writes = {}
+    normalized_deletes = []
+    for relative, value in writes.items():
+        target = improvement_target(worker, relative, "improvement write target")
+        normalized_writes[target.relative_to(worker)] = value
+    for relative in deletes:
+        target = improvement_target(worker, relative, "improvement delete target")
+        normalized_deletes.append(target.relative_to(worker))
+    normalized_local_writes = {}
+    for name, content in local_writes.items():
+        if not isinstance(content, str) or not content.strip():
+            raise ValueError("quarterly improvement local state write must be non-empty text")
+        normalized_local_writes[Path(name)] = content
+    overlap = set(normalized_writes).intersection(normalized_deletes)
+    if overlap:
+        raise ValueError("quarterly improvement change writes and deletes the same path")
+    transaction = worker / ".ai-human/control/transactions" / (
+        "improvement-" + action + "-" + now_utc()
+    )
+    counter = 2
+    while transaction.exists():
+        transaction = transaction.with_name(transaction.name + "-" + str(counter))
+        counter += 1
+    backup_root = transaction / "before"
+    staged_root = transaction / "staged"
+    existed = {}
+    changed_paths = set(normalized_writes) | set(normalized_deletes) | set(normalized_local_writes)
+    for relative in sorted(changed_paths, key=str):
+        target = worker / relative
+        existed[relative] = target.is_file()
+        if target.is_symlink():
+            raise ValueError("quarterly improvement target may not be a symbolic link")
+        if target.is_file():
+            backup = backup_root / relative
+            backup.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(target, backup)
+    for relative, value in normalized_writes.items():
+        staged = staged_root / relative
+        staged.parent.mkdir(parents=True, exist_ok=True)
+        staged.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    for relative, content in normalized_local_writes.items():
+        staged = staged_root / relative
+        staged.parent.mkdir(parents=True, exist_ok=True)
+        staged.write_text(content, encoding="utf-8")
+    atomic_json(
+        transaction / "transaction.json",
+        {
+            "action": action, "before_state_hash": before_hash,
+            "deletes": sorted(path.as_posix() for path in normalized_deletes),
+            "schema": "ai-human.improvement-transaction/v1", "session_id": session_id,
+            "status": "PREPARED",
+            "writes": sorted(
+                path.as_posix() for path in set(normalized_writes) | set(normalized_local_writes)
+            ),
+        },
+    )
+    try:
+        for relative in sorted(normalized_writes, key=str):
+            target = worker / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            os.replace(staged_root / relative, target)
+        for relative in sorted(normalized_local_writes, key=str):
+            os.replace(staged_root / relative, worker / relative)
+        for relative in sorted(normalized_deletes, key=str):
+            target = worker / relative
+            if target.is_file():
+                target.unlink()
+        refreshed = refresh_lease_state(worker, lease)
+        ok, failures = validate_worker(worker, quiet=True)
+        if not ok:
+            raise ValueError("quarterly improvement validation failed: " + "; ".join(failures))
+    except Exception:
+        for relative in sorted(changed_paths, key=str):
+            target = worker / relative
+            backup = backup_root / relative
+            if existed[relative]:
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(backup, target)
+            elif target.is_file() or target.is_symlink():
+                target.unlink()
+        atomic_json(lease_file(worker), lease)
+        raise
+    after_hash = refreshed["state_hash"]
+    atomic_json(
+        transaction / "transaction.json",
+        {
+            "action": action, "after_state_hash": after_hash,
+            "before_state_hash": before_hash,
+            "deletes": sorted(path.as_posix() for path in normalized_deletes),
+            "schema": "ai-human.improvement-transaction/v1", "session_id": session_id,
+            "status": "COMMITTED",
+            "writes": sorted(
+                path.as_posix() for path in set(normalized_writes) | set(normalized_local_writes)
+            ),
+        },
+    )
+    receipt = unique_receipt(worker, "improvement-" + action)
+    atomic_json(
+        receipt,
+        {
+            "action": action.upper(), "after_state_hash": after_hash,
+            "before_state_hash": before_hash,
+            "deleted_files": len(normalized_deletes), "schema": "ai-human.improvement-change/v1",
+            "session_id": session_id, "transaction": str(transaction),
+            "validator": "PASS",
+            "written_files": len(normalized_writes) + len(normalized_local_writes),
+        },
+    )
+    return after_hash, receipt
+
+
+def improvement_choice(args):
+    worker = safe_worker(args.worker)
+    lease, before_hash = require_lease(worker, args.session_id, args.expected_state_hash)
+    existing = improvement_config(worker, required=False)
+    schedule = improvement_schedule(worker)
+    timestamp = now_utc()
+    owner = clean(parameter_value(worker, "Human owner"), "human owner")
+    writes = {}
+    if args.choice == "DECLINE":
+        if schedule and schedule["status"] not in {"UNAVAILABLE", "VERIFIED_REMOVED"}:
+            raise ValueError("remove the visible external schedule before declining the loop")
+        record = {
+            "created_utc": existing.get("created_utc", timestamp) if existing else timestamp,
+            "owner": owner, "schema": "ai-human.improvement-config/v1",
+            "status": "DECLINED", "updated_utc": timestamp,
+        }
+    else:
+        if not args.timezone or not args.local_time:
+            raise ValueError("enabling requires an exact time zone and local time")
+        timezone = validate_timezone(args.timezone)
+        if not LOCAL_CLOCK.fullmatch(args.local_time):
+            raise ValueError("quarterly improvement local time must be HH:MM")
+        if args.freshness_days is None or args.freshness_days < 1:
+            raise ValueError("enabling requires positive freshness-days")
+        if args.retention_days is None or args.retention_days < 1:
+            raise ValueError("enabling requires positive retention-days")
+        sources = sorted(set(args.source or []))
+        if not sources or any(source not in IMPROVEMENT_SOURCES for source in sources):
+            raise ValueError("enabling requires one or more approved sources")
+        research = args.research or "DISABLED"
+        if (research == "APPROVED_LINKED_SOURCES") != ("APPROVED_RESEARCH" in sources):
+            raise ValueError(
+                "APPROVED_RESEARCH must be selected exactly when linked research is enabled"
+            )
+        record = {
+            "approved_sources": sources,
+            "created_utc": existing.get("created_utc", timestamp) if existing else timestamp,
+            "frequency": "QUARTERLY", "freshness_days": args.freshness_days,
+            "local_time": args.local_time, "owner": owner, "research": research,
+            "retention_days": args.retention_days,
+            "schema": "ai-human.improvement-config/v1", "status": "ENABLED",
+            "timezone": timezone, "updated_utc": timestamp,
+        }
+        if schedule:
+            comparable = ("timezone", "local_time")
+            reenabled = existing and existing.get("status") in {"DECLINED", "REMOVED"}
+            if reenabled or any(schedule.get(field) != record[field] for field in comparable):
+                writes[IMPROVEMENT_SCHEDULE_PATH] = {
+                    "previous_status": schedule["status"],
+                    "reason": "Configuration changed; verify the visible Scheduled card again.",
+                    "schema": "ai-human.improvement-schedule/v1",
+                    "status": "STALE_AFTER_CONFIGURATION_CHANGE", "verified_utc": timestamp,
+                }
+    writes[IMPROVEMENT_CONFIG_PATH] = record
+    current_schedule = writes.get(IMPROVEMENT_SCHEDULE_PATH, schedule)
+    after_hash, _receipt = commit_improvement_files(
+        worker, lease, args.session_id, before_hash, writes=writes,
+        local_writes={
+            "AUTOMATIONS.md": render_improvement_automation(worker, record, current_schedule)
+        },
+        action="choice",
+    )
+    schedule_status = current_schedule["status"] if current_schedule else "NOT_VERIFIED"
+    print("AI-HUMAN QUARTERLY IMPROVEMENT CHOICE: RECORDED")
+    print("- choice: " + args.choice)
+    print("- schedule: " + schedule_status)
+    print("- recommendations: READ ONLY; human review required")
+    print("- new expected-state hash: " + after_hash)
+
+
+def improvement_schedule_record(args):
+    worker = safe_worker(args.worker)
+    lease, before_hash = require_lease(worker, args.session_id, args.expected_state_hash)
+    config = improvement_config(worker)
+    previous_schedule = improvement_schedule(worker)
+    if config["status"] not in {"ENABLED", "PAUSED"}:
+        raise ValueError("quarterly improvement is not enabled")
+    timestamp = now_utc()
+    mapped = {
+        "ACTIVE": "VERIFIED_ACTIVE", "PAUSED": "VERIFIED_PAUSED",
+        "REMOVED": "VERIFIED_REMOVED", "UNAVAILABLE": "UNAVAILABLE",
+    }
+    status = mapped[args.status]
+    if status == "UNAVAILABLE":
+        potentially_live = {"VERIFIED_ACTIVE", "VERIFIED_PAUSED"}
+        if previous_schedule and (
+            previous_schedule.get("status") in potentially_live
+            or (
+                previous_schedule.get("status") == "STALE_AFTER_CONFIGURATION_CHANGE"
+                and previous_schedule.get("previous_status") in potentially_live
+            )
+        ):
+            raise ValueError(
+                "scheduler unavailability cannot erase a known external schedule; "
+                "verify it paused or removed first"
+            )
+        record = {
+            "reason": clean(args.reason or "Scheduler unavailable", "unavailable reason"),
+            "schema": "ai-human.improvement-schedule/v1", "status": status,
+            "verified_utc": timestamp,
+        }
+    else:
+        if not args.adapter or not args.external_id or not args.visible_card:
+            raise ValueError(
+                "verified schedule state requires adapter, external id and visible Scheduled card proof"
+            )
+        record = {
+            "adapter": clean(args.adapter, "schedule adapter"),
+            "external_id": safe_identity(args.external_id, "schedule external id"),
+            "local_time": config["local_time"], "schema": "ai-human.improvement-schedule/v1",
+            "status": status, "timezone": config["timezone"],
+            "verified_utc": timestamp, "visible_card": True,
+        }
+        if status == "VERIFIED_ACTIVE":
+            moment = parse_offset_datetime(args.next_run_local, "schedule next run")
+            if moment.strftime("%H:%M") != config["local_time"]:
+                raise ValueError("visible next run does not match the configured local time")
+            if moment.astimezone(datetime.timezone.utc) <= datetime.datetime.now(datetime.timezone.utc):
+                raise ValueError("visible next run must be in the future")
+            record["next_run_local"] = moment.isoformat()
+    after_hash, _receipt = commit_improvement_files(
+        worker, lease, args.session_id, before_hash,
+        writes={IMPROVEMENT_SCHEDULE_PATH: record},
+        local_writes={
+            "AUTOMATIONS.md": render_improvement_automation(worker, config, record)
+        },
+        action="schedule",
+    )
+    print("AI-HUMAN QUARTERLY IMPROVEMENT SCHEDULE: " + status)
+    if status == "VERIFIED_ACTIVE":
+        print("- next run: " + record["next_run_local"])
+    if status == "UNAVAILABLE":
+        print("- activation: NOT ACTIVE; no schedule was claimed")
+    print("- new expected-state hash: " + after_hash)
+
+
+def improvement_control(args):
+    worker = safe_worker(args.worker)
+    lease, before_hash = require_lease(worker, args.session_id, args.expected_state_hash)
+    config = improvement_config(worker)
+    schedule = improvement_schedule(worker)
+    action = args.action
+    if action == "PAUSE":
+        if config["status"] != "ENABLED":
+            raise ValueError("only an enabled quarterly loop can be paused")
+        if schedule and schedule["status"] not in {
+            "UNAVAILABLE", "VERIFIED_PAUSED", "VERIFIED_REMOVED",
+        }:
+            raise ValueError("pause and verify the visible external schedule first")
+        status = "PAUSED"
+    elif action == "RESUME":
+        if config["status"] != "PAUSED":
+            raise ValueError("only a paused quarterly loop can be resumed")
+        if not schedule or schedule["status"] != "VERIFIED_ACTIVE":
+            raise ValueError("resume requires a visible active schedule and verified next run")
+        status = "ENABLED"
+    else:
+        if config["status"] not in {"ENABLED", "PAUSED"}:
+            raise ValueError("quarterly improvement is not active or paused")
+        if schedule and schedule["status"] not in {"UNAVAILABLE", "VERIFIED_REMOVED"}:
+            raise ValueError("remove and verify the visible external schedule first")
+        status = "REMOVED"
+    updated = dict(config)
+    updated.update({"status": status, "updated_utc": now_utc()})
+    after_hash, _receipt = commit_improvement_files(
+        worker, lease, args.session_id, before_hash,
+        writes={IMPROVEMENT_CONFIG_PATH: updated},
+        local_writes={
+            "AUTOMATIONS.md": render_improvement_automation(worker, updated, schedule)
+        },
+        action=action.casefold(),
+    )
+    print("AI-HUMAN QUARTERLY IMPROVEMENT: " + status)
+    print("- retained reports: inspect or forget by exact id")
+    print("- new expected-state hash: " + after_hash)
+
+
+def improvement_research_record(args):
+    worker = safe_worker(args.worker)
+    lease, before_hash = require_lease(worker, args.session_id, args.expected_state_hash)
+    config = improvement_config(worker)
+    if config["status"] != "ENABLED":
+        raise ValueError("quarterly improvement research requires an enabled loop")
+    if (
+        config["research"] != "APPROVED_LINKED_SOURCES"
+        or "APPROVED_RESEARCH" not in config["approved_sources"]
+    ):
+        raise ValueError("linked research was not approved by the owner")
+    payload = validate_research_payload(read_json(Path(args.receipt).expanduser().resolve()))
+    identifier = payload["receipt_id"]
+    target = IMPROVEMENT_ROOT / "research" / (identifier + ".json")
+    if (worker / target).exists():
+        raise ValueError("research receipt already exists: " + identifier)
+    timestamp = now_utc()
+    record = dict(payload)
+    record.update({"recorded_utc": timestamp, "status": "ACTIVE"})
+    writes = {target: record}
+    if args.supersedes:
+        old_id = safe_identity(args.supersedes, "superseded research receipt id")
+        old_path = IMPROVEMENT_ROOT / "research" / (old_id + ".json")
+        if not (worker / old_path).is_file():
+            raise ValueError("superseded research receipt is missing: " + old_id)
+        old = read_json(worker / old_path)
+        if old.get("status") != "ACTIVE":
+            raise ValueError("only an active research receipt can be corrected")
+        old.update({"status": "SUPERSEDED", "superseded_by": identifier})
+        record["supersedes"] = old_id
+        writes[old_path] = old
+    after_hash, _receipt = commit_improvement_files(
+        worker, lease, args.session_id, before_hash, writes=writes, action="research",
+    )
+    print("AI-HUMAN IMPROVEMENT RESEARCH: RECORDED")
+    print("- receipt id: " + identifier)
+    print("- raw page content: NOT STORED")
+    print("- new expected-state hash: " + after_hash)
+
+
+def normalized_subject(value):
+    value = unicodedata.normalize("NFKC", value).casefold()
+    return " ".join(re.findall(r"[\w]+", value, flags=re.UNICODE))
+
+
+def improvement_source_snapshot(worker, source, path, records):
+    return {
+        "records": records, "sha256": sha256(path), "source": source,
+    }
+
+
+def collect_improvement_evidence(worker, config, moment_utc, excluded_research=()):
+    snapshots = []
+    refs = set()
+    findings = {
+        "conflicting_facts": [], "existing_capabilities": [], "open_friction": [],
+        "repeated_work": [], "stale_facts": [], "unknown_fact_freshness": [],
+    }
+    sources = set(config["approved_sources"])
+    if "COMPLETED_LEDGER" in sources:
+        path = worker / "COMPLETED_LEDGER.md"
+        rows = [row for row in parse_table_rows(path) if len(row) >= 7]
+        snapshots.append(improvement_source_snapshot(worker, "COMPLETED_LEDGER", path, len(rows)))
+        groups = {}
+        for row in rows:
+            reference = "COMPLETED_LEDGER:" + row[0]
+            refs.add(reference)
+            groups.setdefault(normalized_subject(row[1]), []).append(reference)
+        for key, evidence in sorted(groups.items()):
+            if key and len(evidence) >= 2:
+                findings["repeated_work"].append(
+                    {
+                        "evidence_refs": evidence,
+                        "subject_key_sha256": hashlib.sha256(key.encode("utf-8")).hexdigest(),
+                    }
+                )
+    if "EVIDENCE_LOG" in sources:
+        path = worker / "EVIDENCE_LOG.md"
+        rows = [row for row in parse_table_rows(path) if len(row) >= 8]
+        snapshots.append(improvement_source_snapshot(worker, "EVIDENCE_LOG", path, len(rows)))
+        refs.update("EVIDENCE_LOG:" + row[0] for row in rows)
+    if "OPEN_REGISTER" in sources:
+        path = worker / "OPEN_REGISTER.md"
+        rows = [row for row in parse_table_rows(path) if len(row) >= 7]
+        snapshots.append(improvement_source_snapshot(worker, "OPEN_REGISTER", path, len(rows)))
+        friction = re.compile(r"blocked|deferred|fail|overdue|stalled|waiting", flags=re.I)
+        for row in rows:
+            reference = "OPEN_REGISTER:" + row[0]
+            refs.add(reference)
+            if friction.search(row[5]):
+                findings["open_friction"].append({"evidence_refs": [reference]})
+    if "FACTS" in sources:
+        path = worker / "FACTS.md"
+        rows = [row for row in parse_table_rows(path) if len(row) >= 6]
+        snapshots.append(improvement_source_snapshot(worker, "FACTS", path, len(rows)))
+        fact_groups = {}
+        cutoff = moment_utc - datetime.timedelta(days=config["freshness_days"])
+        for row in rows:
+            reference = "FACTS:" + row[0]
+            refs.add(reference)
+            fact_groups.setdefault(normalized_subject(row[1]), []).append((reference, row[2], row[5]))
+            try:
+                verified = parse_recorded_utc(row[4], "fact verification date")
+                if verified < cutoff:
+                    findings["stale_facts"].append({"evidence_refs": [reference]})
+            except ValueError:
+                findings["unknown_fact_freshness"].append({"evidence_refs": [reference]})
+        for key, values in sorted(fact_groups.items()):
+            active = [value for value in values if "supersed" not in value[2].casefold()]
+            distinct = {normalized_subject(value[1]) for value in active}
+            if key and len(distinct) > 1:
+                findings["conflicting_facts"].append(
+                    {"evidence_refs": [value[0] for value in active]}
+                )
+    if "DECISIONS" in sources:
+        path = worker / "DECISIONS.md"
+        rows = [row for row in parse_table_rows(path) if len(row) >= 5]
+        snapshots.append(improvement_source_snapshot(worker, "DECISIONS", path, len(rows)))
+        refs.update("DECISIONS:row-" + str(index) for index in range(1, len(rows) + 1))
+    if "CAPABILITY_PROPOSALS" in sources:
+        root = worker / CAPABILITY_ROOT / "proposals"
+        records = []
+        if root.is_dir():
+            for path in sorted(root.glob("*.json")):
+                value = read_json(path)
+                reference = "CAPABILITY:" + str(value.get("id", path.stem))
+                refs.add(reference)
+                records.append(reference)
+                findings["existing_capabilities"].append(
+                    {"evidence_refs": [reference], "status": value.get("status", "UNKNOWN")}
+                )
+        snapshots.append(
+            {
+                "records": len(records), "sha256": tree_sha256(root) if root.is_dir() else None,
+                "source": "CAPABILITY_PROPOSALS",
+            }
+        )
+    if "APPROVED_RESEARCH" in sources:
+        root = worker / IMPROVEMENT_ROOT / "research"
+        records = []
+        excluded = {Path(path) for path in excluded_research}
+        if root.is_dir():
+            for path in sorted(root.glob("*.json")):
+                if path.relative_to(worker) in excluded:
+                    continue
+                value = read_json(path)
+                if value.get("status") == "ACTIVE":
+                    reference = "RESEARCH:" + value["receipt_id"]
+                    refs.add(reference)
+                    records.append(reference)
+        snapshots.append(
+            {
+                "records": len(records),
+                "sha256": tree_sha256(root) if root.is_dir() else None,
+                "source": "APPROVED_RESEARCH",
+            }
+        )
+    return snapshots, refs, findings
+
+
+def validate_recommendations(path, allowed_refs, active_gate_ids):
+    data = read_json(Path(path).expanduser().resolve())
+    if not isinstance(data, dict) or set(data) != {"recommendations", "schema"}:
+        raise ValueError("recommendation input fields differ from the required schema")
+    if data.get("schema") != "ai-human.improvement-recommendations/v1":
+        raise ValueError("unsupported improvement recommendations schema")
+    values = data["recommendations"]
+    if not isinstance(values, list) or len(values) > BATCH_CAP:
+        raise ValueError("recommendations must be a list of no more than 25 items")
+    expected_fields = {
+        "category", "evidence_refs", "gate_ids", "id", "proposed_next_step",
+        "rationale", "title",
+    }
+    seen = set()
+    output = []
+    for item in values:
+        if not isinstance(item, dict) or set(item) != expected_fields:
+            raise ValueError("recommendation fields differ from the required schema")
+        identifier = safe_identity(str(item["id"]), "recommendation id")
+        if identifier in seen:
+            raise ValueError("duplicate recommendation id: " + identifier)
+        seen.add(identifier)
+        if item["category"] not in IMPROVEMENT_CATEGORIES:
+            raise ValueError("recommendation category is invalid: " + str(item["category"]))
+        for field in ("title", "rationale", "proposed_next_step"):
+            clean(item[field], "recommendation " + field)
+        evidence = item["evidence_refs"]
+        if (
+            not isinstance(evidence, list) or not evidence
+            or len(evidence) != len(set(evidence))
+            or any(reference not in allowed_refs for reference in evidence)
+        ):
+            raise ValueError("recommendation contains absent or unapproved evidence references")
+        gates = item["gate_ids"]
+        if not isinstance(gates, list) or set(gates) != active_gate_ids:
+            raise ValueError("every recommendation must preserve every active local gate id")
+        record = dict(item)
+        record.update(
+            {
+                "activation": "NOT_ACTIVATED", "decision": "REVIEW_REQUIRED",
+                "decision_route": "PROPOSE_LATER_REJECT", "external_effect": "NONE",
+            }
+        )
+        output.append(record)
+    if contains_secret_material(output):
+        raise ValueError("recommendations appear to contain secret material")
+    return output
+
+
+def expired_improvement_paths(worker, config, moment_utc):
+    cutoff = moment_utc - datetime.timedelta(days=config["retention_days"])
+    candidates = []
+    for directory, field in (("research", "recorded_utc"), ("runs", "created_utc")):
+        root = worker / IMPROVEMENT_ROOT / directory
+        if not root.is_dir():
+            continue
+        for path in sorted(root.glob("*.json")):
+            try:
+                if parse_recorded_utc(read_json(path).get(field), field) < cutoff:
+                    candidates.append(path.relative_to(worker))
+            except ValueError:
+                continue
+    retained_capacity = BATCH_CAP - 2  # one run JSON plus the visible automation row
+    return candidates[:retained_capacity], max(0, len(candidates) - retained_capacity)
+
+
+def improvement_run(args):
+    worker = safe_worker(args.worker)
+    lease, before_hash = require_lease(worker, args.session_id, args.expected_state_hash)
+    config = improvement_config(worker)
+    if config["status"] != "ENABLED":
+        raise ValueError("quarterly improvement must be enabled before a run")
+    schedule = improvement_schedule(worker)
+    if args.mode in {"SCHEDULED", "MISSED_RUN_RECOVERY"}:
+        if not schedule or schedule["status"] != "VERIFIED_ACTIVE":
+            raise ValueError("scheduled execution requires a visible active schedule and next run")
+    reason = None
+    if args.mode == "MISSED_RUN_RECOVERY":
+        reason = clean(args.reason or "", "missed-run recovery reason")
+    moment = parse_offset_datetime(args.now_local, "run local time")
+    if args.mode == "SCHEDULED" and moment.strftime("%H:%M") != config["local_time"]:
+        raise ValueError("scheduled run local time differs from the configured local time")
+    moment_utc = moment.astimezone(datetime.timezone.utc)
+    expired, retention_remaining = expired_improvement_paths(worker, config, moment_utc)
+    snapshots, allowed_refs, findings = collect_improvement_evidence(
+        worker, config, moment_utc, excluded_research=expired,
+    )
+    profile = installed_gate_profile(worker)
+    gate_ids = {str(gate["gate_id"]) for gate in profile["gates"]}
+    recommendations = validate_recommendations(args.recommendations, allowed_refs, gate_ids)
+    timestamp = now_utc()
+    identifier = "run-" + timestamp
+    target = IMPROVEMENT_ROOT / "runs" / (identifier + ".json")
+    counter = 2
+    while (worker / target).exists():
+        identifier = "run-" + timestamp + "-" + str(counter)
+        target = IMPROVEMENT_ROOT / "runs" / (identifier + ".json")
+        counter += 1
+    record = {
+        "activation": "NONE", "approved_sources": config["approved_sources"],
+        "created_utc": timestamp, "findings": findings, "mode": args.mode,
+        "missed_run_reason": reason, "next_run_local": (
+            schedule.get("next_run_local") if schedule and schedule["status"] == "VERIFIED_ACTIVE" else None
+        ),
+        "privacy": {
+            "credentials_stored": False, "personal_source_content_copied": False,
+            "research_raw_pages_stored": False,
+        },
+        "recommendations": recommendations,
+        "retention": {
+            "days": config["retention_days"], "purged_files": len(expired),
+            "remaining_expired_files": retention_remaining,
+        },
+        "run_id": identifier, "schema": "ai-human.improvement-run/v1",
+        "source_snapshots": snapshots, "status": "COMPLETED_READ_ONLY",
+    }
+    after_hash, _receipt = commit_improvement_files(
+        worker, lease, args.session_id, before_hash,
+        writes={target: record}, deletes=expired,
+        local_writes={
+            "AUTOMATIONS.md": render_improvement_automation(
+                worker, config, schedule, last_run=timestamp
+            )
+        },
+        action="run",
+    )
+    print("AI-HUMAN QUARTERLY IMPROVEMENT RUN: PASS")
+    print("- run id: " + identifier)
+    print("- recommendations awaiting review: " + str(len(recommendations)))
+    print("- capability activation: NONE")
+    print("- external effects: NONE")
+    if retention_remaining:
+        print("- retention cleanup remaining after batch cap: " + str(retention_remaining))
+    print("- new expected-state hash: " + after_hash)
+
+
+def improvement_forget(args):
+    worker = safe_worker(args.worker)
+    lease, before_hash = require_lease(worker, args.session_id, args.expected_state_hash)
+    improvement_config(worker)
+    identifier = safe_identity(args.identifier, "forgotten item id")
+    directory = "research" if args.kind == "RESEARCH" else "runs"
+    target = IMPROVEMENT_ROOT / directory / (identifier + ".json")
+    if not (worker / target).is_file():
+        raise ValueError("quarterly improvement item is missing: " + identifier)
+    after_hash, _receipt = commit_improvement_files(
+        worker, lease, args.session_id, before_hash, deletes=[target], action="forget",
+    )
+    print("AI-HUMAN QUARTERLY IMPROVEMENT FORGET: PASS")
+    print("- kind: " + args.kind)
+    print("- id: " + identifier)
+    print("- recoverability: DELETED FROM IMPROVEMENT STATE")
+    print("- new expected-state hash: " + after_hash)
+
+
+def improvement_show(args):
+    worker = safe_worker(args.worker)
+    config = improvement_config(worker, required=False)
+    schedule = improvement_schedule(worker)
+    root = worker / IMPROVEMENT_ROOT
+    research = len(list((root / "research").glob("*.json"))) if (root / "research").is_dir() else 0
+    runs = len(list((root / "runs").glob("*.json"))) if (root / "runs").is_dir() else 0
+    print("AI-HUMAN QUARTERLY IMPROVEMENT STATUS")
+    print("- choice: " + (config["status"] if config else "NOT CONFIGURED"))
+    if config and config["status"] in {"ENABLED", "PAUSED", "REMOVED"}:
+        print("- cadence: quarterly at " + config["local_time"] + " in " + config["timezone"])
+        print("- approved sources: " + ", ".join(config["approved_sources"]))
+        print("- research: " + config["research"])
+        print("- fact freshness days: " + str(config["freshness_days"]))
+        print("- private retention days: " + str(config["retention_days"]))
+    print("- schedule: " + (schedule["status"] if schedule else "NOT VERIFIED"))
+    if schedule and schedule["status"] == "VERIFIED_ACTIVE":
+        print("- next run: " + schedule["next_run_local"])
+    print("- retained research receipts: " + str(research))
+    print("- retained read-only runs: " + str(runs))
 
 
 def record_deferred(worker, version):
@@ -3436,6 +4400,74 @@ def parser():
     activate_p.add_argument("--scope", choices=("worker", "company"), required=True)
     activate_p.add_argument("--proof", required=True)
     activate_p.set_defaults(handler=capability_activate)
+
+    improvement_show_p = sub.add_parser("improvement-show")
+    improvement_show_p.add_argument("worker")
+    improvement_show_p.set_defaults(handler=improvement_show)
+
+    improvement_choice_p = sub.add_parser("improvement-choice")
+    improvement_choice_p.add_argument("worker")
+    improvement_choice_p.add_argument("choice", choices=("ENABLE", "DECLINE"))
+    improvement_choice_p.add_argument("--session-id", required=True)
+    improvement_choice_p.add_argument("--expected-state-hash", required=True)
+    improvement_choice_p.add_argument("--timezone")
+    improvement_choice_p.add_argument("--local-time")
+    improvement_choice_p.add_argument("--source", action="append", choices=sorted(IMPROVEMENT_SOURCES))
+    improvement_choice_p.add_argument(
+        "--research", choices=("DISABLED", "APPROVED_LINKED_SOURCES"), default="DISABLED"
+    )
+    improvement_choice_p.add_argument("--freshness-days", type=int)
+    improvement_choice_p.add_argument("--retention-days", type=int)
+    improvement_choice_p.set_defaults(handler=improvement_choice)
+
+    improvement_schedule_p = sub.add_parser("improvement-schedule")
+    improvement_schedule_p.add_argument("worker")
+    improvement_schedule_p.add_argument(
+        "--status", choices=("ACTIVE", "PAUSED", "REMOVED", "UNAVAILABLE"), required=True
+    )
+    improvement_schedule_p.add_argument("--session-id", required=True)
+    improvement_schedule_p.add_argument("--expected-state-hash", required=True)
+    improvement_schedule_p.add_argument("--adapter")
+    improvement_schedule_p.add_argument("--external-id")
+    improvement_schedule_p.add_argument("--visible-card", action="store_true")
+    improvement_schedule_p.add_argument("--next-run-local")
+    improvement_schedule_p.add_argument("--reason")
+    improvement_schedule_p.set_defaults(handler=improvement_schedule_record)
+
+    improvement_control_p = sub.add_parser("improvement-control")
+    improvement_control_p.add_argument("worker")
+    improvement_control_p.add_argument("action", choices=("PAUSE", "RESUME", "REMOVE"))
+    improvement_control_p.add_argument("--session-id", required=True)
+    improvement_control_p.add_argument("--expected-state-hash", required=True)
+    improvement_control_p.set_defaults(handler=improvement_control)
+
+    improvement_research_p = sub.add_parser("improvement-research-record")
+    improvement_research_p.add_argument("worker")
+    improvement_research_p.add_argument("--session-id", required=True)
+    improvement_research_p.add_argument("--expected-state-hash", required=True)
+    improvement_research_p.add_argument("--receipt", required=True)
+    improvement_research_p.add_argument("--supersedes")
+    improvement_research_p.set_defaults(handler=improvement_research_record)
+
+    improvement_run_p = sub.add_parser("improvement-run")
+    improvement_run_p.add_argument("worker")
+    improvement_run_p.add_argument(
+        "--mode", choices=("MANUAL", "MISSED_RUN_RECOVERY", "SCHEDULED"), required=True
+    )
+    improvement_run_p.add_argument("--session-id", required=True)
+    improvement_run_p.add_argument("--expected-state-hash", required=True)
+    improvement_run_p.add_argument("--now-local", required=True)
+    improvement_run_p.add_argument("--recommendations", required=True)
+    improvement_run_p.add_argument("--reason")
+    improvement_run_p.set_defaults(handler=improvement_run)
+
+    improvement_forget_p = sub.add_parser("improvement-forget")
+    improvement_forget_p.add_argument("worker")
+    improvement_forget_p.add_argument("kind", choices=("RESEARCH", "RUN"))
+    improvement_forget_p.add_argument("identifier")
+    improvement_forget_p.add_argument("--session-id", required=True)
+    improvement_forget_p.add_argument("--expected-state-hash", required=True)
+    improvement_forget_p.set_defaults(handler=improvement_forget)
 
     automatic_p = sub.add_parser("automatic-update")
     automatic_p.add_argument("worker")

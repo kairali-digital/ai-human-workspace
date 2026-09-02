@@ -8,14 +8,19 @@
   },
   "managed_files": [
     {
-      "sha256": "5901bcc6b8cfa5ee4501738de5093247d4aa287e8c0ed968fbb14dfa79e75532",
+      "sha256": "32cb0c2ddbe3bd9e55208bac0112b3380dc8e17cd257264261c9cbb99b671d17",
       "source": "core/AI-HUMAN.md",
       "target": ".ai-human/system/AI-HUMAN.md"
     },
     {
-      "sha256": "0564f6a05aa75d2fd3db1a8288a9585001c6c13e60cae7a09e3b509558094825",
+      "sha256": "22ac1249dea3ecbacab2c5079cb6abdb1ac283216e06ea8f1b5740d327befbc4",
       "source": "core/AGENT-RULES.md",
       "target": ".ai-human/system/AGENT-RULES.md"
+    },
+    {
+      "sha256": "08b279b6bbba1ef80fd7f2dd90e67068c002be562cca124d51eec15fc29b2a68",
+      "source": "core/QUARTERLY-IMPROVEMENT.md",
+      "target": ".ai-human/system/QUARTERLY-IMPROVEMENT.md"
     },
     {
       "sha256": "730b41d7bf757464cc555c16fbe919b6031912376643334085d952e05fa61027",
@@ -43,12 +48,12 @@
       "target": ".ai-human/system/TOOLBOX-TEMPLATE.md"
     },
     {
-      "sha256": "c4a2383a03bdb6739d16a0e24058e4b9c7da4e63d203e0be2f448868cc03c530",
+      "sha256": "a42caf4a54bbbe27aa45b6efbc6356c5e299b19763e728b6cdb7201b02ebbe36",
       "source": "core/VERSION",
       "target": ".ai-human/VERSION"
     },
     {
-      "sha256": "dbbc7e53c82a74837149971cf5a8cb9d8b918a31864615659dc1047b8d0881e0",
+      "sha256": "4083a6338abe6673ae03e0fb67ce2c6b5f4663dd3477b170d9b145307d401def",
       "source": "scripts/ai_human.py",
       "target": ".ai-human/bin/ai_human.py"
     }
@@ -77,6 +82,7 @@
     "READ-ME-FIRST.txt",
     ".ai-human/control/",
     ".ai-human/capabilities/",
+    ".ai-human/improvement/",
     ".ai-human/version-report.json",
     "credentials",
     "browser sessions",
@@ -85,5 +91,5 @@
   "release_status": "RELEASED",
   "repository": "kairali-digital/ai-human-workspace",
   "schema": "ai-human.workspace-release/v1",
-  "version": "2.2.0"
+  "version": "2.3.0"
 }

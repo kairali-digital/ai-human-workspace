@@ -1,6 +1,6 @@
 # Distribution editions
 
-The v2.2.0 release produces two separate, deterministic public download archives:
+The v2.3.0 release produces two separate, deterministic public download archives:
 
 - **Reusable Edition** contains only company-neutral core, starter, lifecycle and
   beginner control guides. Its filenames and readable content are checked for Kairali,

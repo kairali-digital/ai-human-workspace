@@ -38,8 +38,8 @@
 ## Verification evidence
 
 - Full lifecycle suite after convergence fixes and the Windows dependency correction:
-  - Python 3.9.6: `python3 -m unittest discover -s tests -v` — 96 tests, `OK`, 56.550s.
-  - Python 3.12: `python3.12 -m unittest discover -s tests -v` — 96 tests, `OK`, 47.699s.
+  - Python 3.9.6: `python3 -m unittest discover -s tests -v` — 97 tests, `OK`, 70.874s.
+  - Python 3.12: `python3.12 -m unittest discover -s tests -v` — 97 tests, `OK`, 57.489s.
 - Public release validator: `python3 scripts/validate_release.py .` — `PASS`, 12 managed
   files, three component entries, secret/absolute-path scan `PASS`. The 282-file release
   proof includes portal source, both current ZIPs, their checksums and review evidence;
@@ -54,6 +54,8 @@
   - reusable archived runtime byte-matches the two documented neutral substitutions;
   - archive extraction, installation, repository identity and worker validation pass in
     `test_public_edition_archives_install_and_validate_after_extraction`.
+  - the GitHub workspace release ZIP contains the complete proof-covered source and
+    portal payload, extracts safely and independently passes the release-proof validator.
 - Beginner rollout: company `gates/validate_beginner_rollout.py` — `PASS`, 11 role
   prompts plus deck, setup guide, homework, facilitator runbook and helper card; no
   employee command-line action found.
@@ -100,7 +102,7 @@ GATE 1 structure     PASS — manifests, portable paths, protected state, batch 
 GATE 2 facts         PASS — values remain owner-measured or UNKNOWN; source receipts are scoped, dated and injection-resistant; no number is inferred
 GATE 3 redirects     PASS — canonical metadata, robots, sitemap, download paths and candidate-asset refusal verified
 GATE 4 works         PASS — install, update, deferral, refusal, scheduled proof, suspend, recovery, rollback, removal and archive readback paths exercised
-GATE 5 proof         PASS LOCALLY — dual-runtime 96-test suites, exact payload proof, archive parity/checksums, beginner gate, portal build/audit and secret scans passed
+GATE 5 proof         PASS LOCALLY — dual-runtime 97-test suites, exact payload proof, archive parity/checksums, beginner gate, portal build/audit and secret scans passed
 
 VERDICT: LOCAL RELEASE GATES PASS; PROTECTED HOSTED CHECKS REQUIRED BEFORE TAG
 REASON: the candidate has independent release agreement and explicit unavailable

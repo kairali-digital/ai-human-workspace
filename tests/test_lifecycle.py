@@ -34,6 +34,12 @@ VALIDATOR_PATH = ROOT / "scripts/validate_release.py"
 VALIDATOR_SPEC = importlib.util.spec_from_file_location("ai_human_release_validator", VALIDATOR_PATH)
 VALIDATOR = importlib.util.module_from_spec(VALIDATOR_SPEC)
 VALIDATOR_SPEC.loader.exec_module(VALIDATOR)
+PUBLIC_BUILDER_PATH = ROOT / "scripts/build_public_release.py"
+PUBLIC_BUILDER_SPEC = importlib.util.spec_from_file_location(
+    "ai_human_public_release_builder", PUBLIC_BUILDER_PATH
+)
+PUBLIC_BUILDER = importlib.util.module_from_spec(PUBLIC_BUILDER_SPEC)
+PUBLIC_BUILDER_SPEC.loader.exec_module(PUBLIC_BUILDER)
 STATE_FILES = (
     "AGENTS.md", "CLAUDE.md", "AI-HUMAN.md", "COMPANY.md", "PARAMETERS.md",
     "ROLE.md", "MASTER_CURSOR.md", "OPEN_REGISTER.md", "TODAY.md",
@@ -1983,6 +1989,18 @@ class LifecycleTests(unittest.TestCase):
             with self.subTest(archive=archive_path.name):
                 with zipfile.ZipFile(archive_path) as archive:
                     self.assertEqual(archive.read(member), expected_runtime)
+
+    def test_public_github_workspace_asset_matches_the_release_proof(self):
+        proof = json.loads((ROOT / "release-proof.json").read_text(encoding="utf-8"))
+        files = PUBLIC_BUILDER.collect_files(
+            ROOT, ROOT, PUBLIC_BUILDER.IGNORED_PARTS
+        )
+        PUBLIC_BUILDER.verify_workspace_matches_proof(files, proof)
+        without_portal = [
+            item for item in files if not item[1].startswith("portal/")
+        ]
+        with self.assertRaisesRegex(ValueError, "differs from release proof"):
+            PUBLIC_BUILDER.verify_workspace_matches_proof(without_portal, proof)
 
     def test_kairali_uses_canonical_abhilash_spelling_and_neutral_guards_both_variants(self):
         legacy = "Abi" + "lash"

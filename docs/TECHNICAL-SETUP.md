@@ -44,9 +44,9 @@ unresolved compliance, expired review, profile tampering or hand-edited rendered
 Task-specific operating locks belong in `WORK-GATES.md`; they may narrow work but never
 replace the entity profile.
 
-## Update v2.0.0 or held v2.0.1, or migrate an older pre-profile worker
+## Update a configured v2 worker, or migrate an older pre-profile worker
 
-Version 2.3.0 is `BACKWARD_COMPATIBLE` from a configured v2.0.0, held v2.0.1, v2.0.2, v2.1.0 or v2.2.0 worker and
+Version 2.4.0 is `BACKWARD_COMPATIBLE` from a configured v2.0.0 through v2.3.0 worker and
 preserves user-owned state. Use the normal read-only check and checkpoint update for
 that path. If the worker predates v2.0.0 or has no confirmed entity profile, the first
 v2 step is still `SETUP_MIGRATION_REQUIRED`. At a real checkpoint, run the released
@@ -84,7 +84,8 @@ python3 scripts/ai_human.py verify-state "/absolute/worker/folder" --expect SUSP
 python3 scripts/ai_human.py resume "/absolute/worker/folder"
 python3 scripts/ai_human.py check "/absolute/worker/folder"
 python3 scripts/ai_human.py update "/absolute/worker/folder" --latest --at-checkpoint
-python3 scripts/ai_human.py rollback "/absolute/worker/folder" --version 1.0.0
+python3 scripts/ai_human.py recover-lifecycle "/absolute/worker/folder"
+python3 scripts/ai_human.py rollback "/absolute/worker/folder" --version 2.3.0
 python3 scripts/ai_human.py uninstall "/absolute/worker/folder" --at-checkpoint
 python3 scripts/ai_human.py verify-state "/absolute/worker/folder" --expect UNINSTALLED
 ```
@@ -106,8 +107,6 @@ python3 scripts/ai_human.py install-pack kairali-company-rollout \
 
 ```bash
 python3 scripts/ai_human.py components --source .
-python3 scripts/ai_human.py install-skill kairali-akshar-marketing-science \
-  --runtime codex --source .
 python3 scripts/ai_human.py install-pack kairali-company-rollout \
   "/absolute/reference-kit/folder" --source .
 python3 scripts/ai_human.py remove-pack "/absolute/reference-kit/folder" \
@@ -115,8 +114,14 @@ python3 scripts/ai_human.py remove-pack "/absolute/reference-kit/folder" \
 ```
 
 Use `--latest` instead of `--source .` when running the managed lifecycle tool from an
-installed worker. A skill upgrade or any component removal requires
-`--at-checkpoint`. Removal moves the component to a recoverable archive.
+installed worker. In v2.4, both managed skill-install entry points intentionally stop
+before download, staging or runtime change because no trusted human-presence/skill-loader
+authority exists. Install a reference pack only into a dedicated documentation folder;
+the lifecycle rejects targets containing `.agents`, `.claude`, `.codex` or `skills` so
+reference `SKILL.md` files cannot be discovered as host skills. Remote component lookup
+is pinned to the lifecycle's release repository and rejects an alternate repository
+before network access. Reference-pack removal requires `--at-checkpoint` and moves the
+component to a recoverable archive.
 
 Do not run an update during a live task. A suspended worker defers direct and fleet
 automatic updates with `SYSTEM_SUSPENDED`; it does not mutate the installed version.
@@ -149,14 +154,35 @@ cannot substitute a universal or another company's Gate 0. Company scope records
 approval for a future release; it does not publish or distribute anything.
 
 `automatic-update` enforces the confirmed local schedule and eligibility contract.
-`fleet-update` reads a content-free batch manifest, pilots Daily Email Triage first and
-processes no more than 25 workers. The public scheduler adapter is a production concern;
-the local candidate accepts a verified local source for deterministic testing only.
+`fleet-update` reads a content-free batch manifest, pilots Daily Email Triage in the
+same invocation before any general worker and processes no more than 25 workers. An
+editable prior fleet-state file is evidence only and can never authorize a later batch.
+Both `--source` and signature-verified `--latest` release selection are supported.
 Deterministic tests pass `--now-local` with an explicit UTC offset. The production
 scheduler adapter must supply the same kind of offset-aware worker-local value for the
 confirmed time-zone cohort; the lifecycle command refuses to infer it from the host
 clock. This avoids a hidden Windows IANA-database dependency and prevents a host in a
 different time zone from silently choosing the wrong calendar window.
+
+Manual personal-improvement runs accept an explicit offset-aware `--now-local` only
+within five minutes of the real current time. The same real-clock bound applies to
+scheduled and missed-run-recovery paths. Those paths also require fresh visible-card,
+cadence and prompt-hash proof before recording the following run, and retention always
+uses the real clock. Persistent `PROPOSE`, `LATER` and `REJECT` decisions live in a
+compact ledger outside run-artifact retention, so cleanup cannot resurface an already
+decided recommendation. To reconsider a decision after its original run expires, use
+the exact workflow signature shown in the brief with `improvement-forget DECISION`.
+
+If a process stops during managed update or rollback, every ordinary worker command
+fails closed while `.ai-human/control/lifecycle-transaction.json` exists. Run
+`recover-lifecycle`; it either verifies and finalizes the fully applied target or restores
+the exact tagged pre-transaction release. Recovery does not trust mutable backup bytes.
+
+Before deliberately rolling a v2.4+ worker back below v2.4, remove and verify any visible
+personal-improvement schedule, then use `prepare-downgrade --target-version 2.3.0`.
+That command moves v2-only private state into a hash-inventoried recoverable archive and
+makes the rollback readable by the older version. `restore-downgrade` restores that
+state only after the worker is back on v2.4 or later.
 
 Existing idle workers use `configure-control` once after the governed update. It
 requires the approved worker ID, confirmed IANA time zone, designated supervisor,

@@ -8,17 +8,27 @@
   },
   "managed_files": [
     {
-      "sha256": "32cb0c2ddbe3bd9e55208bac0112b3380dc8e17cd257264261c9cbb99b671d17",
+      "sha256": "4e131c63dffa09d20543958c9ba32a481ba3977ebf833b5e8c92019c36f9e7d0",
       "source": "core/AI-HUMAN.md",
       "target": ".ai-human/system/AI-HUMAN.md"
     },
     {
-      "sha256": "22ac1249dea3ecbacab2c5079cb6abdb1ac283216e06ea8f1b5740d327befbc4",
+      "sha256": "6a2d5638c5bbf41c25703823e8cc4d6aa9c4791747461aee520004fe21e9f381",
       "source": "core/AGENT-RULES.md",
       "target": ".ai-human/system/AGENT-RULES.md"
     },
     {
-      "sha256": "08b279b6bbba1ef80fd7f2dd90e67068c002be562cca124d51eec15fc29b2a68",
+      "sha256": "aa91c04a15e0402a81524abecd4db2e01e20cfdf0f13cef15b80957971f0e1d7",
+      "source": "core/AUTONOMY-CONTROL.md",
+      "target": ".ai-human/system/AUTONOMY-CONTROL.md"
+    },
+    {
+      "sha256": "93bb07abe744e09eb9f7ff93d469ca2b006ba769bf4742e9e64c59930a84eb66",
+      "source": "core/AUTHORITY-REGISTRY.json",
+      "target": ".ai-human/system/AUTHORITY-REGISTRY.json"
+    },
+    {
+      "sha256": "e18b31e4013f1b3f4de7fb88c48e24e0b74b8a601bb2e7b6aaf4ce7302d84c3c",
       "source": "core/QUARTERLY-IMPROVEMENT.md",
       "target": ".ai-human/system/QUARTERLY-IMPROVEMENT.md"
     },
@@ -48,12 +58,12 @@
       "target": ".ai-human/system/TOOLBOX-TEMPLATE.md"
     },
     {
-      "sha256": "a42caf4a54bbbe27aa45b6efbc6356c5e299b19763e728b6cdb7201b02ebbe36",
+      "sha256": "2ad7b0c3f0ede58c3165b7a8a5479e890a758d39bfe8683eaef50ce6afad7232",
       "source": "core/VERSION",
       "target": ".ai-human/VERSION"
     },
     {
-      "sha256": "4083a6338abe6673ae03e0fb67ce2c6b5f4663dd3477b170d9b145307d401def",
+      "sha256": "ed84d52a11e7522480556300f32f97dbc86eee168cf89e16e8addd5421e5384f",
       "source": "scripts/ai_human.py",
       "target": ".ai-human/bin/ai_human.py"
     }
@@ -83,6 +93,9 @@
     ".ai-human/control/",
     ".ai-human/capabilities/",
     ".ai-human/improvement/",
+    ".ai-human/autonomy/",
+    ".ai-human/backups/",
+    ".ai-human/downgrade-exports/",
     ".ai-human/version-report.json",
     "credentials",
     "browser sessions",
@@ -91,5 +104,5 @@
   "release_status": "RELEASED",
   "repository": "kairali-digital/ai-human-workspace",
   "schema": "ai-human.workspace-release/v1",
-  "version": "2.3.0"
+  "version": "2.4.0"
 }

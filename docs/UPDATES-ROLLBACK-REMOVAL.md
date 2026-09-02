@@ -21,6 +21,10 @@ Paste this into the worker chat:
 Temporarily suspend the AI-human system in this project because I want to work without its managed rules. Preserve all project files and external account connections. Disable its managed automations and automatic updates. Then run the read-only state verification and show me SUSPENDED with PASS.
 ```
 
+If a visible personal-improvement Scheduled task exists, pause it and verify the card
+first. Suspension stops rather than claiming all automation is off while an external
+schedule may still run.
+
 **DONE WHEN:** mode is `SUSPENDED`, managed rules and automations are `OFF`, automatic
 updates are `DISABLED`, project files are preserved and verification is `PASS`.
 Automatic and fleet update checks return `DEFERRED — SYSTEM_SUSPENDED`; they do not
@@ -45,17 +49,18 @@ Automatic:
 
 `FIRST DAY 10:00 AM LOCAL → READ-ONLY CHECK → ACTIVE SETTING → RELEASED + BACKWARD-COMPATIBLE → NO LIVE TASK OR WRITER → BACKUP → APPLY MANIFEST → VALIDATE → RECEIPT → MONITOR PROOF`
 
-The lifecycle tool downloads only the configured repository's latest GitHub release,
-verifies semantic version and every managed-file hash, and applies only manifest-listed
-targets under `.ai-human/`.
+The lifecycle tool downloads only the configured repository's final canonical GitHub
+release. It verifies the configured owner, semantic version, immutable commit, GitHub
+signature status, archive root and every managed-file hash, and applies only
+manifest-listed targets under `.ai-human/`.
 
 Company, owner, role, purpose, facts, decisions, tools, gates, cursor, register, today,
 ledger, evidence, automation records, credentials, browser sessions and personal files
-are never managed by a release. Private quarterly configuration, schedule proof,
+are never managed by a release. Private monthly or quarterly configuration, schedule proof,
 research receipts and read-only reports under `.ai-human/improvement/` are also
 preserved.
 
-The scheduled read-only check runs once on the first calendar day at 10:00 AM in the
+The scheduled core-update check runs once on the first calendar day at 10:00 AM in the
 worker's confirmed local time zone. When that worker's automatic-update setting is
 `ACTIVE`, the core may apply without a new employee click only if the release is
 immutable, owner-approved, `RELEASED`, hash-verified, explicitly
@@ -94,14 +99,24 @@ and reports any missing, deferred or mismatched worker; it never rewrites worker
 ## Rollback
 
 Before every manual or automatic update, the current managed files are copied to a unique
-`.ai-human/backups/<old>-before-<new>-<UTC timestamp>/` folder. A failed local validation restores that backup
-automatically. A deliberate rollback restores the named old version and verifies that
-employee-state hashes did not change.
+`.ai-human/backups/<old>-before-<new>-<UTC timestamp>/` folder with a closed inventory
+and per-file hashes. A failed validation restores that backup while the worker mutex is
+held. If the process stops, a persistent transaction journal blocks ordinary work until
+`recover-lifecycle` verifies the applied release or restores the exact trusted tagged
+pre-transaction release. A deliberate rollback also reads the named trusted release;
+mutable backup bytes cannot redefine an old version.
+
+Before a v2.4+ worker rolls back below v2.4, `prepare-downgrade` provides the governed
+exit the compatibility check requires. It first requires no live task or writer and no
+external schedule that could still run, then moves v2-only improvement/autonomy state to
+a hash-inventoried `.ai-human/downgrade-exports/` archive. After updating back to v2.4+
+the archive can be restored with `restore-downgrade`.
 
 ## Fleet isolation
 
 The automatic fleet path starts with a Daily Email Triage pilot. General workers wait
-until the same release passes the pilot. Each fleet batch contains no more than 25
+until that pilot passes in the same invocation for the same exact release. Prior editable
+fleet state is evidence only and never grants authority. Each fleet batch contains no more than 25
 workers. A release-level identity or hash failure stops before any worker changes; a
 worker-local failure is isolated and reported while other safe workers continue.
 
@@ -115,6 +130,9 @@ Paste:
 ```text
 Reversibly uninstall the AI-human system from this project. If a live task exists, first show me the checkpoint needed and wait. Preserve every project and work-state file. Archive the managed .ai-human folder and every active local AI-human adapter. Then verify UNINSTALLED and show me the archive and receipt locations.
 ```
+
+If a personal-improvement Scheduled task exists—even if paused—remove it and verify the
+visible card first. Uninstall refuses to leave a resumable external schedule behind.
 
 Uninstall does not delete the worker. It moves the installed `.ai-human` system and
 the local adapters created by the system to

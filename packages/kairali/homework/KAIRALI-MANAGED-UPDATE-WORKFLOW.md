@@ -8,7 +8,8 @@ go-live. It does not silently overwrite employee work.
 - Core managed files listed in `release-manifest.json` under `.ai-human/`.
 - The separately installed Kairali reference kit, when its component receipt shows an
   older version.
-- Only the governed skills already approved and installed for that employee's role.
+- No governed skill: v2.4 keeps catalog skill records inactive and cannot install or
+  activate them.
 
 The release never manages `COMPANY.md`, `PARAMETERS.md`, `ROLE.md`, `FACTS.md`,
 `DECISIONS.md`, `MASTER_CURSOR.md`, `OPEN_REGISTER.md`, `TODAY.md`,
@@ -30,7 +31,7 @@ rewritten when the reference kit changes.
 6. At a safe checkpoint, the employee says `UPDATE NOW`.
 7. The Setup Helper verifies the tagged release and hashes, backs up the current
    managed copy, updates only the affected managed layer, validates it and shows the
-   receipt. Core, reference kit and named opt-in skills are handled separately.
+   receipt. Core and reference kit are handled separately; skill records stay inactive.
 8. The employee's evidence log points to the receipt. Monitor reads version, receipt
    and validation proof for the announced batch and reports any missing, deferred or
    mismatched worker. Monitor never rewrites a worker's state.

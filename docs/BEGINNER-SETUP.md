@@ -93,13 +93,37 @@ update is recorded and deferred instead.
 Open the existing worker in Codex, start a new chat and paste `CHECK FOR AI-HUMAN
 UPDATE`. The exact full prompt is in the Reusable Edition's `START-HERE.md`. The check
 is read-only. If a compatible update is available and no task is live, say `UPDATE NOW`
-at a safe checkpoint. A configured v2.0.0 worker or held v2.0.1 worker can take the
-v2.3.0 release while its company, Gate 0 profile and user state stay preserved. A
+at a safe checkpoint. A configured v2.0.0 through v2.3.0 worker can take the
+v2.4.0 release while its company, Gate 0 profile and user state stay preserved. A
 pre-v2 worker first follows the guided exact-scope Gate 0 migration.
 
-**DONE WHEN:** the worker shows version `2.3.0`, validator `PASS`, the update receipt,
+**DONE WHEN:** the worker shows version `2.4.0`, validator `PASS`, the update receipt,
 preserved-state result and recovery location. If a task is live, DONE for this session
 means the update is visibly deferred without changing the worker.
+
+## Turn on the personal improvement review
+
+This is optional and starts off. Open the installed worker in Codex and paste:
+
+```text
+SET UP MY PERSONAL IMPROVEMENT REVIEW
+
+Ask me one question at a time. Let me choose monthly or quarterly, my local time and time zone, which local work records may be reviewed, and whether current web research is allowed. If I allow research, ask for my exact questions, the official domains I approve, and whether official sites, Reddit or YouTube may be used. Store only dated source receipts and concise claims—never raw pages, passwords or personal data.
+
+Show me the complete choices and the exact scheduled-task prompt before changing anything. After I approve, create or help me create one visible Scheduled task, verify its cadence, prompt fingerprint and next run, and show me DONE WHEN. If the scheduler is unavailable, record UNAVAILABLE; never claim it is active. Keep every recommendation read-only until I choose PROPOSE, LATER with a revisit date, or REJECT. Never send messages, act on LinkedIn, unsubscribe, or install a skill from this loop.
+```
+
+**DONE WHEN:** the visible Scheduled card, chosen cadence, local time, time zone, exact
+prompt fingerprint and next run all match; the worker reports `VERIFIED_ACTIVE`. If a
+card cannot be created, DONE means `UNAVAILABLE` is recorded truthfully and nothing is
+claimed active.
+
+After testing a proposed improvement, tell Codex the measured minutes before and after,
+the number of observed occurrences and the evidence. The brief calculates the time
+difference and never invents a money-saving claim. If an old decision should be
+reconsidered after its original report has expired, ask Codex to forget that one
+displayed workflow decision; it records the explicit removal and leaves other decisions
+unchanged.
 
 ## What the helper does
 
@@ -123,9 +147,10 @@ stays optional: it may use task-scoped Computer control inside its local worker 
 Chrome on an approved non-LinkedIn setup page, but stops all tools and shows `YOUR TURN
 ON LINKEDIN` before the employee opens LinkedIn. The employee manually pastes up to 25
 messages at a time, reviews every draft and manually sends; the AI never acts on
-LinkedIn. The helper installs
-an Akshar or Rahul governed skill only when the employee's approved role or the owner
-explicitly names that skill. No employee chooses from the machine's full skill list.
+LinkedIn. The v2.4 helper may show the approved Akshar and Rahul catalog entries as
+inactive reference material, but it does not install or activate a managed skill. A
+reference pack is copied only to a dedicated documentation folder outside Codex and
+Claude skill-discovery folders.
 
 ## Three-worker go-live readback
 
@@ -168,6 +193,20 @@ later. If an update fails, the lifecycle tool restores the previous managed syst
 the worker opens but its state is wrong, stop and show the Setup Helper the exact visible
 result; never create replacement facts from memory.
 
+If Codex says the controlled state changed during an active or abandoned session, do
+not delete the lease or undo your work. Open that worker in Codex and paste:
+
+```text
+RECOVER MY ABANDONED AI-HUMAN SESSION
+
+Check the visible session status and show me which current files need review. Preserve every edit. Ask the designated supervisor to inspect the current state and make the one recovery decision. If approved, recover only against the exact current state fingerprint and record both the abandoned fingerprint and current fingerprint in the recovery receipt. Do not use Terminal or ask me to type a command.
+```
+
+**DONE WHEN:** the designated supervisor has approved the exact current state, the
+session status reads `CLEAR`, the recovery receipt says whether state divergence was
+acknowledged, and the worker validator passes. If the supervisor does not approve, keep
+the lease and work files unchanged.
+
 ## Troubleshooting and how to stop using it
 
 - ZIP does not open: on Windows, confirm you selected **Extract All** rather than opening
@@ -179,6 +218,9 @@ result; never create replacement facts from memory.
 - The package says `LOCAL_BUILD_ONLY`: stop. It has not been released for real work.
 - The old chat remains restrictive after suspension: start a new chat in the same
   project and run the `SUSPENDED` verification. A stale chat is not proof.
+- Suspension is blocked while a visible personal-improvement schedule still exists,
+  even if it is paused. Ask the Setup Helper to remove and visibly verify that schedule
+  first; it must not delete a card based only on local state.
 - Uninstall leaves `.ai-human` or an active AI-human adapter: removal failed. Use the
   receipt and Setup Helper; do not delete work files.
 - A plugin is gone but its account is still reachable: disconnect its connector

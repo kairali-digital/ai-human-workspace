@@ -75,11 +75,25 @@ If an update is available, wait for me to say UPDATE NOW. Never ask me to use Te
 
 If the check says the worker is compatible and idle, paste `UPDATE NOW`. The helper
 backs up, verifies the release, updates only managed files and validates. A configured
-v2.0.0, held v2.0.1, v2.0.2, v2.1.0 or v2.2.0 worker can take v2.3.0 directly. A pre-v2 worker first needs the
+v2.0.0 through v2.3.0 worker can take v2.4.0 directly. A pre-v2 worker first needs the
 guided exact-scope Gate 0 migration.
 
-**DONE WHEN:** the installed version is `2.3.0`, validation is `PASS`, preserved state
+**DONE WHEN:** the installed version is `2.4.0`, validation is `PASS`, preserved state
 is confirmed and a recovery location is shown.
+
+## Optional personal improvement review
+
+Open the installed worker and paste `SET UP MY PERSONAL IMPROVEMENT REVIEW`. Ask Codex
+to take one choice at a time: monthly or quarterly, local time, time zone, approved
+local sources, and whether exact official-domain, Reddit or YouTube research is allowed.
+Approve only after the full preview is visible. Codex must verify one visible Scheduled
+card, its exact prompt fingerprint and next run before reporting `VERIFIED_ACTIVE`.
+Recommendations stay read-only until you choose `PROPOSE`, `LATER` with a revisit date,
+or `REJECT`; messages, LinkedIn actions, unsubscribes and skill installation remain
+unavailable from this loop.
+
+**DONE WHEN:** the card and worker agree, or the worker truthfully says `UNAVAILABLE`
+without claiming an active schedule.
 
 ## If anything fails
 

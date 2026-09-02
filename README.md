@@ -18,6 +18,12 @@ approved work through a controlled loop and records durable state in the worker 
   reversible removal with `ACTIVE`, `SUSPENDED` and `UNINSTALLED` proof;
 - a zero-command beginner path and an optional Git/CLI path for technical teams;
 - release validation, secret checks and lifecycle tests on every pull request.
+- an owner-selected monthly or quarterly personal improvement loop that gathers
+  source-linked official, Reddit and YouTube research, detects repeated work and keeps
+  every resulting change behind durable `PROPOSE / LATER / REJECT` decisions that
+  survive ordinary artifact retention;
+- guarded automatic core-update checks with signed-release identity verification,
+  pinned repository identity, worker-wide serialization and preserved private state;
 - an optional, hashed Kairali company bundle with approved role prompts, two governed
   skills and the complete universal homework pack.
 
@@ -57,16 +63,20 @@ private improvement state or personal files.
 - Governed capability and fleet-update control plane:
   [`docs/GOVERNED-CAPABILITIES-AND-FLEET.md`](docs/GOVERNED-CAPABILITIES-AND-FLEET.md)
 
-v2.3.0 is the current owner-approved quarterly-improvement release. It is
-backward-compatible for configured v2.0.0, held v2.0.1, v2.0.2, v2.1.0 and v2.2.0
-workers and keeps automatic update eligibility off. A pre-v2 worker still needs the
+v2.4.0 is the current owner-approved personal-improvement and lifecycle-hardening
+release. It is backward-compatible for configured v2.0.0 through v2.3.0 workers and
+keeps release-level automatic update eligibility off. A pre-v2 worker still needs the
 guided exact-scope Gate 0 setup migration before entering the v2 line. The release
 manifests are `APPROVED_BY_OWNER` / `RELEASED`; protected GitHub checks and live
 verification remain the publication evidence for each distribution channel.
 
-Skills are not installed indiscriminately. The Kairali Akshar marketing skill and Rahul
-sales-system skill are explicit, role-based options. Platform/system and third-party
-skills from a maintainer's computer are not part of this repository.
+The component catalog remains inspectable, but v2.4 does not install a managed skill.
+Neither Codex nor Claude currently supplies this runtime with a trusted pre-discovery
+loader plus a host-proven human-presence signal. External email/LinkedIn effects are
+also unavailable until a native credential and authority broker exists. These are
+explicit safety boundaries, not hidden partial features. Reference packs install only
+outside `.agents`, `.claude`, `.codex` and `skills` discovery trees, and remote component
+lookup is pinned to the lifecycle release repository.
 
 The public repository is a distribution channel, not a company work repository. Never
 commit live user state, customer data, credentials or private evidence here.

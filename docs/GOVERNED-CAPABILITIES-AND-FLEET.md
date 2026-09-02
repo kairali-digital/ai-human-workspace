@@ -1,10 +1,10 @@
 # Governed capabilities and fleet updates
 
 This document describes the v2 control plane, introduced in v2.0.0 and retained in the
-current owner-approved v2.3.0 release. v2.0.1 is held after a post-publication
-concurrency finding. v2.3.0 is backward-compatible from configured v2.0.0, held v2.0.1,
-v2.0.2, v2.1.0 and v2.2.0 workers; a pre-v2 worker still needs the exact-scope setup migration.
-Automatic update selection remains disabled. The v2.3.0 manifests are
+current owner-approved v2.4.0 release. v2.0.1 is held after a post-publication
+concurrency finding. v2.4.0 is backward-compatible from configured v2.0.0 through
+v2.3.0; a pre-v2 worker still needs the exact-scope setup migration.
+Automatic update selection remains disabled. The v2.4.0 manifests are
 `APPROVED_BY_OWNER` / `RELEASED`; unapproved pre-release builds use `LOCAL_BUILD_ONLY`,
 and the lifecycle refuses to install them.
 
@@ -21,8 +21,10 @@ An incoherent live task rolls the files back to their before copy. The session r
 the lease only after validation passes.
 
 There is no guessed expiry threshold. If a session is genuinely abandoned, only the
-designated supervisor may recover its lease, using the unchanged expected-state hash
-and a recorded reason. A changed hash blocks recovery.
+designated supervisor may recover its lease with a recorded reason and the exact current
+state hash shown by `session-status`. When the current hash differs from the abandoned
+lease, the recovery receipt records both hashes and the supervisor's acknowledgement;
+it does not erase or overwrite the edited files.
 
 ## Assignment is not execution
 
@@ -89,38 +91,46 @@ then receives its approved worker ID, confirmed time zone, designated supervisor
 ACTIVE/DISABLED automatic-update setting only while idle. The migration preserves user
 state and records the local decision reference and validator receipts; it never guesses
 these settings. Because entering the v2 line requires this setup migration, it is not
-an automatic path. The v2.3.0 release remains profile-preserving and explicitly
-`BACKWARD_COMPATIBLE` from configured v2.0.0, held v2.0.1, v2.0.2, v2.1.0 and v2.2.0 workers, while its automatic-
-update eligibility remains off.
+an automatic path. The v2.4.0 release remains profile-preserving and explicitly
+`BACKWARD_COMPATIBLE` from configured v2.0.0 through v2.3.0, while its automatic-update
+eligibility remains off.
 
 For Mac/Windows portability, scheduling does not assume Python can supply a bundled
 IANA time-zone database. The approved scheduler adapter must invoke a confirmed
 time-zone cohort with an explicit offset-aware worker-local timestamp. The lifecycle
-refuses a missing timestamp, verifies the worker belongs to that cohort and checks the
-supplied local calendar day and hour. This keeps daylight-saving calculation with the
-approved scheduler adapter instead of guessing from the lifecycle host or a fixed
-offset.
+refuses a missing timestamp, verifies both worker membership and that the supplied UTC
+offset is valid for the configured IANA zone at that exact instant, and requires the
+first day at exactly 10:00:00 local. It never substitutes the lifecycle host clock or
+accepts a fixed offset that contradicts the configured zone.
 
 Automatic application requires all of the following:
 
 - the worker's automatic-update setting is `ACTIVE`;
 - no live task and no writer lease;
-- immutable owner-approved `RELEASED` identity and matching file hashes;
+- the configured repository owner, final canonical semantic-version tag, matching
+  immutable commit, GitHub-verified commit signature, owner-approved `RELEASED`
+  identity and matching file hashes;
+- an incoming manifest repository exactly matching the worker's pinned installed
+  repository; fleet callers cannot substitute another repository;
 - explicit `BACKWARD_COMPATIBLE` classification and a compatible installed version;
 - a backup before managed-only changes;
 - unchanged user state and settings;
 - worker validation after the change.
 
-Failure restores the backup and records the failed update. A live task or writer
+The worker-wide operation mutex serializes lifecycle commands and is released by the
+operating system after a crash. Suspension writes its STOP latch before waiting for
+that mutex. Failure restores the backup and records the failed update. A live task or writer
 returns `DEFERRED`. A deferred worker may retry after it becomes idle in the same
 month; a successful monthly check is not duplicated.
 
 ## Daily Email Triage pilot and batches
 
 The first fleet phase must contain only workers labelled `daily-email-triage`. General
-workers remain deferred until that pilot is due, completes and validates. Every fleet
-file contains no more than 25 workers. Later general-only batches require durable proof
-that the same release passed the pilot.
+workers remain deferred until that pilot is due, completes and validates in the same
+invocation for the same release. Every fleet file contains no more than 25 workers.
+Prior fleet-state files remain useful evidence for Monitor but are never authority;
+editing or replaying one cannot authorize a general-only batch. Each worker update also
+acquires that worker's operation mutex.
 
 A malformed or unverified release is systemic and stops before any worker changes. A
 worker-local missing file, identity mismatch, validator failure or update failure is
@@ -133,8 +143,9 @@ The automated tests use synthetic workers only. They prove artifact-versus-execu
 batch classification, lease exclusion,
 expected-state rejection, transaction rollback, user/supervisor capability gates,
 exact entity/jurisdiction Gate 0 binding, profile isolation and tamper evidence,
-first-day 10:00 AM local scheduling, idle-only automatic update, state preservation,
-Daily Email Triage pilot gating and isolation of a broken general worker.
+exact-zone first-day 10:00:00 local scheduling, idle-only automatic update, state
+preservation, same-batch Daily Email Triage pilot gating, forged-prior-proof rejection,
+crash-journal recovery and isolation of a broken general worker.
 
 No test connects email, changes a user worker, publishes a release, deploys a
 portal, sends a message or pushes Git history.

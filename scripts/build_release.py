@@ -4,6 +4,8 @@
 import argparse
 import hashlib
 import json
+import os
+import tempfile
 from pathlib import Path
 
 from validate_release import (
@@ -38,9 +40,17 @@ def tree_sha256(root):
 
 
 def atomic_json(path, value):
-    temp = path.with_name(path.name + ".build-temp")
-    temp.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    temp.replace(path)
+    data = (json.dumps(value, indent=2, sort_keys=True) + "\n").encode("utf-8")
+    descriptor, temp_name = tempfile.mkstemp(prefix="." + path.name + ".", dir=path.parent)
+    try:
+        with os.fdopen(descriptor, "wb") as stream:
+            stream.write(data)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temp_name, path)
+    finally:
+        if os.path.exists(temp_name):
+            os.unlink(temp_name)
 
 
 def main():

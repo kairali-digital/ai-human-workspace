@@ -1,7 +1,9 @@
 # Kairali Employee Edition — start here
 
 This edition is only for Kairali employees and approved facilitators. It includes the
-shared workspace plus Kairali role prompts, homework workers and governed opt-in skills.
+shared workspace plus Kairali role prompts, homework workers and reference skill
+packages for separately approved manual adoption. v2.4 never installs or activates a
+skill.
 
 ## Install in five visible steps
 
@@ -65,12 +67,25 @@ verified `SUSPENDED`.
 Open the existing employee worker in Codex, start a new chat and paste `CHECK FOR
 KAIRALI UPDATE`. Use the complete checked prompt in
 `workspace/packages/kairali/UPDATE-WORKFLOW.md`. The check changes nothing. If the
-worker is configured v2.0.0, held v2.0.1, v2.0.2, v2.1.0 or v2.2.0 and idle, say `UPDATE NOW` to apply v2.3.0
+worker is configured v2.0.0 through v2.3.0 and idle, say `UPDATE NOW` to apply v2.4.0
 with a backup, managed-file-only update and validation. A pre-v2 worker first completes
 the guided exact-scope Gate 0 migration.
 
-**DONE WHEN:** the installed version is `2.3.0`, validation is `PASS`, employee state
+**DONE WHEN:** the installed version is `2.4.0`, validation is `PASS`, employee state
 is preserved and a recovery location is shown.
+
+## Optional personal improvement review
+
+Open the employee worker and paste `SET UP MY PERSONAL IMPROVEMENT REVIEW`. Codex asks
+one choice at a time for monthly or quarterly cadence, local time and time zone, approved
+work records, exact research questions, official domains and any approved Reddit or
+YouTube channel. It must show the full preview and verify one visible Scheduled card,
+prompt fingerprint and next run before reporting `VERIFIED_ACTIVE`. Every finding stays
+read-only until the employee chooses `PROPOSE`, `LATER` with a revisit date, or `REJECT`.
+No message, unsubscribe, LinkedIn action or skill installation is available from this loop.
+
+**DONE WHEN:** the visible card and worker agree, or the worker truthfully records
+`UNAVAILABLE` without claiming that a schedule exists.
 
 ## If anything fails
 

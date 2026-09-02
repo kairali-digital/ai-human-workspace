@@ -15,9 +15,9 @@ type GithubRelease = {
 };
 
 const fallbackRelease: GithubRelease = {
-  tag_name: "v2.3.0",
-  html_url: "https://github.com/kairali-digital/ai-human-workspace/releases/tag/v2.3.0",
-  published_at: "2026-08-16T00:00:00Z",
+  tag_name: "v2.4.0",
+  html_url: "https://github.com/kairali-digital/ai-human-workspace/releases/tag/v2.4.0",
+  published_at: "2026-09-03T00:00:00Z",
   assets: [],
 };
 
@@ -54,6 +54,7 @@ export default async function Home() {
         <nav aria-label="Portal navigation">
           <a href="#install">Install</a>
           <a href="#work-paths">How work runs</a>
+          <a href="#improvement">Improve</a>
           <a href="#gate-profile">Gate 0</a>
           <a href="#files">Files</a>
           <a href="#control">Turn off</a>
@@ -63,18 +64,18 @@ export default async function Home() {
 
       <section className="hero" id="start">
         <div className="hero-copy">
-          <p className="eyebrow">Released v2.3.0</p>
+          <p className="eyebrow">Released v2.4.0</p>
           <h1>Know your work. Save your time.</h1>
           <p className="hero-summary">Build source-backed personal work memory, a fixed-time Email EA and a reconciled Drive master index, with visible controls and proof.</p>
           <div className="hero-actions">
-            <a className="button button-primary" href="/downloads/KAIRALI-AI-HUMAN-v230-EMPLOYEE-EDITION-PUBLIC-KIT.zip" download>
+            <a className="button button-primary" href="/downloads/KAIRALI-AI-HUMAN-v240-EMPLOYEE-EDITION-PUBLIC-KIT.zip" download>
               Kairali employee edition
             </a>
-            <a className="button button-secondary" href="/downloads/AI-HUMAN-v230-REUSABLE-EDITION-PUBLIC-KIT.zip" download>
+            <a className="button button-secondary" href="/downloads/AI-HUMAN-v240-REUSABLE-EDITION-PUBLIC-KIT.zip" download>
               Reusable edition
             </a>
           </div>
-          <p className="release-note">These are separate, verified public downloads. Configured v2.0.0, held v2.0.1, v2.0.2, v2.1.0 and v2.2.0 workers can take v2.3.0 at a safe checkpoint with user-owned state preserved. Pre-v2 workers first use the guided exact-scope Gate 0 migration.</p>
+          <p className="release-note">These are separate, verified public downloads. Configured v2.0.0 through v2.3.0 workers can take v2.4.0 at a safe checkpoint with user-owned state preserved. Pre-v2 workers first use the guided exact-scope Gate 0 migration.</p>
         </div>
         <div className="hero-media">
           <Image
@@ -90,7 +91,7 @@ export default async function Home() {
       <section className="release-strip" aria-label="Current source status">
         <div>
           <span>Current public workspace</span>
-          <strong>v2.3.0 RELEASED</strong>
+          <strong>v2.4.0 RELEASED</strong>
         </div>
         <div>
           <span>Latest approved GitHub release</span>
@@ -98,7 +99,7 @@ export default async function Home() {
         </div>
         <div>
           <span>Existing-worker update</span>
-          <strong>v2.0.0 or held v2.0.1; pre-v2 migration</strong>
+          <strong>Configured v2.0.0 through v2.3.0; pre-v2 migration</strong>
         </div>
         <a href={release.html_url} target="_blank" rel="noreferrer">View source release</a>
         {!live ? <p className="release-fallback">Live release check is temporarily unavailable. The last approved release is shown.</p> : null}
@@ -114,14 +115,14 @@ export default async function Home() {
           <article className="path path-employee">
             <span>For Kairali employees</span>
             <h3>Company edition.</h3>
-            <p>Includes the Kairali Setup Helper, role prompts, Personal Work Memory + Daily Email EA, Drive Master Index, optional Saturday LinkedIn worker and governed opt-in skills.</p>
-            <a href="/downloads/KAIRALI-AI-HUMAN-v230-EMPLOYEE-EDITION-PUBLIC-KIT.zip" download>Download Kairali employee edition</a>
+            <p>Includes the Kairali Setup Helper, role prompts, Personal Work Memory + Daily Email EA, Drive Master Index, the human-only Saturday LinkedIn assistant and reference skill packages. v2.4 never activates a skill.</p>
+            <a href="/downloads/KAIRALI-AI-HUMAN-v240-EMPLOYEE-EDITION-PUBLIC-KIT.zip" download>Download Kairali employee edition</a>
           </article>
           <article className="path path-facilitator">
             <span>For everyone else</span>
             <h3>Reusable edition.</h3>
             <p>Contains only the company-neutral workspace, generic Setup Helper and reversible lifecycle controls. It is tested to contain no Kairali employee content.</p>
-            <a href="/downloads/AI-HUMAN-v230-REUSABLE-EDITION-PUBLIC-KIT.zip" download>Download reusable edition</a>
+            <a href="/downloads/AI-HUMAN-v240-REUSABLE-EDITION-PUBLIC-KIT.zip" download>Download reusable edition</a>
           </article>
         </div>
       </section>
@@ -146,7 +147,7 @@ export default async function Home() {
         <div className="section-intro">
           <p className="eyebrow">Fast for ordinary work</p>
           <h2 id="work-paths-heading">Use the smallest path that matches the effect.</h2>
-          <p>v2.3.0 keeps real safety gates while adding an optional evidence-bound quarterly improvement loop. A guardrail blocks only the conflicting part and helps the useful part finish.</p>
+          <p>v2.4.0 adds an evidence-bound monthly or quarterly improvement loop with approved official, Reddit and YouTube research. It turns repeated work into proposals for your judgment while every external effect remains off.</p>
         </div>
         <div className="control-grid">
           <article><span>Read only</span><h3>Answer directly.</h3><p>A question or source review gets an answer without creating task state, facts, decisions or tool rows.</p><strong>PROOF: useful answer, no workspace diff.</strong></article>
@@ -154,6 +155,22 @@ export default async function Home() {
           <article><span>Mixed Gate 0</span><h3>Withhold narrowly.</h3><p>The worker reads the exact company gate, omits only the unsupported or unapproved part, finishes the safe local work and names the evidence or approval that would unblock the rest.</p><strong>PROOF: safe result exists; gated effect did not occur.</strong></article>
           <article><span>Assignment versus execution</span><h3>Count the real action.</h3><p>One document with 150 rows uploads intact as one artifact. Creating 150 GitHub issues is 150 external writes, so execution runs in batches of no more than 25 with a checkpoint between batches.</p><strong>PROOF: no truncated file and no hidden bulk execution.</strong></article>
         </div>
+      </section>
+
+      <section className="install-flow" id="improvement" aria-labelledby="improvement-heading">
+        <div className="section-intro">
+          <p className="eyebrow">Optional personal improvement</p>
+          <h2 id="improvement-heading">A review that learns from evidence, not from guesswork.</h2>
+          <p>Choose monthly or quarterly. The worker can inspect only the local records, exact questions, official domains and research channels you approve. Every recommendation waits for your judgment.</p>
+        </div>
+        <div className="five-steps">
+          <article><span>1</span><h3>Ask to set it up.</h3><p>Open the installed worker and say <code>SET UP MY PERSONAL IMPROVEMENT REVIEW</code>.</p><strong>DONE WHEN: Codex asks one choice at a time.</strong></article>
+          <article><span>2</span><h3>Choose the boundary.</h3><p>Select cadence, local time, time zone, local evidence, exact research questions, official domains and any approved Reddit or YouTube channel.</p><strong>DONE WHEN: the complete preview is visible.</strong></article>
+          <article><span>3</span><h3>Verify one visible schedule.</h3><p>Approve the preview, then verify the Scheduled card, cadence, exact prompt fingerprint and next run.</p><strong>DONE WHEN: the worker says VERIFIED_ACTIVE, or truthfully UNAVAILABLE.</strong></article>
+          <article><span>4</span><h3>Keep judgment human.</h3><p>Choose <strong>PROPOSE</strong>, dated <strong>LATER</strong> or <strong>REJECT</strong>. A proposal remains inactive until its separate proof path passes.</p><strong>DONE WHEN: the choice appears in decision history.</strong></article>
+          <article><span>5</span><h3>Measure real value.</h3><p>Supply minutes before, minutes after, observed occurrences and evidence. The brief calculates the time difference.</p><strong>DONE WHEN: measured minutes are visible; money saved is not invented.</strong></article>
+        </div>
+        <p className="separation-note"><strong>Hard boundary:</strong> this loop cannot send email, unsubscribe, change filters, act on LinkedIn or install a skill. Those effects are unavailable in v2.4 because no trusted credential or skill-loader authority is shipped.</p>
       </section>
 
       <section className="gate-profile" id="gate-profile" aria-labelledby="gate-profile-heading">
@@ -208,9 +225,9 @@ export default async function Home() {
           <p>If a request crosses a declared boundary, the AI names it briefly, refuses only the conflicting part, preserves safe work and offers the nearest compliant next step or exact approval needed. It does not scold, lecture or turn one guardrail into a broad ban.</p>
         </div>
         <div className="control-grid">
-          <article><span>Temporary</span><h3>Suspend</h3><p>Turns managed rules, automations and automatic updates off. Project files and account connections stay.</p><code>Temporarily suspend this AI-human system, preserve my files, then verify SUSPENDED with PASS.</code><strong>DONE WHEN: rules OFF, updates DISABLED.</strong></article>
+          <article><span>Temporary</span><h3>Suspend</h3><p>First pauses and verifies any visible personal-improvement schedule, then turns managed rules and automatic updates off. Project files and account connections stay.</p><code>Pause any visible improvement schedule, then suspend this AI-human system and verify SUSPENDED with PASS.</code><strong>DONE WHEN: schedule cannot run, rules OFF, updates DISABLED.</strong></article>
           <article><span>Reversible</span><h3>Resume</h3><p>Turns the system back on and restores the automatic-update setting that existed before suspension.</p><code>Resume this AI-human system, then verify ACTIVE with PASS.</code><strong>DONE WHEN: rules ON, validator PASS.</strong></article>
-          <article><span>Project</span><h3>Uninstall</h3><p>Archives <code>.ai-human</code> and its active local adapters. It preserves work files and does not delete the project.</p><code>Reversibly uninstall this AI-human system, preserve my work, then verify UNINSTALLED with PASS.</code><strong>DONE WHEN: system and adapters are absent.</strong></article>
+          <article><span>Project</span><h3>Uninstall</h3><p>First removes and verifies any visible improvement schedule, then archives <code>.ai-human</code> and its active local adapters. It preserves work files and does not delete the project.</p><code>Remove any visible improvement schedule, then reversibly uninstall and verify UNINSTALLED with PASS.</code><strong>DONE WHEN: schedule, system and adapters are absent.</strong></article>
           <article><span>Accounts</span><h3>Revoke access</h3><p>Open Plugins, use Installed, open the plugin and choose Uninstall plugin. Disconnect its connector separately. Review Computer Use permissions too.</p><a href="https://learn.chatgpt.com/docs/plugins" target="_blank" rel="noreferrer">Official plugin instructions</a><strong>DONE WHEN: a new chat cannot use that access.</strong></article>
         </div>
         <p className="separation-note"><strong>Important:</strong> suspend or uninstall does not disconnect Gmail, Drive, GitHub or computer permissions. Plugin uninstall can also leave its connector connected until that connection is managed separately.</p>
@@ -283,7 +300,7 @@ export default async function Home() {
           <article>
             <span>4</span>
             <h3>Prove the exact worker.</h3>
-            <p>A configured v2.0.0, held v2.0.1, v2.0.2, v2.1.0 or v2.2.0 worker moves to v2.3.0 with user-owned state preserved. A pre-v2 worker completes the guided Gate 0 migration first. Keep the version, validation receipt and preserved-state proof.</p>
+            <p>A configured v2.0.0 through v2.3.0 worker moves to v2.4.0 with user-owned state preserved. A pre-v2 worker completes the guided Gate 0 migration first. Keep the version, validation receipt and preserved-state proof.</p>
           </article>
         </div>
         <div className="update-boundary">
@@ -343,7 +360,7 @@ export default async function Home() {
         <div>
           <p className="eyebrow">Technical and owner path</p>
           <h2 id="technical-heading">GitHub stays the approved source of truth.</h2>
-          <p>v2.3.0 is the approved public release. Its exact source, checksums and release evidence are published together. Fetch/Pull updates a repository checkout, not an installed worker; configured v2.0.0, held v2.0.1, v2.0.2, v2.1.0 and v2.2.0 workers use the checked update path and pre-v2 workers use the guided migration.</p>
+          <p>v2.4.0 is the approved public release. Its exact source, checksums and release evidence are published together. Fetch/Pull updates a repository checkout, not an installed worker; configured v2.0.0 through v2.3.0 workers use the checked update path and pre-v2 workers use the guided migration. Interrupted managed updates stop ordinary work until the checked recovery path completes.</p>
         </div>
         <div className="technical-links">
           <a href={assetLink(release, "ai-human-workspace-")} target="_blank" rel="noreferrer">
@@ -351,7 +368,7 @@ export default async function Home() {
             <strong>Download latest approved ZIP</strong>
           </a>
           <a href={assetLink(release, "kairali-company-rollout-")} target="_blank" rel="noreferrer">
-            <span>Company kit and opt-in skills</span>
+            <span>Company kit and reference skill packages</span>
             <strong>Download latest approved ZIP</strong>
           </a>
           <a href="https://github.com/kairali-digital/ai-human-workspace" target="_blank" rel="noreferrer">
@@ -384,7 +401,7 @@ export default async function Home() {
       </section>
 
       <footer>
-        <p>Public v2.3.0. Choose one edition, verify setup, and keep company Gate 0 profiles isolated.</p>
+        <p>Public v2.4.0. Choose one edition, verify setup, and keep company Gate 0 profiles isolated.</p>
         <a href="#troubleshooting">Stuck? Start with troubleshooting.</a>
       </footer>
     </main>

@@ -3,6 +3,7 @@
 
 import ast
 import csv
+import datetime
 import hashlib
 import importlib.util
 import json
@@ -25,6 +26,7 @@ from unittest import mock
 ROOT = Path(__file__).resolve().parents[1]
 CLI = ROOT / "scripts/ai_human.py"
 CURRENT_VERSION = (ROOT / "core/VERSION").read_text(encoding="utf-8").strip()
+TEST_UPGRADE_VERSION = "2.4.1"
 SPEC = importlib.util.spec_from_file_location("ai_human_lifecycle", CLI)
 AI_HUMAN = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(AI_HUMAN)
@@ -301,6 +303,12 @@ class LifecycleTests(unittest.TestCase):
         match = re.search(r"^- " + re.escape(label) + r": (.+)$", output, flags=re.M)
         self.assertIsNotNone(match, output)
         return match.group(1).strip()
+
+    def local_now_iso(self, timezone="Asia/Kolkata", offset=None):
+        moment = datetime.datetime.now(AI_HUMAN.ZoneInfo(timezone))
+        if offset is not None:
+            moment += offset
+        return moment.replace(microsecond=0).isoformat()
 
     def build_release_proof(self, release=None):
         release = release or self.release
@@ -818,7 +826,7 @@ class LifecycleTests(unittest.TestCase):
     def test_windows_manifest_separator_normalizes_for_required_targets(self):
         self.assertEqual(
             AI_HUMAN.portable_key(r".ai-human\system\AI-HUMAN.md"),
-            ".ai-human/system/AI-HUMAN.md",
+            ".ai-human/system/ai-human.md",
         )
 
     def test_timezone_id_validation_does_not_require_an_os_timezone_database(self):
@@ -1003,14 +1011,14 @@ class LifecycleTests(unittest.TestCase):
         worker = self.base / "worker"
         self.install(worker)
 
-        new_release = self.base / "release-2.4.0"
+        new_release = self.base / ("release-" + TEST_UPGRADE_VERSION)
         shutil.copytree(self.release, new_release, ignore=shutil.ignore_patterns(".git", "__pycache__", "release-proof.json", "portal"))
         agent_rules = new_release / "core/AGENT-RULES.md"
         agent_rules.write_text(
             agent_rules.read_text(encoding="utf-8") + "\nRelease-test marker 2.4.0.\n",
             encoding="utf-8",
         )
-        refresh_release(new_release, "2.4.0")
+        refresh_release(new_release, TEST_UPGRADE_VERSION)
 
         cursor = worker / "MASTER_CURSOR.md"
         cursor.write_text("# Master Cursor\n\n## LIVE TASK\n`TEST-1` — test checkpoint\n", encoding="utf-8")
@@ -1035,14 +1043,14 @@ class LifecycleTests(unittest.TestCase):
             (worker / ".ai-human/VERSION").read_text(encoding="utf-8"),
             before_defer_version,
         )
-        self.assertIn("CORE-UPDATE-2.4.0", register.read_text(encoding="utf-8"))
+        self.assertIn("CORE-UPDATE-" + TEST_UPGRADE_VERSION, register.read_text(encoding="utf-8"))
 
         before_update_state = state_hashes(worker)
         updated = self.run_cli("update", worker, "--source", new_release, "--at-checkpoint")
         self.assertIn("AI-HUMAN UPDATE: PASS", updated.stdout)
         self.assertEqual(
             (worker / ".ai-human/VERSION").read_text(encoding="utf-8").strip(),
-            "2.4.0",
+            TEST_UPGRADE_VERSION,
         )
         self.assertEqual(state_hashes(worker), before_update_state)
         self.assertIn(
@@ -1051,7 +1059,24 @@ class LifecycleTests(unittest.TestCase):
         )
 
         before_rollback_state = state_hashes(worker)
-        rolled_back = self.run_cli("rollback", worker, "--version", CURRENT_VERSION)
+        update_receipt = json.loads(
+            (worker / ".ai-human/update-receipt.json").read_text(encoding="utf-8")
+        )
+        mutable_backup = Path(update_receipt["backup"])
+        poisoned = mutable_backup / "files/.ai-human/system/AGENT-RULES.md"
+        poisoned.write_text("attacker-controlled rollback bytes\n", encoding="utf-8")
+        backup_manifest_path = mutable_backup / "backup-manifest.json"
+        backup_manifest = json.loads(backup_manifest_path.read_text(encoding="utf-8"))
+        next(
+            item for item in backup_manifest["files"]
+            if item["target"] == ".ai-human/system/AGENT-RULES.md"
+        )["sha256"] = sha256(poisoned)
+        backup_manifest_path.write_text(
+            json.dumps(backup_manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        )
+        rolled_back = self.run_cli(
+            "rollback", worker, "--version", CURRENT_VERSION, "--source", self.release,
+        )
         self.assertIn("AI-HUMAN ROLLBACK: PASS", rolled_back.stdout)
         self.assertEqual(
             (worker / ".ai-human/VERSION").read_text(encoding="utf-8").strip(),
@@ -1067,48 +1092,149 @@ class LifecycleTests(unittest.TestCase):
         self.assertIn("AI-HUMAN UPDATE: PASS", repeated.stdout)
         self.assertEqual(
             (worker / ".ai-human/VERSION").read_text(encoding="utf-8").strip(),
-            "2.4.0",
+            TEST_UPGRADE_VERSION,
         )
-        matching_backups = list((worker / ".ai-human/backups").glob(f"{CURRENT_VERSION}-before-2.4.0-*"))
+        matching_backups = list(
+            (worker / ".ai-human/backups").glob(
+                f"{CURRENT_VERSION}-before-{TEST_UPGRADE_VERSION}-*"
+            )
+        )
         self.assertEqual(len(matching_backups), 2)
 
-    def test_component_catalog_skill_install_upgrade_and_remove(self):
+    def test_component_catalog_is_visible_but_managed_skill_activation_is_disabled(self):
         catalog = self.run_cli("components", "--source", self.release)
         self.assertIn("kairali-akshar-marketing-science", catalog.stdout)
         self.assertIn("kairali-rahul-sales-system", catalog.stdout)
         skills_root = self.base / "codex-skills"
         component = "kairali-akshar-marketing-science"
-        self.run_cli(
+        refused = self.run_cli(
             "install-skill", component, "--runtime", "codex",
             "--skills-root", skills_root, "--source", self.release,
+            expect=1,
         )
         target = skills_root / component
-        self.assertTrue((target / "SKILL.md").is_file())
-        self.assertTrue((target / ".ai-human-component.json").is_file())
-        self.run_cli(
-            "install-skill", component, "--runtime", "codex",
-            "--skills-root", skills_root, "--source", self.release,
-            expect=1,
-        )
-        self.run_cli(
-            "install-skill", component, "--runtime", "codex",
-            "--skills-root", skills_root, "--source", self.release, "--upgrade",
-            expect=1,
-        )
-        self.run_cli(
-            "install-skill", component, "--runtime", "codex",
-            "--skills-root", skills_root, "--source", self.release, "--upgrade",
-            "--at-checkpoint",
-        )
-        backups = list((skills_root / ".ai-human-component-archive").glob(component + "-before-*"))
-        self.assertEqual(len(backups), 1)
-        self.run_cli(
-            "remove-skill", component, "--runtime", "codex",
-            "--skills-root", skills_root, "--at-checkpoint",
-        )
+        self.assertIn("UNAVAILABLE_NO_HUMAN_PRESENCE_AUTHORITY", refused.stderr)
         self.assertFalse(target.exists())
-        removed = list((skills_root / ".ai-human-component-archive").glob(component + "-removed-*"))
-        self.assertEqual(len(removed), 1)
+        self.assertFalse(skills_root.exists())
+        self.assertTrue(
+            VALIDATOR.fixed_unavailable_handler(
+                CLI.read_text(encoding="utf-8"), "install_skill",
+                "UNAVAILABLE_NO_HUMAN_PRESENCE_AUTHORITY",
+            )
+        )
+
+    def test_silent_effect_handlers_are_fixed_fail_closed_and_create_no_effect_state(self):
+        worker = self.base / "safe-disabled-worker"
+        self.install(worker)
+        self.assertFalse((worker / ".ai-human/autonomy").exists())
+        impossible_batch = self.base / "does-not-exist-and-must-not-be-read.json"
+        external = self.run_cli(
+            "action-execute", worker, "--batch", impossible_batch, "--pilot", expect=1,
+        )
+        self.assertIn("UNAVAILABLE_NO_NATIVE_BROKER", external.stderr)
+        self.assertFalse((worker / ".ai-human/autonomy").exists())
+        self.assertFalse(any(worker.rglob("*ticket*")))
+        self.assertFalse(any(worker.rglob("*result*")))
+
+        skill = self.run_cli(
+            "autonomy-skill-install", worker, "kairali-akshar-marketing-science",
+            "--runtime", "codex", "--pilot", expect=1,
+        )
+        self.assertIn("UNAVAILABLE_NO_TRUSTED_SKILL_LOADER", skill.stderr)
+        self.assertFalse((worker / ".ai-human/autonomy").exists())
+        self.assertFalse((worker / ".agents/skills").exists())
+        self.assertEqual(self.run_cli("validate", worker).returncode, 0)
+
+        for consent in (
+            {"channels": ["EMAIL"]},
+            {"channels": ["SKILL_INSTALL"]},
+            {"channels": ["EMAIL", "SKILL_INSTALL"]},
+        ):
+            with self.subTest(consent=consent):
+                with self.assertRaisesRegex(ValueError, "UNAVAILABLE_NO_TRUSTED_EFFECT_RUNTIME"):
+                    AI_HUMAN.validate_autonomy_consent(consent)
+
+    def test_safe_disabled_registry_and_handlers_are_structural_release_invariants(self):
+        self.assertEqual(
+            AI_HUMAN.validate_effect_authority_registry(
+                {"authorities": [], "schema": "ai-human.effect-authority-registry/v1"}
+            ),
+            {},
+        )
+        with self.assertRaisesRegex(ValueError, "exactly empty"):
+            AI_HUMAN.validate_effect_authority_registry(
+                {
+                    "authorities": [{"id": "forged-local-authority"}],
+                    "schema": "ai-human.effect-authority-registry/v1",
+                }
+            )
+        source = CLI.read_text(encoding="utf-8")
+        for function_name, code in (
+            ("action_execute", "UNAVAILABLE_NO_NATIVE_BROKER"),
+            ("autonomy_skill_install", "UNAVAILABLE_NO_TRUSTED_SKILL_LOADER"),
+            ("install_skill", "UNAVAILABLE_NO_HUMAN_PRESENCE_AUTHORITY"),
+            ("validate_autonomy_consent", "UNAVAILABLE_NO_TRUSTED_EFFECT_RUNTIME"),
+        ):
+            with self.subTest(function_name=function_name):
+                self.assertTrue(VALIDATOR.fixed_unavailable_handler(source, function_name, code))
+                mutated = re.sub(
+                    r"(def " + re.escape(function_name) + r"\([^\n]*\):\n)(?:    .*\n)+?\n",
+                    r"\1    return None\n\n",
+                    source,
+                    count=1,
+                )
+                self.assertFalse(
+                    VALIDATOR.fixed_unavailable_handler(mutated, function_name, code)
+                )
+
+    def test_declining_unavailable_standing_permission_is_persistent_and_valid(self):
+        worker = self.base / "declined-autonomy-worker"
+        self.install(worker)
+        acquired = self.run_cli(
+            "session-acquire", worker, "--session-id", "decline-autonomy",
+            "--actor", "User One",
+        )
+        state_hash = self.output_value(acquired.stdout, "expected-state hash")
+        declined = self.run_cli(
+            "autonomy-choice", worker, "DECLINE", "--session-id", "decline-autonomy",
+            "--expected-state-hash", state_hash,
+            "--approval-reference", "Owner declined unavailable runtime",
+        )
+        new_hash = self.output_value(declined.stdout, "new expected-state hash")
+        policy = json.loads(
+            (worker / ".ai-human/autonomy/policy.json").read_text(encoding="utf-8")
+        )
+        self.assertEqual(policy["status"], "DECLINED")
+        self.assertEqual(set(policy), {
+            "approval_reference", "created_utc", "owner", "schema", "status", "updated_utc",
+        })
+        shown = self.run_cli("autonomy-show", worker)
+        self.assertIn("recorded choice: DECLINED", shown.stdout)
+        self.assertIn("UNAVAILABLE_NO_NATIVE_BROKER", shown.stdout)
+        self.run_cli(
+            "session-release", worker, "--session-id", "decline-autonomy",
+            "--expected-state-hash", new_hash,
+        )
+        self.assertEqual(self.run_cli("validate", worker).returncode, 0)
+
+    def test_atomic_text_refuses_target_and_predictable_temp_symlinks(self):
+        root = self.base / "atomic-symlink"
+        root.mkdir()
+        outside = self.base / "outside.txt"
+        outside.write_text("unchanged\n", encoding="utf-8")
+        target = root / "state.json"
+        try:
+            os.symlink(outside, target)
+            os.symlink(outside, root / "state.json.write-temp")
+        except (OSError, NotImplementedError) as error:
+            self.skipTest("symbolic links are unavailable: " + str(error))
+        with self.assertRaisesRegex(ValueError, "may not be a symbolic link"):
+            AI_HUMAN.atomic_text(target, "replacement\n")
+        self.assertEqual(outside.read_text(encoding="utf-8"), "unchanged\n")
+        target.unlink()
+        AI_HUMAN.atomic_text(target, "safe\n")
+        self.assertEqual(target.read_text(encoding="utf-8"), "safe\n")
+        self.assertEqual(outside.read_text(encoding="utf-8"), "unchanged\n")
 
     def test_reference_packs_install_and_remove_reversibly(self):
         kit = self.base / "Kairali Company Kit"
@@ -1182,6 +1308,125 @@ class LifecycleTests(unittest.TestCase):
         self.assertFalse(kit.exists())
         removed = list(self.base.glob(".ai-human-component-archive/kairali-company-rollout-removed-*"))
         self.assertEqual(len(removed), 1)
+
+    def test_reference_pack_cannot_enter_host_skill_discovery_paths(self):
+        project = self.base / "pack-target-guard"
+        project.mkdir()
+        targets = (
+            project / ".claude",
+            project / ".claude.",
+            project / ".claude ",
+            project / ".codex" / "skills" / "reference-kit",
+            project / ".agents" / "skills" / "reference-kit",
+            project / "skills" / "reference-kit",
+            project / "skills." / "reference-kit",
+        )
+        for target in targets:
+            rejected = self.run_cli(
+                "install-pack", "kairali-company-rollout", target,
+                "--source", self.release, expect=1,
+            )
+            self.assertTrue(
+                "host skill-discovery path" in rejected.stderr
+                or "non-portable trailing dot or space" in rejected.stderr,
+                rejected.stderr,
+            )
+            self.assertFalse(target.exists())
+        runtime_source = CLI.read_text(encoding="utf-8")
+        self.assertTrue(
+            VALIDATOR.handler_guard_precedes_effect(
+                runtime_source, "install_pack", "refuse_skill_discovery_target",
+                "install_component_tree",
+            )
+        )
+        mutated = runtime_source.replace(
+            "        refuse_skill_discovery_target(target)\n", "", 1
+        )
+        self.assertFalse(
+            VALIDATOR.handler_guard_precedes_effect(
+                mutated, "install_pack", "refuse_skill_discovery_target",
+                "install_component_tree",
+            )
+        )
+
+    def test_component_commands_reject_an_unpinned_repository_before_network(self):
+        rejected = self.run_cli(
+            "components", "--latest", "--repository", "attacker/example", expect=1,
+        )
+        self.assertIn("pinned release repository", rejected.stderr)
+
+    def test_fleet_and_worker_updates_reject_repository_rebinding(self):
+        fleet_rejected = self.run_cli(
+            "fleet-update", "--fleet", self.base / "not-read.json",
+            "--fleet-state", self.base / "not-written.json", "--latest",
+            "--repository", "attacker/example",
+            "--now-local", "2026-09-01T10:00:00+05:30", expect=1,
+        )
+        self.assertIn("pinned release repository", fleet_rejected.stderr)
+        self.assertFalse((self.base / "not-written.json").exists())
+
+        worker = self.base / "repository-bound-worker"
+        self.install(worker)
+        before_runtime = sha256(worker / ".ai-human/bin/ai_human.py")
+        before_metadata = json.loads(
+            (worker / ".ai-human/install.json").read_text(encoding="utf-8")
+        )
+        foreign = self.base / "foreign-release"
+        shutil.copytree(self.release, foreign)
+        runtime = foreign / "scripts/ai_human.py"
+        runtime.write_text(
+            runtime.read_text(encoding="utf-8") + "\n# FOREIGN-REPOSITORY-MARKER\n",
+            encoding="utf-8",
+        )
+        refresh_release(foreign, TEST_UPGRADE_VERSION)
+        foreign_manifest_path = foreign / "release-manifest.json"
+        foreign_manifest = json.loads(foreign_manifest_path.read_text(encoding="utf-8"))
+        foreign_manifest["repository"] = "attacker/example"
+        foreign_manifest_path.write_text(
+            json.dumps(foreign_manifest, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        foreign_components_path = foreign / "component-manifest.json"
+        foreign_components = json.loads(foreign_components_path.read_text(encoding="utf-8"))
+        foreign_components["repository"] = "attacker/example"
+        foreign_components_path.write_text(
+            json.dumps(foreign_components, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        rejected = self.run_cli(
+            "update", worker, "--source", foreign, "--at-checkpoint", expect=1,
+        )
+        self.assertIn("pinned installed repository", rejected.stderr)
+        self.assertEqual(sha256(worker / ".ai-human/bin/ai_human.py"), before_runtime)
+        self.assertEqual(
+            json.loads((worker / ".ai-human/install.json").read_text(encoding="utf-8")),
+            before_metadata,
+        )
+
+    def test_reference_pack_guard_validator_binds_the_effect_target(self):
+        source = CLI.read_text(encoding="utf-8")
+        wrong_target = source.replace(
+            "        refuse_skill_discovery_target(target)\n",
+            "        refuse_skill_discovery_target(release)\n",
+            1,
+        )
+        self.assertFalse(
+            VALIDATOR.handler_guard_precedes_effect(
+                wrong_target, "install_pack", "refuse_skill_discovery_target",
+                "install_component_tree",
+            )
+        )
+        dead_guard = source.replace(
+            "        refuse_skill_discovery_target(target)\n",
+            "        if False:\n            refuse_skill_discovery_target(target)\n",
+            1,
+        )
+        self.assertFalse(
+            VALIDATOR.handler_guard_precedes_effect(
+                dead_guard, "install_pack", "refuse_skill_discovery_target",
+                "install_component_tree",
+            )
+        )
 
     def test_personal_assistant_homework_contract_covers_adversarial_paths(self):
         starters = ROOT / "packages/kairali/homework/AI-HUMAN-STARTERS"
@@ -1261,6 +1506,36 @@ class LifecycleTests(unittest.TestCase):
             "--skills-root", skills_root, "--at-checkpoint", expect=1,
         )
         self.assertIn("invalid component id", result.stderr)
+
+    def test_legacy_skill_removal_archives_outside_the_skills_root(self):
+        skills_root = self.base / "legacy-host" / ".claude" / "skills"
+        target = skills_root / "legacy-governed-skill"
+        target.mkdir(parents=True)
+        (target / "SKILL.md").write_text(
+            "---\nname: legacy-governed-skill\n---\n\nFixture.\n",
+            encoding="utf-8",
+        )
+        (target / ".ai-human-component.json").write_text(
+            json.dumps(
+                {
+                    "component_id": "legacy-governed-skill",
+                    "component_type": "skill", "installed_version": "2.3.0",
+                    "repository": "kairali-digital/ai-human-workspace",
+                    "schema": "ai-human.component-install/v1",
+                    "source_tree_sha256": "0" * 64,
+                }
+            ) + "\n",
+            encoding="utf-8",
+        )
+        removed = self.run_cli(
+            "remove-skill", "legacy-governed-skill", "--runtime", "claude",
+            "--skills-root", skills_root, "--at-checkpoint",
+        )
+        preserved = Path(self.output_value(removed.stdout, "preserved at"))
+        self.assertFalse(target.exists())
+        self.assertTrue((preserved / "SKILL.md").is_file())
+        self.assertNotIn(skills_root, preserved.parents)
+        self.assertFalse(any(skills_root.rglob("SKILL.md")))
 
     def test_uninstall_is_reversible_and_reinstall_adopts_state(self):
         worker = self.base / "worker"
@@ -1669,6 +1944,43 @@ class LifecycleTests(unittest.TestCase):
                     (worker / ".ai-human/install.json").read_text(encoding="utf-8")
                 )
                 self.assertEqual(metadata["repository"], repository)
+
+    def test_public_edition_runtime_matches_the_current_release_source(self):
+        downloads = ROOT / "portal/public/downloads"
+        manifest = json.loads((ROOT / "release-manifest.json").read_text(encoding="utf-8"))
+        lane = "PUBLIC-KIT" if manifest["release_status"] == "RELEASED" else "LOCAL-CANDIDATE"
+        version_token = "v" + CURRENT_VERSION.replace(".", "")
+        source = CLI.read_bytes()
+        managed_runtime = next(
+            item for item in manifest["managed_files"]
+            if item["source"] == "scripts/ai_human.py"
+        )
+        self.assertEqual(hashlib.sha256(source).hexdigest(), managed_runtime["sha256"])
+        expected = (
+            (
+                downloads / (
+                    "KAIRALI-AI-HUMAN-" + version_token
+                    + "-EMPLOYEE-EDITION-" + lane + ".zip"
+                ),
+                "KAIRALI-EMPLOYEE-EDITION/workspace/scripts/ai_human.py",
+                source,
+            ),
+            (
+                downloads / (
+                    "AI-HUMAN-" + version_token
+                    + "-REUSABLE-EDITION-" + lane + ".zip"
+                ),
+                "AI-HUMAN-REUSABLE-EDITION/workspace/scripts/ai_human.py",
+                source.replace(
+                    b"kairali-digital/ai-human-workspace",
+                    b"standalone-local/ai-human-workspace",
+                ).replace(b"AbhilashKairali", b"standalone-local"),
+            ),
+        )
+        for archive_path, member, expected_runtime in expected:
+            with self.subTest(archive=archive_path.name):
+                with zipfile.ZipFile(archive_path) as archive:
+                    self.assertEqual(archive.read(member), expected_runtime)
 
     def test_kairali_uses_canonical_abhilash_spelling_and_neutral_guards_both_variants(self):
         legacy = "Abi" + "lash"
@@ -2205,6 +2517,43 @@ class LifecycleTests(unittest.TestCase):
         self.assertIn("SESSION LEASE: RECOVERED", recovered.stdout)
         self.assertIn("status: CLEAR", self.run_cli("session-status", worker).stdout)
 
+    def test_supervisor_can_recover_an_abandoned_lease_after_acknowledged_edits(self):
+        worker = self.base / "changed-state-recovery-worker"
+        self.install(worker)
+        acquired = self.run_cli(
+            "session-acquire", worker, "--session-id", "abandoned-after-edit",
+            "--actor", "Employee One",
+        )
+        original_hash = self.output_value(acquired.stdout, "expected-state hash")
+        today = worker / "TODAY.md"
+        today.write_text(
+            today.read_text(encoding="utf-8") + "\nOwner-added recovery fixture note.\n",
+            encoding="utf-8",
+        )
+        status = self.run_cli("session-status", worker)
+        self.assertIn("status: MISMATCH", status.stdout)
+        current_hash = self.output_value(status.stdout, "current-state hash")
+        self.assertNotEqual(current_hash, original_hash)
+        stale = self.run_cli(
+            "session-recover", worker, "--actor", "Supervisor One",
+            "--expected-state-hash", original_hash,
+            "--reason", "Owner edited TODAY while the prior session was abandoned",
+            expect=1,
+        )
+        self.assertIn("inspect the current state", stale.stderr)
+        recovered = self.run_cli(
+            "session-recover", worker, "--actor", "Supervisor One",
+            "--expected-state-hash", current_hash,
+            "--reason", "Owner edited TODAY while the prior session was abandoned",
+        )
+        self.assertIn("acknowledged state divergence: YES", recovered.stdout)
+        receipt_path = Path(self.output_value(recovered.stdout, "receipt"))
+        receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+        self.assertTrue(receipt["state_changed_outside_lease"])
+        self.assertEqual(receipt["previous_expected_state_hash"], original_hash)
+        self.assertEqual(receipt["state_hash"], current_hash)
+        self.assertIn("status: CLEAR", self.run_cli("session-status", worker).stdout)
+
     def test_capability_requires_user_proposal_local_gates_and_designated_supervisor(self):
         worker = self.base / "capability-worker"
         self.install(worker)
@@ -2317,11 +2666,11 @@ class LifecycleTests(unittest.TestCase):
                     self.assertNotIn("employee", path.read_text(encoding="utf-8").casefold(), str(path))
 
     def test_monthly_automatic_update_runs_at_ten_local_and_defers_live_task(self):
-        new_release = self.base / "release-2.4.0-auto"
+        new_release = self.base / ("release-" + TEST_UPGRADE_VERSION + "-auto")
         shutil.copytree(self.release, new_release)
         rules = new_release / "core/AGENT-RULES.md"
         rules.write_text(rules.read_text(encoding="utf-8") + "\nAutomatic update marker.\n", encoding="utf-8")
-        refresh_release(new_release, "2.4.0")
+        refresh_release(new_release, TEST_UPGRADE_VERSION)
         approve_test_release(new_release, automatic=True)
 
         idle = self.base / "idle-worker"
@@ -2333,7 +2682,8 @@ class LifecycleTests(unittest.TestCase):
         )
         self.assertIn("AUTOMATIC UPDATE: UPDATED", updated.stdout)
         self.assertEqual(
-            (idle / ".ai-human/VERSION").read_text(encoding="utf-8").strip(), "2.4.0"
+            (idle / ".ai-human/VERSION").read_text(encoding="utf-8").strip(),
+            TEST_UPGRADE_VERSION,
         )
         self.assertEqual(state_hashes(idle), before_state)
         updated_metadata = json.loads((idle / ".ai-human/install.json").read_text(encoding="utf-8"))
@@ -2363,11 +2713,11 @@ class LifecycleTests(unittest.TestCase):
         )
 
     def test_suspended_worker_defers_direct_and_fleet_automatic_updates(self):
-        new_release = self.base / "release-2.4.0-suspended"
+        new_release = self.base / ("release-" + TEST_UPGRADE_VERSION + "-suspended")
         shutil.copytree(self.release, new_release)
         rules = new_release / "core/AGENT-RULES.md"
         rules.write_text(rules.read_text(encoding="utf-8") + "\nSuspended update marker.\n", encoding="utf-8")
-        refresh_release(new_release, "2.4.0")
+        refresh_release(new_release, TEST_UPGRADE_VERSION)
         approve_test_release(new_release, automatic=True)
 
         suspended = self.base / "suspended-worker"
@@ -2417,11 +2767,11 @@ class LifecycleTests(unittest.TestCase):
         self.assertEqual(preserved_work_hashes(suspended), before)
 
     def test_fleet_pilots_email_then_isolates_a_general_worker_failure(self):
-        new_release = self.base / "release-2.4.0-fleet"
+        new_release = self.base / ("release-" + TEST_UPGRADE_VERSION + "-fleet")
         shutil.copytree(self.release, new_release)
         rules = new_release / "core/AGENT-RULES.md"
         rules.write_text(rules.read_text(encoding="utf-8") + "\nFleet update marker.\n", encoding="utf-8")
-        refresh_release(new_release, "2.4.0")
+        refresh_release(new_release, TEST_UPGRADE_VERSION)
         approve_test_release(new_release, automatic=True)
         pilot = self.base / "pilot"
         broken = self.base / "broken"
@@ -2456,7 +2806,8 @@ class LifecycleTests(unittest.TestCase):
         self.assertIn("general-001: MISMATCH", result.stdout)
         self.assertIn("general-002: UPDATED", result.stdout)
         self.assertEqual(
-            (safe / ".ai-human/VERSION").read_text(encoding="utf-8").strip(), "2.4.0"
+            (safe / ".ai-human/VERSION").read_text(encoding="utf-8").strip(),
+            TEST_UPGRADE_VERSION,
         )
         self.assertEqual(
             (broken / ".ai-human/VERSION").read_text(encoding="utf-8").strip(),
@@ -2468,11 +2819,11 @@ class LifecycleTests(unittest.TestCase):
         self.install(worker, automatic=True, worker_id="rollback-001")
         before_state = state_hashes(worker)
         before_rules = (worker / ".ai-human/system/AGENT-RULES.md").read_text(encoding="utf-8")
-        new_release = self.base / "release-2.4.0-rollback"
+        new_release = self.base / ("release-" + TEST_UPGRADE_VERSION + "-rollback")
         shutil.copytree(self.release, new_release)
         rules = new_release / "core/AGENT-RULES.md"
         rules.write_text(rules.read_text(encoding="utf-8") + "\nMust roll back.\n", encoding="utf-8")
-        refresh_release(new_release, "2.4.0")
+        refresh_release(new_release, TEST_UPGRADE_VERSION)
         approve_test_release(new_release, automatic=True)
         manifest = json.loads((new_release / "release-manifest.json").read_text(encoding="utf-8"))
         with mock.patch.object(
@@ -2564,11 +2915,11 @@ class LifecycleTests(unittest.TestCase):
     def test_update_refuses_a_symlinked_managed_parent_without_writing_outside(self):
         worker = self.base / "symlink-update-worker"
         self.install(worker)
-        new_release = self.base / "release-2.4.0-symlink"
+        new_release = self.base / ("release-" + TEST_UPGRADE_VERSION + "-symlink")
         shutil.copytree(self.release, new_release)
         rules = new_release / "core/AGENT-RULES.md"
         rules.write_text(rules.read_text(encoding="utf-8") + "\nSymlink attack marker.\n", encoding="utf-8")
-        refresh_release(new_release, "2.4.0")
+        refresh_release(new_release, TEST_UPGRADE_VERSION)
 
         outside_system = self.base / "outside-system"
         shutil.copytree(worker / ".ai-human/system", outside_system)
@@ -2672,19 +3023,31 @@ class LifecycleTests(unittest.TestCase):
         )
         state_hash = self.output_value(enabled.stdout, "new expected-state hash")
         self.assertIn("schedule: NOT_VERIFIED", enabled.stdout)
+        config = json.loads(
+            (worker / ".ai-human/improvement/config.json").read_text(encoding="utf-8")
+        )
+        schedule_proof = [
+            "--visible-cadence", config["frequency"],
+            "--task-prompt-sha256", AI_HUMAN.improvement_task_prompt_sha256(config),
+        ]
+        local_zone = datetime.timezone(datetime.timedelta(hours=5, minutes=30))
+        next_run = (
+            datetime.datetime.now(local_zone) + datetime.timedelta(days=30)
+        ).replace(hour=10, minute=30, second=0, microsecond=0).isoformat()
 
         unproven = self.run_cli(
             "improvement-schedule", worker, "--status", "ACTIVE",
             "--session-id", "improvement-schedule", "--expected-state-hash", state_hash,
             "--adapter", "Codex desktop", "--external-id", "quarterly-1",
-            "--next-run-local", "2099-10-01T10:30:00+05:30", expect=1,
+            "--next-run-local", next_run, expect=1,
         )
         self.assertIn("visible Scheduled card", unproven.stderr)
         mismatched = self.run_cli(
             "improvement-schedule", worker, "--status", "ACTIVE",
             "--session-id", "improvement-schedule", "--expected-state-hash", state_hash,
             "--adapter", "Codex desktop", "--external-id", "quarterly-1", "--visible-card",
-            "--next-run-local", "2099-10-01T11:30:00+05:30", expect=1,
+            *schedule_proof, "--next-run-local", next_run.replace("T10:30", "T11:30"),
+            expect=1,
         )
         self.assertIn("does not match the configured local time", mismatched.stderr)
         unavailable = self.run_cli(
@@ -2698,7 +3061,7 @@ class LifecycleTests(unittest.TestCase):
             "improvement-schedule", worker, "--status", "ACTIVE",
             "--session-id", "improvement-schedule", "--expected-state-hash", state_hash,
             "--adapter", "Codex desktop", "--external-id", "quarterly-1", "--visible-card",
-            "--next-run-local", "2099-10-01T10:30:00+05:30",
+            *schedule_proof, "--next-run-local", next_run,
         )
         state_hash = self.output_value(active.stdout, "new expected-state hash")
         self.assertIn(
@@ -2710,21 +3073,12 @@ class LifecycleTests(unittest.TestCase):
             "--reason", "This client temporarily cannot open the scheduler", expect=1,
         )
         self.assertIn("cannot erase a known external schedule", cannot_hide_active.stderr)
-        empty_recommendations = self.base / "empty-recommendations.json"
-        empty_recommendations.write_text(
-            json.dumps(
-                {
-                    "recommendations": [],
-                    "schema": "ai-human.improvement-recommendations/v1",
-                }
-            ) + "\n",
-            encoding="utf-8",
-        )
         missed = self.run_cli(
             "improvement-run", worker, "--mode", "MISSED_RUN_RECOVERY",
             "--session-id", "improvement-schedule", "--expected-state-hash", state_hash,
-            "--now-local", "2026-09-02T10:30:00+05:30",
-            "--recommendations", empty_recommendations,
+            "--now-local", self.local_now_iso(),
+            "--next-run-local", next_run,
+            "--visible-card", *schedule_proof,
             "--reason", "The scheduled host was unavailable at the planned run",
         )
         state_hash = self.output_value(missed.stdout, "new expected-state hash")
@@ -2743,6 +3097,7 @@ class LifecycleTests(unittest.TestCase):
             "improvement-schedule", worker, "--status", "PAUSED",
             "--session-id", "improvement-schedule", "--expected-state-hash", state_hash,
             "--adapter", "Codex desktop", "--external-id", "quarterly-1", "--visible-card",
+            *schedule_proof,
         )
         state_hash = self.output_value(paused_schedule.stdout, "new expected-state hash")
         self.assertIn(
@@ -2757,7 +3112,7 @@ class LifecycleTests(unittest.TestCase):
             "improvement-schedule", worker, "--status", "ACTIVE",
             "--session-id", "improvement-schedule", "--expected-state-hash", state_hash,
             "--adapter", "Codex desktop", "--external-id", "quarterly-1", "--visible-card",
-            "--next-run-local", "2099-10-01T10:30:00+05:30",
+            *schedule_proof, "--next-run-local", next_run,
         )
         state_hash = self.output_value(active_again.stdout, "new expected-state hash")
         self.assertIn(
@@ -2776,10 +3131,19 @@ class LifecycleTests(unittest.TestCase):
         )
         state_hash = self.output_value(edited.stdout, "new expected-state hash")
         self.assertIn("STALE_AFTER_CONFIGURATION_CHANGE", edited.stdout)
+        edited_config = json.loads(
+            (worker / ".ai-human/improvement/config.json").read_text(encoding="utf-8")
+        )
+        edited_schedule_proof = [
+            "--visible-cadence", edited_config["frequency"],
+            "--task-prompt-sha256",
+            AI_HUMAN.improvement_task_prompt_sha256(edited_config),
+        ]
         removed_schedule = self.run_cli(
             "improvement-schedule", worker, "--status", "REMOVED",
             "--session-id", "improvement-schedule", "--expected-state-hash", state_hash,
             "--adapter", "Codex desktop", "--external-id", "quarterly-1", "--visible-card",
+            *edited_schedule_proof,
         )
         state_hash = self.output_value(removed_schedule.stdout, "new expected-state hash")
         self.assertIn(
@@ -2799,6 +3163,53 @@ class LifecycleTests(unittest.TestCase):
         self.run_cli(
             "session-release", worker, "--session-id", "improvement-schedule",
             "--expected-state-hash", state_hash,
+        )
+
+    def test_scheduled_improvement_run_rejects_a_fictional_clock(self):
+        worker = self.base / "scheduled-clock-worker"
+        self.install(worker)
+        acquired = self.run_cli(
+            "session-acquire", worker, "--session-id", "scheduled-clock",
+            "--actor", "User One",
+        )
+        state_hash = self.output_value(acquired.stdout, "expected-state hash")
+        enabled = self.run_cli(
+            "improvement-choice", worker, "ENABLE", "--session-id", "scheduled-clock",
+            "--expected-state-hash", state_hash, "--timezone", "Asia/Kolkata",
+            "--local-time", "10:30", "--source", "COMPLETED_LEDGER",
+            "--research", "DISABLED", "--freshness-days", "90",
+            "--retention-days", "30",
+        )
+        state_hash = self.output_value(enabled.stdout, "new expected-state hash")
+        prompt_hash = self.output_value(enabled.stdout, "scheduled task prompt SHA-256")
+        india = datetime.timezone(datetime.timedelta(hours=5, minutes=30))
+        fictional = (
+            datetime.datetime.now(india) + datetime.timedelta(days=30)
+        ).replace(hour=10, minute=30, second=0, microsecond=0)
+        following = (fictional + datetime.timedelta(days=31)).isoformat()
+        scheduled = self.run_cli(
+            "improvement-schedule", worker, "--status", "ACTIVE",
+            "--session-id", "scheduled-clock", "--expected-state-hash", state_hash,
+            "--adapter", "Codex Scheduled Tasks", "--external-id", "clock-card",
+            "--visible-card", "--visible-cadence", "QUARTERLY",
+            "--task-prompt-sha256", prompt_hash,
+            "--next-run-local", fictional.isoformat(),
+        )
+        state_hash = self.output_value(scheduled.stdout, "new expected-state hash")
+        schedule_before = (
+            worker / ".ai-human/improvement/schedule.json"
+        ).read_bytes()
+        rejected = self.run_cli(
+            "improvement-run", worker, "--mode", "SCHEDULED",
+            "--session-id", "scheduled-clock", "--expected-state-hash", state_hash,
+            "--now-local", fictional.isoformat(), "--next-run-local", following,
+            "--visible-card", "--visible-cadence", "QUARTERLY",
+            "--task-prompt-sha256", prompt_hash, expect=1,
+        )
+        self.assertIn("within five minutes of the current clock", rejected.stderr)
+        self.assertEqual(
+            (worker / ".ai-human/improvement/schedule.json").read_bytes(),
+            schedule_before,
         )
 
     def test_quarterly_run_detects_repetition_stale_conflict_and_never_activates(self):
@@ -2839,6 +3250,8 @@ class LifecycleTests(unittest.TestCase):
             "--local-time", "10:30", "--source", "COMPLETED_LEDGER",
             "--source", "EVIDENCE_LOG", "--source", "FACTS", "--source", "APPROVED_RESEARCH",
             "--research", "APPROVED_LINKED_SOURCES", "--freshness-days", "30",
+            "--research-question", "current AI work process",
+            "--research-domain", "example.test",
             "--retention-days", "365",
         )
         state_hash = self.output_value(enabled.stdout, "new expected-state hash")
@@ -2849,7 +3262,8 @@ class LifecycleTests(unittest.TestCase):
                     "accessed_utc": "20260902T000000Z", "claim_summary": ["A bounded claim."],
                     "instruction_content_ignored": False, "personal_data_excluded": True,
                     "published_or_updated": "2026-09-01", "receipt_id": "research-hostile",
-                    "schema": "ai-human.research-receipt/v1", "source_title": "Official source",
+                    "channel": "OFFICIAL", "query": "current AI work process", "result_rank": 1,
+                    "schema": "ai-human.research-receipt/v2", "source_title": "Official source",
                     "source_url": "https://example.test/source", "trust": "OFFICIAL",
                 }
             ) + "\n",
@@ -2868,7 +3282,8 @@ class LifecycleTests(unittest.TestCase):
                     "claim_summary": ["The official source documents a current workflow pattern."],
                     "instruction_content_ignored": True, "personal_data_excluded": True,
                     "published_or_updated": "2026-09-01", "receipt_id": "research-one",
-                    "schema": "ai-human.research-receipt/v1", "source_title": "Official source",
+                    "channel": "OFFICIAL", "query": "current AI work process", "result_rank": 1,
+                    "schema": "ai-human.research-receipt/v2", "source_title": "Official source",
                     "source_url": "https://example.test/source", "trust": "OFFICIAL",
                 }
             ) + "\n",
@@ -2887,7 +3302,8 @@ class LifecycleTests(unittest.TestCase):
                     "claim_summary": ["The corrected official summary replaces the earlier receipt."],
                     "instruction_content_ignored": True, "personal_data_excluded": True,
                     "published_or_updated": "2026-09-02", "receipt_id": "research-two",
-                    "schema": "ai-human.research-receipt/v1", "source_title": "Official correction",
+                    "channel": "OFFICIAL", "query": "current AI work process", "result_rank": 1,
+                    "schema": "ai-human.research-receipt/v2", "source_title": "Official correction",
                     "source_url": "https://example.test/correction", "trust": "OFFICIAL",
                 }
             ) + "\n",
@@ -2936,26 +3352,22 @@ class LifecycleTests(unittest.TestCase):
         unauthorized["recommendations"][0]["evidence_refs"] = ["DECISIONS:row-1"]
         unauthorized_path = self.base / "unauthorized-recommendations.json"
         unauthorized_path.write_text(json.dumps(unauthorized) + "\n", encoding="utf-8")
+        rejected_clock = self.run_cli(
+            "improvement-run", worker, "--mode", "MANUAL", "--session-id", "improvement-run",
+            "--expected-state-hash", state_hash,
+            "--now-local", self.local_now_iso(offset=datetime.timedelta(days=1)),
+            expect=1,
+        )
+        self.assertIn("within five minutes of the current clock", rejected_clock.stderr)
         rejected_source = self.run_cli(
             "improvement-run", worker, "--mode", "MANUAL", "--session-id", "improvement-run",
-            "--expected-state-hash", state_hash, "--now-local", "2026-09-02T10:30:00+05:30",
+            "--expected-state-hash", state_hash, "--now-local", self.local_now_iso(),
             "--recommendations", unauthorized_path, expect=1,
         )
-        self.assertIn("absent or unapproved evidence", rejected_source.stderr)
-        missing_gate = json.loads(recommendations.read_text(encoding="utf-8"))
-        missing_gate["recommendations"][0]["gate_ids"] = []
-        missing_gate_path = self.base / "missing-gate-recommendations.json"
-        missing_gate_path.write_text(json.dumps(missing_gate) + "\n", encoding="utf-8")
-        rejected_gate = self.run_cli(
-            "improvement-run", worker, "--mode", "MANUAL", "--session-id", "improvement-run",
-            "--expected-state-hash", state_hash, "--now-local", "2026-09-02T10:30:00+05:30",
-            "--recommendations", missing_gate_path, expect=1,
-        )
-        self.assertIn("every active local gate id", rejected_gate.stderr)
+        self.assertIn("v2 derives recommendations from governed evidence", rejected_source.stderr)
         run = self.run_cli(
             "improvement-run", worker, "--mode", "MANUAL", "--session-id", "improvement-run",
-            "--expected-state-hash", state_hash, "--now-local", "2026-09-02T10:30:00+05:30",
-            "--recommendations", recommendations,
+            "--expected-state-hash", state_hash, "--now-local", self.local_now_iso(),
         )
         state_hash = self.output_value(run.stdout, "new expected-state hash")
         self.assertIn("capability activation: NONE", run.stdout)
@@ -2967,9 +3379,81 @@ class LifecycleTests(unittest.TestCase):
         self.assertEqual(len(report["findings"]["stale_facts"]), 2)
         self.assertTrue(all(item["decision"] == "REVIEW_REQUIRED" for item in report["recommendations"]))
         self.assertTrue(all(item["activation"] == "NOT_ACTIVATED" for item in report["recommendations"]))
-        self.assertFalse((worker / ".ai-human/capabilities/proposals/weekly-brief-review.json").exists())
+        self.assertFalse((worker / ".ai-human/capabilities/proposals").exists())
         self.assertIn(
             report["created_utc"], (worker / "AUTOMATIONS.md").read_text(encoding="utf-8")
+        )
+        selected = report["recommendations"][0]
+        decided = self.run_cli(
+            "improvement-decision", worker, report["run_id"], selected["id"], "PROPOSE",
+            "--session-id", "improvement-run", "--expected-state-hash", state_hash,
+        )
+        state_hash = self.output_value(decided.stdout, "new expected-state hash")
+        updated_report = json.loads(run_files[0].read_text(encoding="utf-8"))
+        updated_selected = next(
+            item for item in updated_report["recommendations"] if item["id"] == selected["id"]
+        )
+        self.assertEqual(updated_selected["decision"], "PROPOSE")
+        decision_ledger_path = worker / ".ai-human/improvement/decisions.json"
+        decision_ledger = json.loads(decision_ledger_path.read_text(encoding="utf-8"))
+        self.assertEqual(len(decision_ledger["records"]), 1)
+        self.assertEqual(decision_ledger["records"][0]["choice"], "PROPOSE")
+        proposal_files = list(
+            (worker / ".ai-human/capabilities/proposals").glob("improvement-*.json")
+        )
+        self.assertEqual(len(proposal_files), 1)
+        proposal = json.loads(proposal_files[0].read_text(encoding="utf-8"))
+        self.assertEqual(proposal["status"], "AWAITING_SUPERVISOR")
+        self.assertEqual(proposal["supervisor_activation"], "NOT_ACTIVATED")
+        measured = self.run_cli(
+            "improvement-value", worker, report["run_id"], selected["id"],
+            "--baseline-minutes", "20", "--observed-minutes", "8",
+            "--occurrences", "3", "--evidence", "Owner-timed three fixture runs.",
+            "--session-id", "improvement-run", "--expected-state-hash", state_hash,
+        )
+        state_hash = self.output_value(measured.stdout, "new expected-state hash")
+        self.assertIn("36 minutes", measured.stdout)
+        measured_report = json.loads(run_files[0].read_text(encoding="utf-8"))
+        measured_selected = next(
+            item for item in measured_report["recommendations"] if item["id"] == selected["id"]
+        )
+        self.assertEqual(measured_selected["measurement"]["total_minutes_saved"], "36")
+        decision_ledger = json.loads(decision_ledger_path.read_text(encoding="utf-8"))
+        self.assertEqual(
+            decision_ledger["records"][0]["measurement"]["total_minutes_saved"], "36"
+        )
+        measured_brief = (worker / "IMPROVEMENT-BRIEF.md").read_text(encoding="utf-8")
+        self.assertIn("Decision history", measured_brief)
+        self.assertIn("Measured time uses only the owner's recorded baseline", measured_brief)
+        self.assertNotIn("Time or money saved stays unknown", measured_brief)
+        later_selected = next(
+            item for item in measured_report["recommendations"]
+            if item["decision"] == "REVIEW_REQUIRED"
+        )
+        later = self.run_cli(
+            "improvement-decision", worker, report["run_id"], later_selected["id"], "LATER",
+            "--revisit-on", "2099-12-31", "--session-id", "improvement-run",
+            "--expected-state-hash", state_hash,
+        )
+        state_hash = self.output_value(later.stdout, "new expected-state hash")
+        repeated = self.run_cli(
+            "improvement-run", worker, "--mode", "MANUAL", "--session-id", "improvement-run",
+            "--expected-state-hash", state_hash, "--now-local", self.local_now_iso(),
+        )
+        state_hash = self.output_value(repeated.stdout, "new expected-state hash")
+        later_reports = [
+            json.loads(path.read_text(encoding="utf-8"))
+            for path in (worker / ".ai-human/improvement/runs").glob("*.json")
+            if path != run_files[0]
+        ]
+        self.assertEqual(len(later_reports), 1)
+        self.assertNotIn(
+            selected["workflow_signature"],
+            {item["workflow_signature"] for item in later_reports[0]["recommendations"]},
+        )
+        self.assertNotIn(
+            later_selected["workflow_signature"],
+            {item["workflow_signature"] for item in later_reports[0]["recommendations"]},
         )
 
         forgotten = self.run_cli(
@@ -2980,6 +3464,114 @@ class LifecycleTests(unittest.TestCase):
         self.assertFalse((worker / ".ai-human/improvement/research/research-two.json").exists())
         self.run_cli(
             "session-release", worker, "--session-id", "improvement-run",
+            "--expected-state-hash", state_hash,
+        )
+
+    def test_active_research_collector_imports_approved_channels_in_bounded_batches(self):
+        worker = self.base / "active-research-worker"
+        self.install(worker)
+        acquired = self.run_cli(
+            "session-acquire", worker, "--session-id", "active-research",
+            "--actor", "User One",
+        )
+        state_hash = self.output_value(acquired.stdout, "expected-state hash")
+        enabled = self.run_cli(
+            "improvement-choice", worker, "ENABLE", "--session-id", "active-research",
+            "--expected-state-hash", state_hash, "--timezone", "Asia/Kolkata",
+            "--local-time", "09:00", "--cadence", "MONTHLY",
+            "--source", "APPROVED_RESEARCH", "--research", "APPROVED_LINKED_SOURCES",
+            "--research-channel", "OFFICIAL", "--research-channel", "REDDIT",
+            "--research-channel", "YOUTUBE", "--freshness-days", "30",
+            "--research-question", "current AI work process",
+            "--research-domain", "example.test",
+            "--retention-days", "365",
+        )
+        state_hash = self.output_value(enabled.stdout, "new expected-state hash")
+
+        def receipt(identifier, channel, url, published, rank):
+            return {
+                "accessed_utc": "20260902T200000Z",
+                "channel": channel,
+                "claim_summary": ["A concise source-linked workflow finding."],
+                "instruction_content_ignored": True,
+                "personal_data_excluded": True,
+                "published_or_updated": published,
+                "query": "current AI work process",
+                "receipt_id": identifier,
+                "result_rank": rank,
+                "schema": "ai-human.research-receipt/v2",
+                "source_title": identifier,
+                "source_url": url,
+                "trust": "OFFICIAL" if channel == "OFFICIAL" else "REPUTABLE_SECONDARY",
+            }
+
+        records = [
+            receipt("official-one", "OFFICIAL", "https://example.test/guide", "NOT_PROVIDED_BY_SOURCE", 1),
+            receipt("reddit-one", "REDDIT", "https://www.reddit.com/r/work/comments/abc", "2026-09-01", 2),
+            receipt("youtube-one", "YOUTUBE", "https://youtu.be/example", "2026-09-02", 3),
+        ]
+        oversized = self.base / "research-oversized.json"
+        oversized.write_text(
+            json.dumps({"receipts": records * 9, "schema": "ai-human.research-batch/v1"}) + "\n",
+            encoding="utf-8",
+        )
+        rejected_size = self.run_cli(
+            "improvement-research-import", worker, "--session-id", "active-research",
+            "--expected-state-hash", state_hash, "--batch", oversized, expect=1,
+        )
+        self.assertIn("1 to 25 receipts", rejected_size.stderr)
+        undated_reddit = self.base / "research-undated-reddit.json"
+        undated_reddit.write_text(
+            json.dumps(
+                {
+                    "receipts": [
+                        receipt(
+                            "reddit-undated", "REDDIT",
+                            "https://www.reddit.com/r/work/comments/undated",
+                            "NOT_PROVIDED_BY_SOURCE", 1,
+                        )
+                    ],
+                    "schema": "ai-human.research-batch/v1",
+                }
+            ) + "\n",
+            encoding="utf-8",
+        )
+        rejected_date = self.run_cli(
+            "improvement-research-import", worker, "--session-id", "active-research",
+            "--expected-state-hash", state_hash, "--batch", undated_reddit, expect=1,
+        )
+        self.assertIn("community research receipts require", rejected_date.stderr)
+        batch = self.base / "research-batch.json"
+        batch.write_text(
+            json.dumps({"receipts": records, "schema": "ai-human.research-batch/v1"}) + "\n",
+            encoding="utf-8",
+        )
+        imported = self.run_cli(
+            "improvement-research-import", worker, "--session-id", "active-research",
+            "--expected-state-hash", state_hash, "--batch", batch,
+        )
+        state_hash = self.output_value(imported.stdout, "new expected-state hash")
+        self.assertIn("receipts: 3", imported.stdout)
+        run = self.run_cli(
+            "improvement-run", worker, "--mode", "MANUAL",
+            "--session-id", "active-research", "--expected-state-hash", state_hash,
+            "--now-local", self.local_now_iso(),
+        )
+        state_hash = self.output_value(run.stdout, "new expected-state hash")
+        report_path = next((worker / ".ai-human/improvement/runs").glob("*.json"))
+        report = json.loads(report_path.read_text(encoding="utf-8"))
+        snapshot = next(
+            item for item in report["source_snapshots"] if item["source"] == "APPROVED_RESEARCH"
+        )
+        self.assertEqual(snapshot["channel_counts"], {
+            "OFFICIAL": 1, "REDDIT": 1, "YOUTUBE": 1,
+        })
+        brief = (worker / "IMPROVEMENT-BRIEF.md").read_text(encoding="utf-8")
+        self.assertIn("https://example.test/guide", brief)
+        self.assertIn("https://www.reddit.com", brief)
+        self.assertIn("https://youtu.be", brief)
+        self.run_cli(
+            "session-release", worker, "--session-id", "active-research",
             "--expected-state-hash", state_hash,
         )
 
@@ -3011,7 +3603,7 @@ class LifecycleTests(unittest.TestCase):
         self.assertEqual(sha256(worker / ".ai-human/improvement/config.json"), before)
         self.assertEqual(self.run_cli("validate", worker).returncode, 0)
 
-    def test_release_proof_matches_the_exact_non_portal_payload(self):
+    def test_release_proof_matches_the_exact_tracked_payload(self):
         build = subprocess.run(
             [sys.executable, str(ROOT / "scripts/build_release.py"), str(self.release)],
             cwd=ROOT, text=True, capture_output=True, check=False,
@@ -3049,6 +3641,529 @@ class LifecycleTests(unittest.TestCase):
                 for failure in VALIDATOR.action_pin_failures(weakened, "validate.yml")
             )
         )
+
+    def test_portable_path_rules_reject_windows_aliases_and_case_variant_system_root(self):
+        for unsafe in (
+            ".ai-human/system/CON.txt",
+            ".ai-human/system/name. ",
+            ".ai-human/system/report:stream",
+        ):
+            with self.subTest(unsafe=unsafe):
+                with self.assertRaisesRegex(ValueError, "non-portable"):
+                    AI_HUMAN.safe_relative(unsafe, "test target")
+                self.assertFalse(VALIDATOR.safe_relative(unsafe))
+
+        case_variant = self.base / "case-variant-release"
+        shutil.copytree(self.release, case_variant)
+        manifest_path = case_variant / "release-manifest.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest["managed_files"][0]["target"] = manifest["managed_files"][0][
+            "target"
+        ].replace(".ai-human", ".AI-HUMAN", 1)
+        manifest_path.write_text(
+            json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        )
+        rejected = self.run_cli("components", "--source", case_variant, expect=1)
+        self.assertIn("outside .ai-human", rejected.stderr)
+
+    def test_monthly_update_requires_exact_local_zone_and_ten_oclock_boundary(self):
+        metadata = {"timezone": "Asia/Kolkata"}
+        due, reason, _ = AI_HUMAN.scheduled_monthly_check(
+            metadata,
+            datetime.datetime.fromisoformat("2026-10-01T10:00:00+05:30"),
+            None,
+        )
+        self.assertTrue(due)
+        self.assertEqual(reason, "DUE")
+        due, reason, _ = AI_HUMAN.scheduled_monthly_check(
+            metadata,
+            datetime.datetime.fromisoformat("2026-10-01T10:01:00+05:30"),
+            None,
+        )
+        self.assertFalse(due)
+        self.assertEqual(reason, "NOT_FIRST_DAY_AT_10_LOCAL")
+        with self.assertRaisesRegex(ValueError, "UTC offset does not match"):
+            AI_HUMAN.scheduled_monthly_check(
+                metadata,
+                datetime.datetime.fromisoformat("2026-10-01T10:00:00-08:00"),
+                None,
+            )
+
+    def test_current_cli_validates_and_updates_a_genuine_pre_v24_worker_shape(self):
+        worker = self.base / "legacy-v23-worker"
+        self.install(worker)
+        manifest_path = worker / ".ai-human/release-manifest.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        removed = {
+            ".ai-human/system/AUTONOMY-CONTROL.md",
+            ".ai-human/system/AUTHORITY-REGISTRY.json",
+        }
+        manifest["managed_files"] = [
+            item for item in manifest["managed_files"] if item["target"] not in removed
+        ]
+        for target in removed:
+            (worker / target).unlink()
+        (worker / ".ai-human/VERSION").write_text("2.3.0\n", encoding="utf-8")
+        version_record = next(
+            item for item in manifest["managed_files"]
+            if item["target"] == ".ai-human/VERSION"
+        )
+        version_record["sha256"] = sha256(worker / ".ai-human/VERSION")
+        manifest["version"] = "2.3.0"
+        manifest.pop("release_status", None)
+        manifest_path.write_text(
+            json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        )
+        metadata_path = worker / ".ai-human/install.json"
+        metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+        metadata["installed_version"] = "2.3.0"
+        metadata["managed_targets"] = [item["target"] for item in manifest["managed_files"]]
+        metadata_path.write_text(
+            json.dumps(metadata, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        )
+        self.assertEqual(self.run_cli("validate", worker).returncode, 0)
+        updated = self.run_cli("update", worker, "--source", self.release, "--at-checkpoint")
+        self.assertIn("AI-HUMAN UPDATE: PASS", updated.stdout)
+        self.assertEqual(self.run_cli("validate", worker).returncode, 0)
+
+    def test_fabricated_minimal_v2_run_cannot_suppress_real_recommendations(self):
+        worker = self.base / "forged-run-worker"
+        self.install(worker)
+        run_root = worker / ".ai-human/improvement/runs"
+        run_root.mkdir(parents=True)
+        (run_root / "run-forged.json").write_text(
+            json.dumps(
+                {
+                    "created_utc": "20260902T000000Z",
+                    "recommendations": [],
+                    "run_id": "run-forged",
+                    "schema": "ai-human.improvement-run/v2",
+                    "status": "COMPLETED_READ_ONLY",
+                }
+            ) + "\n",
+            encoding="utf-8",
+        )
+        rejected = self.run_cli("validate", worker, expect=1)
+        self.assertIn("v2 run fields differ", rejected.stdout)
+
+    def test_persistent_decisions_survive_run_retention_and_ignore_caller_clock(self):
+        worker = self.base / "persistent-decision-worker"
+        run_root = worker / ".ai-human/improvement/runs"
+        run_root.mkdir(parents=True)
+        subject_key = hashlib.sha256(b"weekly brief").hexdigest()
+        signature = AI_HUMAN.stable_recommendation_signature(
+            {"category": "WORKFLOW_SIMPLIFICATION", "subject_key_sha256": subject_key}
+        )
+        decision_utc = AI_HUMAN.now_utc()
+        ledger_path = worker / ".ai-human/improvement/decisions.json"
+        ledger_path.write_text(
+            json.dumps(
+                {
+                    "records": [
+                        {
+                            "choice": "REJECT", "decision_utc": decision_utc,
+                            "measurement": None, "recommendation_id": "rec-persistent",
+                            "revisit_on": None, "run_id": "run-old",
+                            "title": "Do not propose the weekly brief again",
+                            "workflow_signature": signature,
+                        }
+                    ],
+                    "schema": "ai-human.improvement-decisions/v1",
+                    "updated_utc": decision_utc,
+                }
+            ) + "\n",
+            encoding="utf-8",
+        )
+        old_run = run_root / "run-old.json"
+        old_run.write_text(
+            json.dumps({"created_utc": "20000101T000000Z"}) + "\n",
+            encoding="utf-8",
+        )
+        expired, remaining = AI_HUMAN.expired_improvement_paths(
+            worker, {"retention_days": 1}, datetime.datetime.now(datetime.timezone.utc)
+        )
+        self.assertEqual(expired, [old_run.relative_to(worker)])
+        self.assertEqual(remaining, 0)
+        old_run.unlink()
+        findings = {
+            "repeated_work": [
+                {
+                    "evidence_refs": ["COMPLETED_LEDGER:T-3", "COMPLETED_LEDGER:T-4"],
+                    "frequency": 2, "subject": "Weekly brief",
+                    "subject_key_sha256": subject_key,
+                }
+            ]
+        }
+        caller_chosen_future = datetime.datetime(2099, 1, 1, tzinfo=datetime.timezone.utc)
+        self.assertEqual(
+            AI_HUMAN.automatic_recommendations(
+                worker, findings, {"EXAMPLE-REG-001"}, caller_chosen_future
+            ),
+            [],
+        )
+        ledger = json.loads(ledger_path.read_text(encoding="utf-8"))
+        ledger["records"][0]["choice"] = "LATER"
+        ledger["records"][0]["revisit_on"] = (
+            datetime.datetime.now(datetime.timezone.utc).date() + datetime.timedelta(days=30)
+        ).isoformat()
+        ledger_path.write_text(json.dumps(ledger) + "\n", encoding="utf-8")
+        self.assertEqual(
+            AI_HUMAN.automatic_recommendations(
+                worker, findings, {"EXAMPLE-REG-001"}, caller_chosen_future
+            ),
+            [],
+        )
+
+    def test_purged_run_decision_can_be_explicitly_reconsidered(self):
+        worker = self.base / "decision-reconsider-worker"
+        self.install(worker)
+        acquired = self.run_cli(
+            "session-acquire", worker, "--session-id", "decision-config",
+            "--actor", "User One",
+        )
+        state_hash = self.output_value(acquired.stdout, "expected-state hash")
+        configured = self.run_cli(
+            "improvement-choice", worker, "ENABLE", "--session-id", "decision-config",
+            "--expected-state-hash", state_hash, "--timezone", "Asia/Kolkata",
+            "--local-time", "10:30", "--source", "COMPLETED_LEDGER",
+            "--research", "DISABLED", "--freshness-days", "90",
+            "--retention-days", "30",
+        )
+        state_hash = self.output_value(configured.stdout, "new expected-state hash")
+        self.run_cli(
+            "session-release", worker, "--session-id", "decision-config",
+            "--expected-state-hash", state_hash,
+        )
+        signature = hashlib.sha256(b"purged-run-stable-signature").hexdigest()
+        timestamp = AI_HUMAN.now_utc()
+        ledger_path = worker / ".ai-human/improvement/decisions.json"
+        ledger_path.write_text(
+            json.dumps(
+                {
+                    "records": [
+                        {
+                            "choice": "REJECT", "decision_utc": timestamp,
+                            "measurement": None, "recommendation_id": "rec-purged",
+                            "revisit_on": None, "run_id": "run-already-purged",
+                            "title": "Reconsiderable rejected fixture",
+                            "workflow_signature": signature,
+                        }
+                    ],
+                    "schema": "ai-human.improvement-decisions/v1",
+                    "updated_utc": timestamp,
+                }
+            ) + "\n",
+            encoding="utf-8",
+        )
+        acquired = self.run_cli(
+            "session-acquire", worker, "--session-id", "decision-reconsider",
+            "--actor", "User One",
+        )
+        state_hash = self.output_value(acquired.stdout, "expected-state hash")
+        forgotten = self.run_cli(
+            "improvement-forget", worker, "DECISION", signature,
+            "--session-id", "decision-reconsider",
+            "--expected-state-hash", state_hash,
+        )
+        self.assertIn("persistent decisions removed by this explicit forget: 1", forgotten.stdout)
+        ledger = json.loads(ledger_path.read_text(encoding="utf-8"))
+        self.assertEqual(ledger["records"], [])
+
+    def test_legacy_v1_proposal_gets_a_deterministic_signature_instead_of_crashing(self):
+        worker = self.base / "legacy-proposal-worker"
+        self.install(worker)
+        recommendation = {
+            "category": "WORKFLOW_SIMPLIFICATION",
+            "evidence_refs": ["COMPLETED_LEDGER:T-1"],
+            "proposed_next_step": "Test one bounded local fixture.",
+            "rationale": "Legacy evidence recorded repeated work.",
+            "title": "Legacy repeated work",
+        }
+        first = AI_HUMAN.recommendation_capability(
+            worker, {"run_id": "legacy-run"}, recommendation
+        )
+        second = AI_HUMAN.recommendation_capability(
+            worker, {"run_id": "legacy-run"}, recommendation
+        )
+        self.assertEqual(first["id"], second["id"])
+        self.assertTrue(first["id"].startswith("improvement-"))
+
+    def test_recommendation_suppression_uses_stable_subject_not_changing_evidence_ids(self):
+        worker = self.base / "stable-decision-worker"
+        runs = worker / ".ai-human/improvement/runs"
+        runs.mkdir(parents=True)
+        subject_key = hashlib.sha256(b"weekly brief").hexdigest()
+        seed = {
+            "category": "WORKFLOW_SIMPLIFICATION",
+            "subject_key_sha256": subject_key,
+        }
+        signature = AI_HUMAN.stable_recommendation_signature(seed)
+        (runs / "prior.json").write_text(
+            json.dumps(
+                {
+                    "recommendations": [
+                        {"decision": "PROPOSE", "workflow_signature": signature}
+                    ]
+                }
+            ) + "\n",
+            encoding="utf-8",
+        )
+        findings = {
+            "repeated_work": [
+                {
+                    "evidence_refs": ["COMPLETED_LEDGER:T-3", "COMPLETED_LEDGER:T-4"],
+                    "frequency": 2,
+                    "subject": "Weekly brief",
+                    "subject_key_sha256": subject_key,
+                }
+            ]
+        }
+        output = AI_HUMAN.automatic_recommendations(
+            worker,
+            findings,
+            {"EXAMPLE-REG-001"},
+            datetime.datetime(2026, 9, 3, tzinfo=datetime.timezone.utc),
+        )
+        self.assertEqual(output, [])
+
+    def test_research_freshness_question_and_official_domain_are_enforced(self):
+        config = {
+            "freshness_days": 30,
+            "research_domains": ["openai.com"],
+            "research_questions": ["How can the approved workflow improve?"],
+            "schema": "ai-human.improvement-config/v2",
+        }
+        now = datetime.datetime(2026, 9, 3, tzinfo=datetime.timezone.utc)
+        receipt = {
+            "accessed_utc": "2026-09-02T00:00:00Z",
+            "channel": "OFFICIAL",
+            "query": "How can the approved workflow improve?",
+            "published_or_updated": "2026-09-01",
+            "schema": "ai-human.research-receipt/v2",
+            "source_url": "https://openai.com/research",
+        }
+        self.assertIs(
+            AI_HUMAN.validate_research_scope_and_freshness(receipt, config, now=now),
+            receipt,
+        )
+        wrong_domain = dict(receipt, source_url="https://example.com/research")
+        with self.assertRaisesRegex(ValueError, "domain allowlist"):
+            AI_HUMAN.validate_research_scope_and_freshness(wrong_domain, config, now=now)
+        wrong_query = dict(receipt, query="Anything useful")
+        with self.assertRaisesRegex(ValueError, "outside owner approval"):
+            AI_HUMAN.validate_research_scope_and_freshness(wrong_query, config, now=now)
+        stale = dict(receipt, accessed_utc="2026-07-01T00:00:00Z")
+        with self.assertRaisesRegex(ValueError, "freshness window"):
+            AI_HUMAN.validate_research_scope_and_freshness(stale, config, now=now)
+        future = dict(receipt, accessed_utc="2026-09-04T00:00:00Z")
+        with self.assertRaisesRegex(ValueError, "future"):
+            AI_HUMAN.validate_research_scope_and_freshness(future, config, now=now)
+
+    def test_active_external_improvement_schedule_blocks_suspend_and_uninstall(self):
+        worker = self.base / "scheduled-worker"
+        self.install(worker)
+        acquired = self.run_cli(
+            "session-acquire", worker, "--session-id", "schedule-test", "--actor", "User One"
+        )
+        state_hash = self.output_value(acquired.stdout, "expected-state hash")
+        enabled = self.run_cli(
+            "improvement-choice", worker, "ENABLE",
+            "--session-id", "schedule-test", "--expected-state-hash", state_hash,
+            "--timezone", "Asia/Kolkata", "--local-time", "09:00",
+            "--source", "COMPLETED_LEDGER", "--research", "DISABLED",
+            "--freshness-days", "30", "--retention-days", "365",
+        )
+        state_hash = self.output_value(enabled.stdout, "new expected-state hash")
+        prompt_hash = self.output_value(enabled.stdout, "scheduled task prompt SHA-256")
+        india = datetime.timezone(datetime.timedelta(hours=5, minutes=30))
+        future = datetime.datetime.now(india) + datetime.timedelta(days=30)
+        future = future.replace(hour=9, minute=0, second=0, microsecond=0).isoformat()
+        scheduled = self.run_cli(
+            "improvement-schedule", worker, "--status", "ACTIVE",
+            "--session-id", "schedule-test", "--expected-state-hash", state_hash,
+            "--adapter", "Codex Scheduled Tasks", "--external-id", "visible-task-1",
+            "--visible-card", "--visible-cadence", "QUARTERLY",
+            "--task-prompt-sha256", prompt_hash, "--next-run-local", future,
+        )
+        state_hash = self.output_value(scheduled.stdout, "new expected-state hash")
+        self.run_cli(
+            "session-release", worker, "--session-id", "schedule-test",
+            "--expected-state-hash", state_hash,
+        )
+        suspended = self.run_cli(
+            "suspend", worker, "--reason", "operator stop", expect=1
+        )
+        self.assertIn("remove and visibly verify", suspended.stderr)
+        self.assertFalse((worker / ".ai-human/autonomy/fault-latch.json").exists())
+        self.assertEqual(self.run_cli("validate", worker).returncode, 0)
+        reacquired = self.run_cli(
+            "session-acquire", worker, "--session-id", "paused-schedule-test",
+            "--actor", "User One",
+        )
+        state_hash = self.output_value(reacquired.stdout, "expected-state hash")
+        paused = self.run_cli(
+            "improvement-schedule", worker, "--status", "PAUSED",
+            "--session-id", "paused-schedule-test", "--expected-state-hash", state_hash,
+            "--adapter", "Codex Scheduled Tasks", "--external-id", "visible-task-1",
+            "--visible-card", "--visible-cadence", "QUARTERLY",
+            "--task-prompt-sha256", prompt_hash,
+        )
+        state_hash = self.output_value(paused.stdout, "new expected-state hash")
+        self.run_cli(
+            "session-release", worker, "--session-id", "paused-schedule-test",
+            "--expected-state-hash", state_hash,
+        )
+        paused_suspend = self.run_cli(
+            "suspend", worker, "--reason", "operator stop", expect=1,
+        )
+        self.assertIn("remove and visibly verify", paused_suspend.stderr)
+        removed = self.run_cli("uninstall", worker, "--at-checkpoint", expect=1)
+        self.assertIn("remove and visibly verify", removed.stderr)
+        self.assertTrue((worker / ".ai-human").is_dir())
+
+    def test_uninstall_receipt_symlink_fails_before_moving_the_system(self):
+        worker = self.base / "uninstall-symlink-worker"
+        self.install(worker)
+        outside = self.base / "outside-removal-receipt.json"
+        outside.write_text("owner data\n", encoding="utf-8")
+        (worker / "AI-HUMAN-REMOVAL-RECEIPT.json").symlink_to(outside)
+        rejected = self.run_cli("uninstall", worker, "--at-checkpoint", expect=1)
+        self.assertIn("must be a regular file", rejected.stderr)
+        self.assertTrue((worker / ".ai-human").is_dir())
+        self.assertEqual(outside.read_text(encoding="utf-8"), "owner data\n")
+
+    def test_forged_prior_fleet_pilot_cannot_authorize_a_general_only_batch(self):
+        approve_test_release(self.release, automatic=True)
+        worker = self.base / "general-only-worker"
+        self.install(worker, automatic=True, worker_id="general-001")
+        fleet = self.base / "general-only-fleet.json"
+        fleet.write_text(
+            json.dumps(
+                {
+                    "batch_id": "batch-general-only",
+                    "schema": "ai-human.fleet-batch/v1",
+                    "timezone": "Asia/Kolkata",
+                    "workers": [
+                        {
+                            "lane": "operations",
+                            "path": str(worker),
+                            "phase": "general",
+                            "worker_id": "general-001",
+                        }
+                    ],
+                }
+            ) + "\n",
+            encoding="utf-8",
+        )
+        state_path = self.base / "fleet-state.json"
+        state_path.write_text(
+            json.dumps(
+                {
+                    "batch_id": "batch-general-only",
+                    "pilot_status": "PASS",
+                    "pilot_results": [{"fabricated": True}],
+                }
+            ) + "\n",
+            encoding="utf-8",
+        )
+        self.run_cli(
+            "fleet-update", "--fleet", fleet, "--fleet-state", state_path,
+            "--source", self.release, "--now-local", "2026-10-01T10:00:00+05:30",
+        )
+        state = json.loads(state_path.read_text(encoding="utf-8"))
+        self.assertEqual(state["pilot_status"], "NOT_VERIFIED")
+        self.assertEqual(
+            state["results"][0]["report"]["reason"], "PILOT_REQUIRED_IN_SAME_BATCH"
+        )
+
+    def test_interrupted_update_recovers_from_trusted_release_not_mutable_backup(self):
+        worker = self.base / "recovery-worker"
+        self.install(worker)
+        upgrade = self.base / "recovery-upgrade"
+        shutil.copytree(self.release, upgrade)
+        rules = upgrade / "core/AGENT-RULES.md"
+        rules.write_text(
+            rules.read_text(encoding="utf-8") + "\nInterrupted update marker.\n",
+            encoding="utf-8",
+        )
+        refresh_release(upgrade, TEST_UPGRADE_VERSION)
+        _root, target_manifest = AI_HUMAN.load_release(upgrade)
+        old_manifest = json.loads(
+            (worker / ".ai-human/release-manifest.json").read_text(encoding="utf-8")
+        )
+        resolved_worker = worker.resolve()
+        backup = AI_HUMAN.backup_for_update(resolved_worker, old_manifest, target_manifest)
+        AI_HUMAN.write_lifecycle_transaction(
+            resolved_worker, "UPDATE", old_manifest, target_manifest, backup, "PREPARED"
+        )
+        (worker / ".ai-human/system/AGENT-RULES.md").write_text(
+            "partially installed attacker-visible bytes\n", encoding="utf-8"
+        )
+        backup_rules = backup / "files/.ai-human/system/AGENT-RULES.md"
+        backup_rules.write_text("tampered backup bytes\n", encoding="utf-8")
+        backup_manifest_path = backup / "backup-manifest.json"
+        backup_manifest = json.loads(backup_manifest_path.read_text(encoding="utf-8"))
+        next(
+            item for item in backup_manifest["files"]
+            if item["target"] == ".ai-human/system/AGENT-RULES.md"
+        )["sha256"] = sha256(backup_rules)
+        backup_manifest_path.write_text(
+            json.dumps(backup_manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        )
+        blocked = self.run_cli("validate", worker, expect=1)
+        self.assertIn("recover-lifecycle", blocked.stderr)
+        recovered = self.run_cli("recover-lifecycle", worker, "--source", self.release)
+        self.assertIn("LIFECYCLE RECOVERY: PASS", recovered.stdout)
+        restored_rules = (worker / ".ai-human/system/AGENT-RULES.md").read_text(
+            encoding="utf-8"
+        )
+        self.assertNotIn("tampered backup", restored_rules)
+        self.assertNotIn("partially installed", restored_rules)
+        self.assertFalse((worker / ".ai-human/control/lifecycle-transaction.json").exists())
+        self.assertEqual(self.run_cli("validate", worker).returncode, 0)
+
+    def test_pre_v24_downgrade_has_a_recoverable_private_state_export_path(self):
+        worker = self.base / "downgrade-export-worker"
+        self.install(worker)
+        acquired = self.run_cli(
+            "session-acquire", worker, "--session-id", "downgrade-export", "--actor", "User One"
+        )
+        state_hash = self.output_value(acquired.stdout, "expected-state hash")
+        enabled = self.run_cli(
+            "improvement-choice", worker, "ENABLE",
+            "--session-id", "downgrade-export", "--expected-state-hash", state_hash,
+            "--timezone", "Asia/Kolkata", "--local-time", "09:00",
+            "--source", "COMPLETED_LEDGER", "--research", "DISABLED",
+            "--freshness-days", "30", "--retention-days", "365",
+        )
+        state_hash = self.output_value(enabled.stdout, "new expected-state hash")
+        self.run_cli(
+            "session-release", worker, "--session-id", "downgrade-export",
+            "--expected-state-hash", state_hash,
+        )
+        config_hash = sha256(worker / ".ai-human/improvement/config.json")
+        prepared = self.run_cli(
+            "prepare-downgrade", worker, "--target-version", "2.3.0"
+        )
+        self.assertIn("DOWNGRADE PREPARATION: PASS", prepared.stdout)
+        self.assertFalse((worker / ".ai-human/improvement").exists())
+        self.assertTrue((worker / ".ai-human/control/downgrade-preparation.json").is_file())
+        installed_contract = worker / ".ai-human/system/AI-HUMAN.md"
+        contract_before = installed_contract.read_text(encoding="utf-8")
+        installed_contract.write_text("tampered managed contract\n", encoding="utf-8")
+        failed_restore = self.run_cli("restore-downgrade", worker, expect=1)
+        self.assertIn("restored worker validation failed", failed_restore.stderr)
+        self.assertFalse((worker / ".ai-human/improvement").exists())
+        self.assertTrue((worker / ".ai-human/control/downgrade-preparation.json").is_file())
+        self.assertIn(
+            "EXPORTED FOR DOWNGRADE",
+            (worker / "AUTOMATIONS.md").read_text(encoding="utf-8"),
+        )
+        installed_contract.write_text(contract_before, encoding="utf-8")
+        restored = self.run_cli("restore-downgrade", worker)
+        self.assertIn("RESTORE: PASS", restored.stdout)
+        self.assertEqual(sha256(worker / ".ai-human/improvement/config.json"), config_hash)
+        self.assertEqual(self.run_cli("validate", worker).returncode, 0)
 
 
 if __name__ == "__main__":

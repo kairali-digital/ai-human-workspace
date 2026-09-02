@@ -20,26 +20,26 @@ export const downloadGroups: DownloadGroup[] = [
     items: [
       {
         label: "Kairali employee edition",
-        description: "Workspace, Kairali Setup Helper, role prompts, homework workers, opt-in skills and lifecycle controls.",
-        file: "KAIRALI-AI-HUMAN-v230-EMPLOYEE-EDITION-PUBLIC-KIT.zip",
+        description: "Workspace, Kairali Setup Helper, role prompts, homework workers and lifecycle controls. Reference packages stay outside host skill folders, including Windows aliases; v2.4 never activates a skill.",
+        file: "KAIRALI-AI-HUMAN-v240-EMPLOYEE-EDITION-PUBLIC-KIT.zip",
         format: "ZIP",
       },
       {
         label: "Kairali edition checksum",
         description: "Use this when the Setup Helper or IT verifies the exact employee-edition download.",
-        file: "KAIRALI-AI-HUMAN-v230-EMPLOYEE-EDITION-PUBLIC-KIT.zip.sha256",
+        file: "KAIRALI-AI-HUMAN-v240-EMPLOYEE-EDITION-PUBLIC-KIT.zip.sha256",
         format: "SHA-256",
       },
       {
         label: "Reusable edition",
         description: "Company-neutral workspace, generic Setup Helper and lifecycle controls with no Kairali employee content.",
-        file: "AI-HUMAN-v230-REUSABLE-EDITION-PUBLIC-KIT.zip",
+        file: "AI-HUMAN-v240-REUSABLE-EDITION-PUBLIC-KIT.zip",
         format: "ZIP",
       },
       {
         label: "Reusable edition checksum",
         description: "Use this when the Setup Helper verifies the exact company-neutral download.",
-        file: "AI-HUMAN-v230-REUSABLE-EDITION-PUBLIC-KIT.zip.sha256",
+        file: "AI-HUMAN-v240-REUSABLE-EDITION-PUBLIC-KIT.zip.sha256",
         format: "SHA-256",
       },
     ],

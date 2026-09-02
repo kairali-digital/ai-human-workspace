@@ -514,18 +514,35 @@ footer a { flex: 0 0 auto; font-weight: 750; }
 }
 
 @media (max-width: 767px) {
-  .site-header { height: auto; padding: 18px 20px; }
-  .brand-name {
-    clip: rect(0, 0, 0, 0);
-    clip-path: inset(50%);
-    height: 1px;
-    overflow: hidden;
-    position: absolute;
-    white-space: nowrap;
-    width: 1px;
+  .site-header {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 14px;
+    height: auto;
+    padding: 18px 20px 12px;
   }
-  nav { gap: 10px; }
-  nav a { font-size: 0.72rem; }
+  .brand-name {
+    font-size: 0.94rem;
+  }
+  nav {
+    gap: 8px;
+    max-width: 100%;
+    overflow-x: auto;
+    padding-bottom: 6px;
+    scrollbar-width: thin;
+    width: 100%;
+  }
+  nav a {
+    align-items: center;
+    background: var(--surface-soft);
+    border-radius: 999px;
+    display: inline-flex;
+    flex: 0 0 auto;
+    font-size: 0.85rem;
+    min-height: 44px;
+    padding: 0 14px;
+    white-space: nowrap;
+  }
   .hero { gap: 34px; padding: 24px 20px 60px; }
   .hero-media { aspect-ratio: 4 / 3; min-height: 0; }
   h1 { font-size: clamp(3rem, 15vw, 4.6rem); }

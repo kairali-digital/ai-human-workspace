@@ -70,9 +70,10 @@
   Sources: https://www.linkedin.com/legal/user-agreement and
   https://www.linkedin.com/help/linkedin/answer/a1341387 and
   https://www.linkedin.com/help/linkedin/answer/a1340567
-- Protected public `kairali-digital/ai-human-workspace` release v2.2.0 - complete
+- Protected public `kairali-digital/ai-human-workspace` release v2.2.0 - historical
   integrity-checked Kairali reference kit, public distribution boundary, three homework
-  starters, all approved people/setup prompts and two explicit role-opt-in skills.
+  starters, all approved people/setup prompts and two role-opt-in skill packages. In the
+  current v2.4 kit those packages are inactive references and are not installed.
 - `work/MULTI-COMPANY-AI-HUMAN-CORE-001/repo/packages/kairali/README.md` - the public
   kit is a setup/reference layer; employee live state stays in a separate private or
   local work project; component removal archives and deletes no employee work.

@@ -96,9 +96,15 @@ def workspace_files(reusable=False):
     if reusable:
         old_repository = b'kairali-digital/ai-human-workspace'
         new_repository = b'standalone-local/ai-human-workspace'
+        old_publisher = b'AbhilashKairali'
+        new_publisher = b'standalone-local'
         if old_repository not in script:
             raise ValueError("reusable repository substitution source is missing")
-        script = script.replace(old_repository, new_repository)
+        if old_publisher not in script:
+            raise ValueError("reusable publisher substitution source is missing")
+        script = script.replace(old_repository, new_repository).replace(
+            old_publisher, new_publisher
+        )
         manifest["repository"] = new_repository.decode("utf-8")
         components = {
             "approval_status": APPROVAL_STATUS,
@@ -121,6 +127,7 @@ def workspace_files(reusable=False):
     files["component-manifest.json"] = (
         json.dumps(components, indent=2, sort_keys=True).encode("utf-8") + b"\n"
     )
+    files["requirements.txt"] = file_bytes(ROOT / "requirements.txt")
     return files
 
 

@@ -65,14 +65,15 @@ the repetition and value. The user chooses `PROPOSE`, `LATER` or `REJECT`. Only 
 designated supervisor may activate a fully specified, proof-tested proposal or approve
 it for a future company release. Proposals never contain secrets or credentials.
 
-## Quarterly improvement
+## Personal improvement
 
-The optional quarterly loop reviews only user-approved worker evidence and dated,
+The optional monthly or quarterly loop reviews only user-approved worker evidence and dated,
 linked research choices. It keeps configuration, schedule proof, research receipts and
 read-only recommendations in private user-owned state. A recommendation always returns
-to human review through `PROPOSE`, `LATER` or `REJECT`; it never installs or activates
-a capability by itself. Scheduler availability, the visible Scheduled card and the
-next run are verified separately from local configuration.
+to human review through `PROPOSE`, dated `LATER` or `REJECT`; it never installs or
+activates a capability by itself. The brief keeps decision history and records only
+owner-supplied time measurements. Scheduler availability, the visible Scheduled card,
+exact prompt fingerprint and next run are verified separately from local configuration.
 
 ## Isolation
 
@@ -91,6 +92,7 @@ The shared system checks only a validated semantic-version release. Its monthly 
 runs on the first calendar day at 10:00 AM using the offset-aware worker-local time
 explicitly supplied by the approved scheduler adapter; it never guesses from the host
 machine clock. An automatic update is allowed only when explicitly active, idle,
-released, owner-approved, hash-verified and backward-compatible. Every path backs up,
-validates, reports and rolls back on failure.
+released, owner-approved, hash-verified and backward-compatible. Every path journals,
+backs up, validates and reports. Interrupted work fails closed until recovery verifies
+the applied release or restores a trusted tagged source.
 Company, role, user state and user settings are never managed by the release.

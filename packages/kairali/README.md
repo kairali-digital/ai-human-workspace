@@ -33,21 +33,23 @@ or schedules. Use `homework/THREE-WORKER-GO-LIVE-CHECKLIST.md` for the final rea
 Email and Full Drive are required; `TEST 25` is Drive setup proof only. Saturday
 LinkedIn is optional and may be recorded as `NOT ENABLED BY CHOICE`.
 
-## Optional governed skills
+## Governed skill references
 
 - `kairali-akshar-marketing-science` — explicit role opt-in for evidence-led marketing;
 - `kairali-rahul-sales-system` — explicit role opt-in for observable sales-system work.
 
-These skills are not installed for everyone and never auto-trigger from generic
-marketing or sales wording. A Setup Helper installs only the skill named in an approved
-role or owner decision.
+These skill packages remain inactive reference material in v2.4. The lifecycle neither
+installs nor activates them because the current hosts do not provide a trusted
+pre-discovery loader plus human-presence authority. Generic marketing or sales wording
+never activates a skill.
 
 ## Integrity and removal
 
 The `kairali-company-rollout` component installs this entire directory as one reference
-kit, so `people/`, `homework/` and both skill packages stay together. The lifecycle tool
-validates the complete tree before copying it. Installing the reference kit does not
-activate either skill; skill activation is a separate explicit action. Removal moves
+kit, so `people/`, `homework/` and both inactive skill-reference packages stay together.
+The lifecycle tool validates the complete tree before copying it and refuses any target
+inside `.agents`, `.claude`, `.codex` or `skills`, including Windows path aliases.
+Installing the reference kit cannot place either skill in host discovery. Removal moves
 the installed kit to a timestamped recoverable folder and deletes nothing.
 
 Live homework worker folders are employee state. Removing the reference homework pack
@@ -55,8 +57,8 @@ does not remove a worker that the employee has already created from it.
 
 For every new release, follow [`UPDATE-WORKFLOW.md`](UPDATE-WORKFLOW.md). The company
 notice starts a read-only version check. The employee approves `UPDATE NOW`; the Setup
-Helper applies the core, reference pack and any named opt-in skill separately at a safe
-checkpoint. GitHub Desktop Fetch/Pull synchronizes an assigned repository only and is
+Helper applies the core and reference pack separately at a safe checkpoint. Governed
+skill entries remain inactive in v2.4. GitHub Desktop Fetch/Pull synchronizes an assigned repository only and is
 not the install/update mechanism.
 
 Completion requires the installed version, validation receipt, preserved-state result

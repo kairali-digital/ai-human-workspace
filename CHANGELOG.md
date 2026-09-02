@@ -2,6 +2,45 @@
 
 All notable changes are recorded here in plain language.
 
+## [2.4.0] - 2026-09-03
+
+- Upgrade the personal improvement loop from quarterly-only to an owner-selected
+  monthly or quarterly cadence with an exact, hashed Scheduled-task prompt and bounded
+  next-run verification.
+- Add active approved-source collection for official sources, Reddit and YouTube.
+  Each finding is imported in a 25-item maximum batch as a source-linked receipt;
+  undated community content fails while an undated official source remains explicitly
+  `UNKNOWN` freshness.
+- Derive improvement recommendations from governed worker evidence instead of accepting
+  a model-authored recommendation file. Repeated-work signatures produce persistent
+  `PROPOSE / LATER / REJECT` decisions, and `PROPOSE` creates only an inactive
+  supervisor-review capability proposal. A compact decision ledger survives ordinary
+  run retention, no run mode can advance the decision or retention clock, and owners
+  can explicitly reconsider a retained decision after its source run expires.
+- Produce a readable personal improvement brief with source coverage, links, current
+  findings, unresolved decisions and value kept `UNKNOWN` until a real baseline and
+  measured result exist.
+- Harden automatic core updates with one crash-released worker operation lock,
+  preemptive suspension latch, release-owner and commit-signature verification,
+  fleet-pilot evidence binding and refusal to downgrade across active v2.4 state.
+- Use filesystem-portable managed-path comparisons and unpredictable, no-follow atomic
+  temporary files to reduce aliasing and predictable-temporary-file attacks.
+- Explicitly safe-disable email/LinkedIn external effects and both silent and generic
+  managed skill activation. v2.4 has no native credential broker, trusted skill loader
+  or host-proven human-presence signal, so these commands stop before creating effect
+  state, contacting a provider or changing a runtime.
+- Keep reference packs out of `.agents`, `.claude`, `.codex` and `skills` discovery
+  trees including Windows aliases, archive removed legacy skills outside the active
+  skills root, and pin all remote component and fleet retrieval to the lifecycle release
+  repository. Worker updates reject manifest repository rebinding.
+- Keep the effect-authority registry exactly empty and validate the disabled handlers
+  structurally. Documentation describes the future broker contract without claiming
+  that local files can authorize an external effect.
+- Keep automatic update eligibility off for the v2.4 release while preserving configured
+  v2 worker state through the manual checkpointed update path.
+- Pin the first-party IANA time-zone data dependency, ship its requirement in both public
+  editions and exercise the same schedule rules on Windows, macOS and Linux.
+
 ## [2.3.0] - 2026-09-02
 
 - Add an optional quarterly improvement loop that starts only after the user confirms

@@ -2,10 +2,13 @@
 """Fail closed when a public AI-Human release is incomplete or unsafe."""
 
 import argparse
+import ast
 import hashlib
 import json
 import re
 import sys
+import unicodedata
+import zipfile
 from pathlib import Path
 
 
@@ -14,7 +17,7 @@ REPOSITORY = "kairali-digital/ai-human-workspace"
 GOVERNED_WORKFLOW_SHA256 = {
     ".github/workflows/portal-deploy.yml": "a373f4a02abcbbccc73cd3d8954826ce801f5e588a2e5e27ced04b82bfee043c",
     ".github/workflows/portal.yml": "475f188109f987ec00072d235d704475ee09dc726e6eba1d688a46cb0ac69012",
-    ".github/workflows/validate.yml": "6b8189e91548a5916839d8afb3b022990422b842987011d0d57cb4fffc433f0e",
+    ".github/workflows/validate.yml": "a719dd0dae7428e3044c126b0f7b631b74f9e75cb0af42670533789761f37a90",
 }
 REQUIRED_FILES = {
     ".github/CODEOWNERS",
@@ -33,6 +36,8 @@ REQUIRED_FILES = {
     "company-profiles/template/GATE-PROFILE.example.json",
     "company-profiles/template/SETUP-HELPER-TEMPLATE.md",
     "core/AGENT-RULES.md",
+    "core/AUTONOMY-CONTROL.md",
+    "core/AUTHORITY-REGISTRY.json",
     "core/AI-HUMAN.md",
     "core/GATES-SHARED.md",
     "core/OPERATING-LOOP.md",
@@ -56,6 +61,7 @@ REQUIRED_FILES = {
     "editions/reusable/INSTALL-DISABLE-REMOVE.md",
     "editions/reusable/START-HERE.md",
     "release-manifest.json",
+    "requirements.txt",
     "packages/kairali/README.md",
     "packages/kairali/homework/COPY-PASTE-PROMPTS.txt",
     "packages/kairali/homework/EVERYONE-ELSE-AI-HUMAN-HOMEWORK-GUIDE.docx",
@@ -103,6 +109,8 @@ ALLOWED_BINARY_FILES = {
 REQUIRED_TARGETS = {
     ".ai-human/system/AI-HUMAN.md",
     ".ai-human/system/AGENT-RULES.md",
+    ".ai-human/system/AUTONOMY-CONTROL.md",
+    ".ai-human/system/AUTHORITY-REGISTRY.json",
     ".ai-human/system/OPERATING-LOOP.md",
     ".ai-human/system/GATES-SHARED.md",
     ".ai-human/system/SESSION-START.md",
@@ -122,13 +130,18 @@ INTRINSIC_NEVER_MANAGED = LOCAL_STATE | {
     ".ai-human/control/",
     ".ai-human/capabilities/",
     ".ai-human/improvement/",
+    ".ai-human/autonomy/",
     ".ai-human/backups/",
+    ".ai-human/downgrade-exports/",
     ".ai-human/install.json",
     ".ai-human/release-manifest.json",
     ".ai-human/update-receipt.json",
     ".ai-human/version-report.json",
 }
-PROOF_IGNORED_PARTS = {".git", ".pytest_cache", "__pycache__", "dist", "portal"}
+PROOF_IGNORED_PARTS = {
+    ".git", ".next", ".pytest_cache", ".vercel", "__pycache__", "dist", "node_modules",
+    "tsconfig.tsbuildinfo",
+}
 PROOF_REQUIRED_KEYS = {
     "approval_status", "automatic_update_eligible", "files", "release_status",
     "repository", "schema", "version",
@@ -164,6 +177,149 @@ def strict_json_loads(content):
     return json.loads(content, object_pairs_hook=reject_duplicate_json_keys)
 
 
+def fixed_unavailable_handler(source, function_name, required_code):
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return False
+    matches = [
+        node for node in tree.body
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        and node.name == function_name
+    ]
+    if len(matches) != 1:
+        return False
+    body = list(matches[0].body)
+    if body and isinstance(body[0], ast.Expr) and isinstance(body[0].value, ast.Constant):
+        if isinstance(body[0].value.value, str):
+            body.pop(0)
+    if len(body) != 1 or not isinstance(body[0], ast.Raise) or body[0].cause is not None:
+        return False
+    expression = body[0].exc
+    if not isinstance(expression, ast.Call) or expression.keywords or len(expression.args) != 1:
+        return False
+    if not isinstance(expression.func, ast.Name) or expression.func.id != "ValueError":
+        return False
+    return isinstance(expression.args[0], ast.Constant) and (
+        isinstance(expression.args[0].value, str)
+        and required_code in expression.args[0].value
+    )
+
+
+def handler_guard_precedes_effect(
+    source, function_name, guard_name, effect_name, effect_target_position=3,
+):
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return False
+    matches = [
+        node for node in tree.body
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        and node.name == function_name
+    ]
+    if len(matches) != 1:
+        return False
+    function = matches[0]
+
+    def direct_call(statement):
+        if not isinstance(statement, ast.Expr) or not isinstance(statement.value, ast.Call):
+            return None
+        call = statement.value
+        return call if isinstance(call.func, ast.Name) else None
+
+    blocks = []
+
+    def collect_blocks(statements):
+        blocks.append(statements)
+        for statement in statements:
+            if isinstance(statement, ast.Try):
+                collect_blocks(statement.body)
+                collect_blocks(statement.orelse)
+                collect_blocks(statement.finalbody)
+                for handler in statement.handlers:
+                    collect_blocks(handler.body)
+            elif isinstance(statement, (ast.If, ast.For, ast.AsyncFor, ast.While, ast.With, ast.AsyncWith)):
+                collect_blocks(statement.body)
+                collect_blocks(statement.orelse)
+
+    collect_blocks(function.body)
+    all_calls = [
+        call for block in blocks for statement in block
+        for call in [direct_call(statement)] if call is not None
+    ]
+    guards = [call for call in all_calls if call.func.id == guard_name]
+    effects = [call for call in all_calls if call.func.id == effect_name]
+    if len(guards) != 1 or len(effects) != 1:
+        return False
+    guard, effect = guards[0], effects[0]
+    if guard.keywords or len(guard.args) != 1:
+        return False
+    if effect_target_position >= len(effect.args):
+        return False
+    guard_target = guard.args[0]
+    effect_target = effect.args[effect_target_position]
+    if not (
+        isinstance(guard_target, ast.Name)
+        and isinstance(effect_target, ast.Name)
+        and guard_target.id == effect_target.id
+    ):
+        return False
+    return any(
+        guard in [direct_call(statement) for statement in block]
+        and effect in [direct_call(statement) for statement in block]
+        and block.index(next(statement for statement in block if direct_call(statement) is guard))
+        < block.index(next(statement for statement in block if direct_call(statement) is effect))
+        for block in blocks
+    )
+
+
+def validate_public_edition_runtime_parity(root, manifest):
+    downloads = root / "portal/public/downloads"
+    if not downloads.is_dir():
+        return []
+    version = str(manifest.get("version", ""))
+    lane = (
+        "PUBLIC-KIT"
+        if manifest.get("release_status") == "RELEASED"
+        else "LOCAL-CANDIDATE"
+    )
+    token = "v" + version.replace(".", "")
+    source_path = root / "scripts/ai_human.py"
+    if not source_path.is_file():
+        return ["edition runtime parity source is missing"]
+    source = source_path.read_bytes()
+    reusable = source.replace(
+        b"kairali-digital/ai-human-workspace", b"standalone-local/ai-human-workspace"
+    ).replace(b"AbhilashKairali", b"standalone-local")
+    editions = (
+        (
+            downloads / ("KAIRALI-AI-HUMAN-" + token + "-EMPLOYEE-EDITION-" + lane + ".zip"),
+            "KAIRALI-EMPLOYEE-EDITION/workspace/scripts/ai_human.py",
+            source,
+        ),
+        (
+            downloads / ("AI-HUMAN-" + token + "-REUSABLE-EDITION-" + lane + ".zip"),
+            "AI-HUMAN-REUSABLE-EDITION/workspace/scripts/ai_human.py",
+            reusable,
+        ),
+    )
+    failures = []
+    for archive_path, member, expected in editions:
+        if not archive_path.is_file():
+            failures.append("current edition archive is missing: " + archive_path.name)
+            continue
+        try:
+            with zipfile.ZipFile(archive_path) as archive:
+                actual = archive.read(member)
+        except Exception as exc:
+            failures.append("cannot read edition runtime from " + archive_path.name + ": " + str(exc))
+            continue
+        if actual != expected:
+            failures.append("edition runtime differs from the current source: " + archive_path.name)
+    return failures
+
+
 def read_json(path):
     return strict_json_loads(path.read_text(encoding="utf-8"))
 
@@ -172,10 +328,15 @@ def portable_path(value):
     return str(value).replace("\\", "/")
 
 
+def canonical_path(value):
+    portable = unicodedata.normalize("NFC", portable_path(value))
+    return "/".join(part.casefold() for part in portable.split("/"))
+
+
 def protected_managed_path(value, declared=()):
-    target = portable_path(value).rstrip("/")
+    target = canonical_path(value).rstrip("/")
     for protected in set(declared) | INTRINSIC_NEVER_MANAGED:
-        base = portable_path(protected).rstrip("/")
+        base = canonical_path(protected).rstrip("/")
         if target == base or target.startswith(base + "/"):
             return True
     return False
@@ -516,12 +677,24 @@ def safe_relative(value):
     trimmed = portable.rstrip("/")
     parts = trimmed.split("/") if trimmed else []
     path = Path(trimmed)
-    return bool(trimmed) and not (
+    if not bool(trimmed) or (
         "\x00" in portable
         or portable.startswith("/")
         or re.match(r"^[A-Za-z]:", portable)
         or any(part in {"", ".", ".."} for part in parts)
         or path.is_absolute()
+    ):
+        return False
+    reserved = {"con", "prn", "aux", "nul"} | {
+        prefix + str(index) for prefix in ("com", "lpt") for index in range(1, 10)
+    }
+    return not any(
+        part != unicodedata.normalize("NFC", part)
+        or part.endswith((" ", "."))
+        or any(ord(character) < 32 or character in '<>:"|?*' for character in part)
+        or part.split(".", 1)[0].casefold() in reserved
+        or len(part.encode("utf-8")) > 255
+        for part in parts
     )
 
 
@@ -613,6 +786,7 @@ def validate(root, candidate=False):
         failures.append("release compatibility floor is not semantic")
 
     failures.extend(validate_release_proof(root, manifest))
+    failures.extend(validate_public_edition_runtime_parity(root, manifest))
 
     component_path = root / "component-manifest.json"
     try:
@@ -690,15 +864,16 @@ def validate(root, candidate=False):
             failures.append("unsafe managed source at index " + str(index))
             continue
         target_key = portable_path(target)
+        target_comparison = canonical_path(target)
         if not safe_relative(target) or not target_key.startswith(".ai-human/"):
             failures.append("unsafe managed target at index " + str(index))
             continue
         if protected_managed_path(target_key, never_managed_value):
             failures.append("release tries to manage protected local state: " + target_key)
             continue
-        if target_key in targets:
+        if target_comparison in targets:
             failures.append("duplicate managed target: " + target_key)
-        targets.add(target_key)
+        targets.add(target_comparison)
         path = root / Path(portable_path(source))
         if path_uses_symlink(root, source):
             failures.append("managed source may not use symbolic links: " + source)
@@ -707,9 +882,12 @@ def validate(root, candidate=False):
             failures.append("managed source missing: " + source)
         elif record.get("sha256") != sha256(path):
             failures.append("managed hash mismatch: " + source)
-    for target in sorted(REQUIRED_TARGETS - targets):
+    for target in sorted(
+        value for value in REQUIRED_TARGETS if canonical_path(value) not in targets
+    ):
         failures.append("required managed target missing: " + target)
-    for target in sorted(targets.intersection(LOCAL_STATE)):
+    local_state_keys = {canonical_path(value) for value in LOCAL_STATE}
+    for target in sorted(targets.intersection(local_state_keys)):
         failures.append("release tries to manage local state: " + target)
     never_managed = set(never_managed_value)
     for local in sorted(LOCAL_STATE - never_managed):
@@ -717,10 +895,59 @@ def validate(root, candidate=False):
     if control_plane_version:
         for local in (
             ".ai-human/control/", ".ai-human/capabilities/", ".ai-human/improvement/",
-            ".ai-human/version-report.json",
+            ".ai-human/autonomy/", ".ai-human/backups/", ".ai-human/version-report.json",
         ):
             if local not in never_managed:
                 failures.append("local control state absent from never_managed: " + local)
+
+    authority_registry_path = root / "core/AUTHORITY-REGISTRY.json"
+    if authority_registry_path.is_file():
+        try:
+            authority_registry = read_json(authority_registry_path)
+        except Exception as exc:
+            authority_registry = None
+            failures.append("invalid managed effect-authority registry: " + str(exc))
+        if authority_registry != {
+            "authorities": [], "schema": "ai-human.effect-authority-registry/v1",
+        }:
+            failures.append(
+                "v2.4 must safe-disable external effects with an exactly empty authority registry"
+            )
+    else:
+        failures.append("v2.4 safe-disabled authority registry is missing")
+    runtime_path = root / "scripts/ai_human.py"
+    if runtime_path.is_file():
+        runtime_source = runtime_path.read_text(encoding="utf-8")
+        for forbidden in (
+            "AI_HUMAN_AUTHORITY_", "post_effect_authority", "executable_sha256",
+            "Authorization\": \"Bearer ",
+        ):
+            if forbidden in runtime_source:
+                failures.append("runtime contains a forbidden file/env external executor: " + forbidden)
+        if not fixed_unavailable_handler(
+            runtime_source, "action_execute", "UNAVAILABLE_NO_NATIVE_BROKER"
+        ):
+            failures.append("action-execute is not unconditionally safe-disabled before state/network")
+        if not fixed_unavailable_handler(
+            runtime_source, "autonomy_skill_install", "UNAVAILABLE_NO_TRUSTED_SKILL_LOADER"
+        ):
+            failures.append("silent project-skill installation is not unconditionally safe-disabled")
+        if not fixed_unavailable_handler(
+            runtime_source, "install_skill", "UNAVAILABLE_NO_HUMAN_PRESENCE_AUTHORITY"
+        ):
+            failures.append("generic managed skill installation is not unconditionally safe-disabled")
+        if not fixed_unavailable_handler(
+            runtime_source, "validate_autonomy_consent",
+            "UNAVAILABLE_NO_TRUSTED_EFFECT_RUNTIME",
+        ):
+            failures.append("autonomy consent does not fail closed for every v2.4 silent effect")
+        if not handler_guard_precedes_effect(
+            runtime_source, "install_pack", "refuse_skill_discovery_target",
+            "install_component_tree",
+        ):
+            failures.append(
+                "reference-pack install is not guarded before a host skill-discovery write"
+            )
 
     for local in sorted(LOCAL_STATE):
         if local == "AGENTS.md":
@@ -737,6 +964,18 @@ def validate(root, candidate=False):
             failures.append("company-specific name in neutral core: " + company_word)
     if re.search(r"\bemployee\b", core_text, flags=re.I):
         failures.append("neutral core uses employee instead of user")
+    autonomy_doc_path = root / "core/AUTONOMY-CONTROL.md"
+    if autonomy_doc_path.is_file():
+        autonomy_doc = autonomy_doc_path.read_text(encoding="utf-8")
+        autonomy_doc_words = " ".join(autonomy_doc.split()).casefold()
+        for required in (
+            "EMAIL AND LINKEDIN EXTERNAL EFFECTS ARE NOT AVAILABLE",
+            "Silent project-skill installation is also unavailable",
+            "managed `install-skill` entry point is also disabled",
+            "No standing-permission channel executes an effect in v2.4",
+        ):
+            if " ".join(required.split()).casefold() not in autonomy_doc_words:
+                failures.append("autonomy availability banner lacks: " + required)
 
     starter_text = "\n".join(
         path.read_text(encoding="utf-8", errors="replace")
@@ -747,6 +986,8 @@ def validate(root, candidate=False):
             failures.append("starter parameter is unused: " + parameter)
     if re.search(r"\bemployee\b", starter_text, flags=re.I):
         failures.append("neutral starter uses employee instead of user")
+    if "UNAVAILABLE IN v2.4" not in starter_text:
+        failures.append("starter automation table does not show safe-disabled standing effects")
     workspace_map_path = root / "starter/WORKSPACE-MAP.md"
     if workspace_map_path.is_file():
         workspace_map = workspace_map_path.read_text(encoding="utf-8")
@@ -1126,6 +1367,14 @@ def validate(root, candidate=False):
             "test_quarterly_schedule_truth_pause_edit_resume_and_remove_fail_closed",
             "test_quarterly_run_detects_repetition_stale_conflict_and_never_activates",
             "test_quarterly_improvement_state_survives_a_managed_update",
+            "test_reference_pack_cannot_enter_host_skill_discovery_paths",
+            "test_component_commands_reject_an_unpinned_repository_before_network",
+            "test_persistent_decisions_survive_run_retention_and_ignore_caller_clock",
+            "test_public_edition_runtime_matches_the_current_release_source",
+            "test_fleet_and_worker_updates_reject_repository_rebinding",
+            "test_scheduled_improvement_run_rejects_a_fictional_clock",
+            "test_reference_pack_guard_validator_binds_the_effect_target",
+            "test_supervisor_can_recover_an_abandoned_lease_after_acknowledged_edits",
         ):
             if required not in lifecycle_tests:
                 failures.append("lifecycle tests lack: " + required)

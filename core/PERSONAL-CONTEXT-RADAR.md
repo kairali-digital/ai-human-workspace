@@ -25,6 +25,9 @@ infer facts or copy source text. `work-map-record` stores a concise sourced entr
 confidence, scope, sensitivity, record time and review date, then returns the map to
 DRAFT. Observations remain OBSERVED_VERIFY or UNKNOWN until separately corrected and
 confirmed. `work-map-control CONFIRM` requires the user's explicit review reference.
+The private confirmation retains that reference, confirmation time and exact reviewed
+context digest. Every edit, correction, exclusion, forget, prune or re-consent
+invalidates it and requires a new review before radar use.
 
 WORKER_LOCAL and USER_GLOBAL are distinct scopes. USER_GLOBAL is a user-owned fact in
 this designated owner worker, not a shared filesystem location or automatic global
@@ -44,7 +47,8 @@ No deleted profile data is copied to transaction receipts or automatic backups. 
 external radar schedule exists, privacy controls erase the profile immediately and
 retain only its external ID and prompt digest as NEEDS_EXTERNAL_REMOVAL. The helper
 removes that exact host schedule and records visible removal proof. Re-consent,
-suspension and uninstall wait for that reconciliation, preventing an orphan schedule.
+suspension, uninstall, rollback and downgrade wait for that reconciliation, preventing
+an orphan schedule or an old runtime from losing its control record.
 
 Retention is explicitly chosen within 1–365 days. Expired consent prevents retrieval
 and radar use; expired entries cannot support suggestions. PRUNE physically removes
@@ -71,8 +75,11 @@ Recurring radar needs separate `radar-configure`: monthly/quarterly, exact local
 IANA time zone and approval reference. The helper tests the generated prompt and
 reopens the host's visible schedule card. `radar-verify` accepts its exact prompt hash,
 external ID and next run only when they match. Configuration alone is
-AWAITING_VISIBLE_PROOF. No command here creates a native or cloud schedule. Record
-verified pause/removal after operating the actual host schedule. Changed context or
+AWAITING_VISIBLE_PROOF. No command here creates a native or cloud schedule.
+The verified next run is at most 32 days away for monthly and 94 days for quarterly
+cadence. Stored proof, text, decisions and evidence validity are independently
+validated even when a file's ordinary integrity hashes have been recomputed.
+Record verified pause/removal after operating the actual host schedule. Changed context or
 configuration invalidates the local radar; the helper must reconcile the host card.
 Before the next run, NOT_DUE is quiet; a missed occurrence older than one day requires
 fresh verification. Each consumed occurrence requires a new verified next run, so a

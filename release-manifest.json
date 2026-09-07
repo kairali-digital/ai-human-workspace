@@ -8,7 +8,7 @@
   },
   "managed_files": [
     {
-      "sha256": "6602ea17e613401e665ac3454579cab7e88521bdac8a9aa7726cc7d26c5ce9f9",
+      "sha256": "904c07bd9eae51409d3ab9161cd86e855c1090b0efe6bdd096fc2dae426f5f5c",
       "source": "core/PERSONAL-CONTEXT-RADAR.md",
       "target": ".ai-human/system/PERSONAL-CONTEXT-RADAR.md"
     },
@@ -83,7 +83,7 @@
       "target": ".ai-human/VERSION"
     },
     {
-      "sha256": "b8c44913075f7eec025b72ca7cb78b8f279227507fce261e9cdebef7da960b9c",
+      "sha256": "c7e69e6874226633b8b051953f62bc29da445747b17d2ccdbbe8ab3315205b61",
       "source": "scripts/ai_human.py",
       "target": ".ai-human/bin/ai_human.py"
     }

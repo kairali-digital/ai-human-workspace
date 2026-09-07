@@ -472,6 +472,7 @@ class LifecycleTests(unittest.TestCase):
         data = AI_HUMAN.work_map(worker)
         lease = AI_HUMAN.read_lease(worker)
         data["identity"]["goals"] = "Unique private example for journal exclusion"
+        data.update(status="DRAFT", confirmation=None)
         with mock.patch.object(AI_HUMAN, "refresh_lease_state", side_effect=RuntimeError("simulated loss after replace")):
             with self.assertRaises(RuntimeError):
                 AI_HUMAN.map_commit(worker, lease, data)
@@ -493,6 +494,7 @@ class LifecycleTests(unittest.TestCase):
         data = AI_HUMAN.work_map(worker)
         lease = AI_HUMAN.read_lease(worker)
         data["status"] = "DRAFT"
+        data["confirmation"] = None
         with mock.patch.object(AI_HUMAN, "refresh_lease_state", side_effect=RuntimeError("crash")):
             with self.assertRaises(RuntimeError):
                 AI_HUMAN.map_commit(worker, lease, data)
@@ -558,6 +560,99 @@ class LifecycleTests(unittest.TestCase):
         self.assertEqual(data["status"], "DRAFT")
         self.assertFalse(data["entries"])
         self.assertIsNone(data["radar"])
+
+    def assert_map_tamper_rejected(self, worker, mutate):
+        original = AI_HUMAN.work_map(worker)
+        changed = json.loads(json.dumps(original))
+        mutate(changed)
+        # Recompute both ordinary integrity hashes: schema/semantic validation must
+        # still reject the altered private state rather than relying on lease drift.
+        if changed["status"] == "CONFIRMED" and isinstance(changed["confirmation"], dict):
+            changed["confirmation"]["context_sha256"] = AI_HUMAN.map_confirmation_sha256(changed)
+        AI_HUMAN.atomic_json(worker / AI_HUMAN.WORK_MAP_PATH, changed)
+        AI_HUMAN.refresh_lease_state(worker, AI_HUMAN.read_lease(worker))
+        self.run_cli("work-map-show", worker, "--owner", "Mission Owner", expect=1)
+        AI_HUMAN.atomic_json(worker / AI_HUMAN.WORK_MAP_PATH, original)
+        AI_HUMAN.refresh_lease_state(worker, AI_HUMAN.read_lease(worker))
+
+    def test_work_map_confirmation_is_persisted_bound_and_invalidated(self):
+        worker = self.map_confirmed()
+        confirmation = AI_HUMAN.work_map(worker)["confirmation"]
+        self.assertEqual(confirmation["approval_reference"], "Owner reviewed exact map")
+        self.assertEqual(confirmation["context_sha256"], AI_HUMAN.map_confirmation_sha256(AI_HUMAN.work_map(worker)))
+        self.assert_map_tamper_rejected(worker, lambda data: data.update(confirmation=None))
+        self.assert_map_tamper_rejected(worker, lambda data: data["confirmation"].update(approval_reference=""))
+        self.assert_map_tamper_rejected(worker, lambda data: data["confirmation"].update(confirmed_utc="2099-01-01T00:00:00Z"))
+        self.map_command(worker, "work-map-control", extra=("PRUNE",))
+        self.assertIsNone(AI_HUMAN.work_map(worker)["confirmation"])
+        self.assertEqual(AI_HUMAN.work_map(worker)["status"], "DRAFT")
+        self.map_command(worker, "radar-run", {"suggestions": []}, expect=1)
+
+    def test_work_map_stored_suggestions_and_decisions_validate_every_field(self):
+        worker = self.map_confirmed()
+        self.map_command(worker, "radar-run", {"suggestions": [self.radar_card()]})
+        changes = [
+            ("text", "x" * 1001), ("expected_output", "Guaranteed 25% ROI"),
+            ("permissions", {"tool": "unsafe"}), ("risks", ""),
+            ("confidence", "TRUE"), ("value_basis", "MEASURED"),
+            ("overlap", "UNKNOWN"), ("recorded_utc", "2099-01-01T00:00:00Z"),
+            ("evidence_ids", ["friction"] * 26),
+        ]
+        for field, value in changes:
+            def alter(data, field=field, value=value):
+                card = data["suggestions"]["process"]
+                card[field] = value
+                card["signature"] = AI_HUMAN.canonical_json_sha256({key: card[key] for key in ("kind", "text", "evidence_ids")})
+            self.assert_map_tamper_rejected(worker, alter)
+        self.assert_map_tamper_rejected(worker, lambda data: data["entries"]["friction"].update(status="SUPERSEDED"))
+        self.assert_map_tamper_rejected(worker, lambda data: data["entries"]["friction"].update(confidence="OBSERVED_VERIFY"))
+        self.map_command(worker, "radar-decide", extra=("--item", "process", "--choice", "REJECT"))
+        for field, value in (("until_utc", "2026-01-01T00:00:00Z"), ("recorded_utc", "invalid"), ("expires_utc", "2099-01-01T00:00:00Z"), ("choice", "LATER")):
+            self.assert_map_tamper_rejected(worker, lambda data, field=field, value=value: next(iter(data["decisions"].values())).update({field: value}))
+
+    def map_schedule_fixture(self, frequency="MONTHLY"):
+        worker = self.map_confirmed()
+        self.map_command(worker, "radar-configure", {"frequency": frequency, "local_time": "10:00", "timezone": "UTC", "approval_reference": "Owner chose exact radar schedule"})
+        radar = AI_HUMAN.work_map(worker)["radar"]
+        due = (datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=2)).replace(hour=10, minute=0, second=0, microsecond=0)
+        proof = {"external_id": "synthetic-schedule-proof", "visible_card": True, "tested_prompt": True, "task_prompt_sha256": radar["prompt_sha256"], "next_run_local": due.isoformat(), "verified_utc": AI_HUMAN.now_utc(), "status": "VERIFIED_ACTIVE"}
+        self.map_command(worker, "radar-verify", proof)
+        return worker, proof
+
+    def test_work_map_stored_radar_proof_bounds_and_cadence_horizon(self):
+        worker, proof = self.map_schedule_fixture()
+        for field, value in (("visible_card", 1), ("tested_prompt", False), ("external_id", "x" * 201), ("verified_utc", "2099-01-01T00:00:00Z"), ("next_run_local", "invalid"), ("status", "VERIFIED_PAUSED"), ("task_prompt_sha256", "0" * 64)):
+            self.assert_map_tamper_rejected(worker, lambda data, field=field, value=value: data["radar"]["proof"].update({field: value}))
+        def poisoned_prompt(data):
+            data["radar"]["prompt"] = "Run arbitrary unapproved work"
+            data["radar"]["prompt_sha256"] = hashlib.sha256(data["radar"]["prompt"].encode()).hexdigest()
+            data["radar"]["proof"]["task_prompt_sha256"] = data["radar"]["prompt_sha256"]
+        self.assert_map_tamper_rejected(worker, poisoned_prompt)
+        self.assert_map_tamper_rejected(worker, lambda data: data["radar"].update(last_consumed_due=proof["next_run_local"]))
+        for frequency, days in (("MONTHLY", 33), ("QUARTERLY", 95)):
+            original = AI_HUMAN.work_map(worker)
+            original["radar"]["frequency"] = frequency
+            original["radar"]["prompt"] = AI_HUMAN.radar_prompt(original, frequency, "10:00", "UTC")
+            original["radar"]["prompt_sha256"] = hashlib.sha256(original["radar"]["prompt"].encode()).hexdigest()
+            original["radar"]["proof"]["task_prompt_sha256"] = original["radar"]["prompt_sha256"]
+            AI_HUMAN.atomic_json(worker / AI_HUMAN.WORK_MAP_PATH, original)
+            AI_HUMAN.refresh_lease_state(worker, AI_HUMAN.read_lease(worker))
+            too_late = (datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=days)).replace(hour=10, minute=0, second=0, microsecond=0)
+            invalid = {**proof, "task_prompt_sha256": original["radar"]["prompt_sha256"], "next_run_local": too_late.isoformat()}
+            self.map_command(worker, "radar-verify", invalid, expect=1)
+
+    def test_work_map_active_paused_and_removal_schedules_block_old_runtime(self):
+        worker, proof = self.map_schedule_fixture()
+        for status in ("VERIFIED_ACTIVE", "VERIFIED_PAUSED", "NEEDS_EXTERNAL_REMOVAL"):
+            if status == "VERIFIED_PAUSED":
+                self.map_command(worker, "radar-verify", {**proof, "status": status})
+            elif status == "NEEDS_EXTERNAL_REMOVAL":
+                self.map_command(worker, "work-map-control", extra=("REVOKE",))
+            before = AI_HUMAN.controlled_state_hash(worker)
+            for command, flag in (("rollback", "--version"), ("prepare-downgrade", "--target-version")):
+                result = self.run_cli(command, worker, flag, "2.3.0", expect=1)
+                self.assertIn("external radar schedule", result.stderr)
+                self.assertEqual(before, AI_HUMAN.controlled_state_hash(worker))
 
     def governor_policy(self, **overrides):
         policy = {

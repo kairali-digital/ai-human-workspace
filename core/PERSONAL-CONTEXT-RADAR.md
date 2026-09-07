@@ -66,8 +66,11 @@ interface verifies agent-prepared suggestions; it does not claim to judge semant
 truth or discover every useful business opportunity by itself.
 
 PROPOSE records an inactive intention. LATER persists a dated snooze. REJECT suppresses
-the same evidence/content signature for the chosen retention period. None creates,
-installs, activates, schedules, connects, sends, publishes, spends or deletes a skill,
+the same evidence/content signature for the chosen retention period.
+Each decision rechecks map confirmation, current source consent/scope, evidence review
+date and exact source content hash. Stale or changed evidence must be refreshed and
+reconfirmed before recording any choice. Draft maps cannot retain actionable cards.
+No choice creates, installs, activates, schedules, connects, sends, publishes, spends or deletes a skill,
 worker or project. BUILD DRAFT and INSTALL remain separate governed capability work.
 The radar cannot grant them permission or cross any active worker gate.
 
@@ -91,3 +94,22 @@ supports `work-map-recover` after interruption, proves unrelated controlled stat
 unchanged, and cannot resurrect forgotten content. Recover before other mutations.
 The same Python lifecycle interface works on Mac and Windows; external schedule-card
 availability remains a host capability and must be proved on that host.
+
+Before a pre-v2.4 rollback, export private personal state through the governed
+prepare-downgrade operation. It moves the personal root alongside the existing
+improvement/autonomy archive, preserving its file inventory and hashes. Restore
+requires a compatible runtime, validates the archive and the restored private map,
+and returns failed restores to their archive. Existing two-root archive receipts
+remain supported. Direct rollback cannot leave H-54 state behind for an older runtime.
+
+Preparation and restoration both use a durable digest-bound downgrade transaction.
+It binds the exact worker path/identity, installed release, archive, private-root
+inventory, visible automation states and unrelated work. Roots move by atomic rename
+and must exist exactly once in the worker or archive. While a transaction is pending,
+other mutations are blocked. The helper uses `recover-downgrade --mode RESUME` to
+continue the recorded direction or `RESTORE_PREVIOUS` to undo the original operation.
+An interrupted recovery remembers its direction; a completed recovery can be retried
+safely. Tampering, changed unrelated work, missing/duplicate roots and symlinks require
+repair before recovery can proceed. Only bounded atomic temporary files whose names
+match the Mac/Windows writer and whose bytes are an exact prefix of the expected
+manifest may be removed during recovery. Other files are preserved and reported.

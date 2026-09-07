@@ -654,6 +654,272 @@ class LifecycleTests(unittest.TestCase):
                 self.assertIn("external radar schedule", result.stderr)
                 self.assertEqual(before, AI_HUMAN.controlled_state_hash(worker))
 
+    def test_work_map_decisions_recheck_current_source_and_expiry_for_every_choice(self):
+        worker = self.map_confirmed()
+        self.map_command(worker, "radar-run", {"suggestions": [self.radar_card()]})
+        source = worker / "summary.txt"
+        original = source.read_bytes()
+        before = AI_HUMAN.controlled_state_hash(worker)
+        for choice in ("PROPOSE", "LATER", "REJECT"):
+            source.write_text("Changed after suggestion generation", encoding="utf-8")
+            result = self.map_command(worker, "radar-decide", extra=("--item", "process", "--choice", choice), expect=1)
+            self.assertIn("source changed", result.stderr)
+            self.assertEqual(before, AI_HUMAN.controlled_state_hash(worker))
+            source.unlink()
+            self.map_command(worker, "radar-decide", extra=("--item", "process", "--choice", choice), expect=1)
+            source.write_bytes(original)
+            future = (datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=21)).strftime("%Y-%m-%dT%H:%M:%SZ")
+            args = SimpleNamespace(worker=worker, session_id="governor-session", expected_state_hash=before, item="process", choice=choice, until_utc=None)
+            with mock.patch.object(AI_HUMAN, "now_utc", return_value=future):
+                with self.assertRaisesRegex(ValueError, "evidence is stale"):
+                    AI_HUMAN.radar_decide(args)
+            self.assertEqual(before, AI_HUMAN.controlled_state_hash(worker))
+        self.assertFalse(AI_HUMAN.work_map(worker)["decisions"])
+        self.assert_map_tamper_rejected(worker, lambda data: data.update(status="DRAFT", confirmation=None))
+        self.assert_map_tamper_rejected(worker, lambda data: data["sources"]["summary"].update(status="REVOKED"))
+        self.assert_map_tamper_rejected(worker, lambda data: data["entries"]["friction"].update(scope="USER_GLOBAL"))
+
+    def test_work_map_decision_refuses_metadata_permission_downgrade(self):
+        worker = self.map_confirmed()
+        self.map_command(worker, "radar-run", {"suggestions": [self.radar_card()]})
+        data = AI_HUMAN.work_map(worker)
+        data["sources"]["summary"]["mode"] = "METADATA"
+        data["confirmation"]["context_sha256"] = AI_HUMAN.map_confirmation_sha256(data)
+        AI_HUMAN.atomic_json(worker / AI_HUMAN.WORK_MAP_PATH, data)
+        AI_HUMAN.refresh_lease_state(worker, AI_HUMAN.read_lease(worker))
+        for choice in ("PROPOSE", "LATER", "REJECT"):
+            result = self.map_command(worker, "radar-decide", extra=("--item", "process", "--choice", choice), expect=1)
+            self.assertIn("source approval or scope changed", result.stderr)
+
+    def test_work_map_downgrade_export_restore_and_tamper_recovery(self):
+        worker = self.map_confirmed()
+        original_map = (worker / AI_HUMAN.WORK_MAP_PATH).read_bytes()
+        self.run_cli("session-release", worker, "--session-id", "governor-session", "--expected-state-hash", AI_HUMAN.controlled_state_hash(worker))
+        older = self.base / "older-map-release"
+        shutil.copytree(self.release, older)
+        refresh_release(older, "2.3.0")
+        denied = self.run_cli("rollback", worker, "--version", "2.3.0", "--source", older, expect=1)
+        self.assertIn("private H-54 personal context", denied.stderr)
+        self.assertEqual(original_map, (worker / AI_HUMAN.WORK_MAP_PATH).read_bytes())
+        self.run_cli("prepare-downgrade", worker, "--target-version", "2.3.0")
+        receipt = AI_HUMAN.read_json(AI_HUMAN.downgrade_preparation_receipt(worker))
+        archive = worker / receipt["archive"]
+        manifest_path = archive / "archive-manifest.json"
+        manifest = AI_HUMAN.read_json(manifest_path)
+        personal = next(item for item in manifest["items"] if item["original"] == ".ai-human/personal")
+        self.assertEqual(personal["file_count"], 1)
+        self.assertFalse((worker / AI_HUMAN.PERSONAL_ROOT).exists())
+        archived_map = archive / "personal/work-map.json"
+        self.assertEqual(original_map, archived_map.read_bytes())
+        archived_map.write_text("tampered private archive", encoding="utf-8")
+        self.assertIn("archive integrity mismatch", self.run_cli("restore-downgrade", worker, expect=1).stderr)
+        self.assertFalse((worker / AI_HUMAN.PERSONAL_ROOT).exists())
+        archived_map.write_bytes(original_map)
+        invalid = json.loads(original_map)
+        invalid["confirmation"] = None
+        AI_HUMAN.atomic_json(archived_map, invalid)
+        original_manifest = json.loads(json.dumps(manifest))
+        personal["sha256"], personal["file_count"] = AI_HUMAN.tree_sha256(archive / "personal")
+        AI_HUMAN.atomic_json(manifest_path, manifest)
+        self.assertIn("restored worker validation failed", self.run_cli("restore-downgrade", worker, expect=1).stderr)
+        self.assertTrue(archived_map.is_file())
+        self.assertFalse((worker / AI_HUMAN.PERSONAL_ROOT).exists())
+        self.assertTrue(AI_HUMAN.downgrade_preparation_receipt(worker).exists())
+        archived_map.write_bytes(original_map)
+        AI_HUMAN.atomic_json(manifest_path, original_manifest)
+        self.run_cli("rollback", worker, "--version", "2.3.0", "--source", older)
+        self.run_cli("update", worker, "--source", self.release, "--at-checkpoint")
+        self.run_cli("restore-downgrade", worker)
+        self.assertEqual(original_map, (worker / AI_HUMAN.WORK_MAP_PATH).read_bytes())
+        self.run_cli("validate", worker)
+
+    def test_work_map_downgrade_rejects_symlink_before_moving_private_state(self):
+        worker = self.map_confirmed()
+        original = (worker / AI_HUMAN.WORK_MAP_PATH).read_bytes()
+        self.run_cli("session-release", worker, "--session-id", "governor-session", "--expected-state-hash", AI_HUMAN.controlled_state_hash(worker))
+        outside = self.base / "outside-private.txt"
+        outside.write_text("Unrelated private source", encoding="utf-8")
+        link = worker / AI_HUMAN.PERSONAL_ROOT / "unexpected-link.txt"
+        link.symlink_to(outside)
+        self.run_cli("prepare-downgrade", worker, "--target-version", "2.3.0", expect=1)
+        self.assertEqual(original, (worker / AI_HUMAN.WORK_MAP_PATH).read_bytes())
+        self.assertTrue(link.is_symlink())
+        self.assertEqual(outside.read_text(), "Unrelated private source")
+        self.assertFalse(AI_HUMAN.downgrade_preparation_receipt(worker).exists())
+
+    def downgrade_crash_worker(self):
+        worker = self.map_confirmed()
+        self.run_cli("session-release", worker, "--session-id", "governor-session", "--expected-state-hash", AI_HUMAN.controlled_state_hash(worker))
+        return worker
+
+    def terminate_downgrade_at(self, worker, boundary, restore=False):
+        class SimulatedProcessTermination(BaseException):
+            pass
+        def terminate(name):
+            if name == boundary:
+                raise SimulatedProcessTermination(name)
+        args = SimpleNamespace(worker=worker, target_version="2.3.0")
+        handler = AI_HUMAN.restore_downgrade if restore else AI_HUMAN.prepare_downgrade
+        with mock.patch.object(AI_HUMAN, "downgrade_boundary", side_effect=terminate):
+            with self.assertRaises(SimulatedProcessTermination):
+                handler(args)
+
+    def test_downgrade_transaction_recovers_every_export_boundary_in_both_directions(self):
+        worker = self.downgrade_crash_worker()
+        roots = [root for root in AI_HUMAN.downgrade_private_roots() if (worker / root).exists()]
+        original = {root: AI_HUMAN.tree_sha256(worker / root) for root in roots}
+        automation = (worker / "AUTOMATIONS.md").read_bytes()
+        boundaries = ["journal"] + ["move-" + str(index) for index in range(len(roots))] + ["archive-manifest", "automation", "receipt", "validated", "complete"]
+        for mode in ("RESUME", "RESTORE_PREVIOUS"):
+            for boundary in boundaries:
+                with self.subTest(mode=mode, boundary=boundary):
+                    self.terminate_downgrade_at(worker, boundary)
+                    pending = AI_HUMAN.downgrade_transaction_path(worker)
+                    if boundary != "complete":
+                        self.assertTrue(pending.exists())
+                        transaction = AI_HUMAN.read_json(pending)
+                        archive = worker / transaction["prepared_receipt"]["archive"]
+                        for root in roots:
+                            locations = [path for path in (worker / root, archive / root.name) if path.exists()]
+                            self.assertEqual(len(locations), 1)
+                            self.assertEqual(AI_HUMAN.tree_sha256(locations[0]), original[root])
+                        self.run_cli("validate", worker, expect=1)
+                        rejected = self.run_cli("session-acquire", worker, "--session-id", "blocked", "--actor", "Mission Owner", expect=1)
+                        self.assertIn("recover-downgrade", rejected.stderr)
+                        self.run_cli("suspend", worker, "--reason", "test", expect=1)
+                    self.run_cli("recover-downgrade", worker, "--mode", mode)
+                    self.assertIn("NO_PENDING_TRANSACTION", self.run_cli("recover-downgrade", worker, "--mode", mode).stdout)
+                    if AI_HUMAN.downgrade_preparation_receipt(worker).exists():
+                        self.run_cli("restore-downgrade", worker)
+                    for root in roots:
+                        self.assertEqual(AI_HUMAN.tree_sha256(worker / root), original[root])
+                    self.assertEqual((worker / "AUTOMATIONS.md").read_bytes(), automation)
+                    self.run_cli("validate", worker)
+
+    def test_downgrade_transaction_recovers_every_restore_boundary_in_both_directions(self):
+        worker = self.downgrade_crash_worker()
+        roots = [root for root in AI_HUMAN.downgrade_private_roots() if (worker / root).exists()]
+        original = {root: AI_HUMAN.tree_sha256(worker / root) for root in roots}
+        boundaries = ["journal"] + ["move-" + str(index) for index in range(len(roots))] + ["archive-manifest", "automation", "receipt", "validated", "complete"]
+        for mode in ("RESUME", "RESTORE_PREVIOUS"):
+            for boundary in boundaries:
+                with self.subTest(mode=mode, boundary=boundary):
+                    self.run_cli("prepare-downgrade", worker, "--target-version", "2.3.0")
+                    self.terminate_downgrade_at(worker, boundary, restore=True)
+                    self.run_cli("recover-downgrade", worker, "--mode", mode)
+                    self.assertIn("NO_PENDING_TRANSACTION", self.run_cli("recover-downgrade", worker, "--mode", mode).stdout)
+                    if AI_HUMAN.downgrade_preparation_receipt(worker).exists():
+                        self.run_cli("restore-downgrade", worker)
+                    for root in roots:
+                        self.assertEqual(AI_HUMAN.tree_sha256(worker / root), original[root])
+                    self.run_cli("validate", worker)
+
+    def test_downgrade_transaction_refuses_tamper_other_worker_and_unrelated_changes(self):
+        worker = self.downgrade_crash_worker()
+        self.terminate_downgrade_at(worker, "move-0")
+        journal = AI_HUMAN.downgrade_transaction_path(worker)
+        original_journal = journal.read_bytes()
+        transaction = AI_HUMAN.read_json(journal)
+        archive = worker / transaction["prepared_receipt"]["archive"]
+        cursor = worker / "MASTER_CURSOR.md"
+        original_cursor = cursor.read_bytes()
+        cursor.write_bytes(original_cursor + b"\nUnexpected state\n")
+        self.assertIn("unrelated worker state", self.run_cli("recover-downgrade", worker, "--mode", "RESUME", expect=1).stderr)
+        cursor.write_bytes(original_cursor)
+        core = worker / ".ai-human/system/AI-HUMAN.md"
+        original_core = core.read_bytes()
+        core.write_bytes(original_core + b"\nUnexpected managed edit\n")
+        self.run_cli("recover-downgrade", worker, "--mode", "RESUME", expect=1)
+        core.write_bytes(original_core)
+        invalid = dict(transaction, phase="RECEIPT")
+        AI_HUMAN.atomic_json(journal, invalid)
+        self.assertIn("digest mismatch", self.run_cli("recover-downgrade", worker, "--mode", "RESUME", expect=1).stderr)
+        journal.write_bytes(original_journal)
+        invalid = json.loads(original_journal)
+        invalid["prepared_receipt"]["archive"] = ".ai-human/downgrade-exports/../outside"
+        invalid["record_sha256"] = AI_HUMAN.canonical_json_sha256({key: value for key, value in invalid.items() if key != "record_sha256"})
+        AI_HUMAN.atomic_json(journal, invalid)
+        self.run_cli("recover-downgrade", worker, "--mode", "RESUME", expect=1)
+        journal.write_bytes(original_journal)
+        personal = next(path for path in (worker / AI_HUMAN.WORK_MAP_PATH, archive / "personal/work-map.json") if path.exists())
+        original_map = personal.read_bytes()
+        personal.write_bytes(original_map + b" ")
+        self.assertIn("root integrity mismatch", self.run_cli("recover-downgrade", worker, "--mode", "RESUME", expect=1).stderr)
+        personal.write_bytes(original_map)
+        clone = self.base / "wrong-recovery-worker"
+        shutil.copytree(worker, clone)
+        self.assertIn("another worker", self.run_cli("recover-downgrade", clone, "--mode", "RESUME", expect=1).stderr)
+        self.run_cli("recover-downgrade", worker, "--mode", "RESTORE_PREVIOUS")
+        self.run_cli("validate", worker)
+
+    def test_downgrade_transaction_recovers_platform_atomic_temps_but_rejects_extras(self):
+        worker = self.downgrade_crash_worker()
+        self.terminate_downgrade_at(worker, "journal")
+        transaction = AI_HUMAN.read_json(AI_HUMAN.downgrade_transaction_path(worker))
+        archive = worker / transaction["prepared_receipt"]["archive"]
+        expected = (json.dumps(transaction["archive_manifest"], indent=2, sort_keys=True) + "\n").encode()
+        windows_temp = archive / ".archive-manifest.json.ab12_cd3"
+        mac_temp = archive / (".archive-manifest.json." + "a" * 32 + ".tmp")
+        windows_temp.write_bytes(expected[:25])
+        mac_temp.write_bytes(expected)
+        bad = archive / ".archive-manifest.json.badtemp1"
+        bad.write_bytes(b"Unrelated content must never be deleted")
+        self.run_cli("recover-downgrade", worker, "--mode", "RESUME", expect=1)
+        self.assertTrue(windows_temp.exists())
+        self.assertTrue(mac_temp.exists())
+        self.assertEqual(bad.read_bytes(), b"Unrelated content must never be deleted")
+        bad.unlink()
+        bad.symlink_to(worker / "MASTER_CURSOR.md")
+        self.run_cli("recover-downgrade", worker, "--mode", "RESUME", expect=1)
+        self.assertTrue(bad.is_symlink())
+        bad.unlink()
+        extra = archive / "not-an-atomic-temp.txt"
+        extra.write_text("Keep this file", encoding="utf-8")
+        self.run_cli("recover-downgrade", worker, "--mode", "RESUME", expect=1)
+        self.assertEqual(extra.read_text(), "Keep this file")
+        extra.unlink()
+        self.run_cli("recover-downgrade", worker, "--mode", "RESUME")
+        self.assertFalse(windows_temp.exists())
+        self.assertFalse(mac_temp.exists())
+        self.run_cli("restore-downgrade", worker)
+        self.run_cli("validate", worker)
+
+    def test_downgrade_transaction_remembers_direction_after_recovery_termination(self):
+        worker = self.downgrade_crash_worker()
+        original = (worker / AI_HUMAN.WORK_MAP_PATH).read_bytes()
+        self.terminate_downgrade_at(worker, "receipt")
+        class RecoveryTermination(BaseException):
+            pass
+        def terminate(name):
+            if name == "move-0":
+                raise RecoveryTermination()
+        with mock.patch.object(AI_HUMAN, "downgrade_boundary", side_effect=terminate):
+            with self.assertRaises(RecoveryTermination):
+                AI_HUMAN.recover_downgrade(SimpleNamespace(worker=worker, mode="RESTORE_PREVIOUS"))
+        transaction = AI_HUMAN.read_json(AI_HUMAN.downgrade_transaction_path(worker))
+        self.assertEqual(transaction["intent"], "EXPORT")
+        self.assertEqual(transaction["destination"], "RESTORE")
+        self.run_cli("recover-downgrade", worker, "--mode", "RESUME")
+        self.assertFalse(AI_HUMAN.downgrade_preparation_receipt(worker).exists())
+        self.assertEqual(original, (worker / AI_HUMAN.WORK_MAP_PATH).read_bytes())
+        self.run_cli("validate", worker)
+
+    def test_downgrade_transaction_rejects_preexisting_automation_drift_before_journaling(self):
+        worker = self.downgrade_crash_worker()
+        self.run_cli("prepare-downgrade", worker, "--target-version", "2.3.0")
+        automation = worker / "AUTOMATIONS.md"
+        exported = automation.read_bytes()
+        changed = exported + b"\nNew owner work after export\n"
+        automation.write_bytes(changed)
+        result = self.run_cli("restore-downgrade", worker, expect=1)
+        self.assertIn("before downgrade transaction", result.stderr)
+        self.assertFalse(AI_HUMAN.downgrade_transaction_path(worker).exists())
+        self.assertEqual(automation.read_bytes(), changed)
+        self.assertFalse((worker / AI_HUMAN.PERSONAL_ROOT).exists())
+        automation.write_bytes(exported)
+        self.run_cli("restore-downgrade", worker)
+        self.run_cli("validate", worker)
+
     def governor_policy(self, **overrides):
         policy = {
             "approval_reference": "DECISIONS.md H-52",

@@ -2633,6 +2633,7 @@ def contains_secret_material(value):
 # H-54 has one private, atomically replaced document. Missing/legacy state is OFF.
 # Global is a scope label at its designated owner, never a cross-worker read path.
 WORK_MAP_PATH = Path(".ai-human/personal/work-map.json")
+PERSONAL_ROOT = WORK_MAP_PATH.parent
 WORK_MAP_TX_PATH = Path(".ai-human/control/work-map-transaction.json")
 WORK_MAP_SCOPES = {"WORKER_LOCAL", "USER_GLOBAL"}
 WORK_MAP_KINDS = {"SKILL", "WORKER_OR_BOT", "PROJECT", "LEARNING", "PROCESS_FIX"}
@@ -2803,6 +2804,8 @@ def work_map(worker, required=True):
             if entry["supersedes"] == identifier:
                 raise ValueError("entry cannot supersede itself")
     for identifier, card in data["suggestions"].items():
+        if data["status"] != "CONFIRMED":
+            raise ValueError("stored suggestions require confirmed private context")
         map_fields(card, "id kind text evidence_ids expected_output permissions risks overlap confidence value_basis signature activation decision recorded_utc", "stored suggestion")
         if map_id(identifier) != card["id"] or card["kind"] not in WORK_MAP_KINDS or card["activation"] != "NOT_ACTIVATED" or card["decision"] != "REVIEW_REQUIRED" or not isinstance(card["evidence_ids"], list) or not 1 <= len(card["evidence_ids"]) <= BATCH_CAP:
             raise ValueError("invalid stored suggestion")
@@ -3300,9 +3303,23 @@ def radar_run(args):
 def radar_decide(args):
     worker, lease, data = map_mutation(args)
     map_require_active(data)
+    if data["status"] != "CONFIRMED":
+        raise ValueError("radar decisions require confirmed private context")
     card = data["suggestions"].get(args.item)
     if not card:
         raise ValueError("unknown suggestion")
+    current = parse_recorded_utc(now_utc(), "now")
+    for ref in card["evidence_ids"]:
+        entry = data["entries"].get(ref)
+        source = data["sources"].get(entry["source_id"]) if entry else None
+        if not entry or entry["status"] != "ACTIVE" or entry["confidence"] not in {"SOURCE_CONFIRMED", "OWNER_STATED"}:
+            raise ValueError("decision evidence must be active and confirmed")
+        if not source or source["status"] != "APPROVED" or source["mode"] != "SUMMARY" or source["scope"] != entry["scope"] or source["sensitivity"] != entry["sensitivity"]:
+            raise ValueError("decision evidence source approval or scope changed")
+        if parse_recorded_utc(entry["review_due"], "decision evidence review") <= current:
+            raise ValueError("decision evidence is stale; refresh and reconfirm before choosing")
+        if map_source_snapshot(worker, data, entry["source_id"]).get("sha256") != entry["source_sha256"]:
+            raise ValueError("decision evidence source changed or became unavailable")
     if args.choice == "LATER":
         map_expiry(args.until_utc, "snooze date", data["retention_days"])
     expiry = parse_recorded_utc(now_utc(), "now") + datetime.timedelta(days=data["retention_days"])
@@ -6017,6 +6034,8 @@ def validate_autonomy_state(worker, installed_version):
 
 def validate_worker(worker, quiet=False, allow_transaction=False):
     failures = []
+    if downgrade_transaction_path(worker).exists() and not allow_transaction:
+        failures.append("interrupted downgrade transaction requires recover-downgrade")
     if (worker / ".ai-human").is_symlink():
         failures.append(".ai-human may not be a symbolic link")
     transaction = worker / LIFECYCLE_TRANSACTION_PATH
@@ -9398,6 +9417,220 @@ def downgrade_preparation_receipt(worker):
     return worker / ".ai-human/control/downgrade-preparation.json"
 
 
+def downgrade_transaction_path(worker):
+    return worker_target(worker, ".ai-human/control/downgrade-transaction.json", "downgrade transaction")
+
+
+def downgrade_private_roots():
+    """One explicit registry; future private-state features extend this inventory."""
+    return (IMPROVEMENT_ROOT, AUTONOMY_ROOT, PERSONAL_ROOT)
+
+
+def downgrade_fields(value, fields, label):
+    if not isinstance(value, dict):
+        raise ValueError(label + " must be a JSON object")
+    require_exact_fields(value, set(fields.split()), label)
+
+
+def downgrade_boundary(name):
+    """Fault-injection seam; production never reads a crash flag from user input."""
+
+
+def downgrade_unrelated_hash(worker, items):
+    excluded = [Path(item["original"]) for item in items]
+    paths = set(controlled_state_paths(worker)) | {worker / name for name in STATE_FILES}
+    manifest = read_json(worker / ".ai-human/release-manifest.json")
+    paths.update(worker / relative for relative in managed_targets(manifest))
+    digest = hashlib.sha256()
+    for path in sorted(paths, key=lambda value: value.relative_to(worker).as_posix()):
+        relative = path.relative_to(worker)
+        if relative == Path("AUTOMATIONS.md") or any(relative == root or root in relative.parents for root in excluded):
+            continue
+        worker_target(worker, relative, "downgrade unrelated state")
+        digest.update(relative.as_posix().encode() + b"\0")
+        digest.update(bytes.fromhex(sha256(path)) if path.is_file() else b"MISSING")
+        digest.update(b"\n")
+    return digest.hexdigest()
+
+
+def write_downgrade_transaction(worker, transaction, phase):
+    transaction["phase"] = phase
+    transaction["record_sha256"] = canonical_json_sha256({key: value for key, value in transaction.items() if key != "record_sha256"})
+    atomic_json(downgrade_transaction_path(worker), transaction)
+
+
+def start_downgrade_transaction(worker, archive, manifest, receipt, intent):
+    path = downgrade_transaction_path(worker)
+    if path.exists():
+        raise ValueError("interrupted downgrade transaction; run recover-downgrade")
+    backup = worker_target(worker, archive.relative_to(worker) / "AUTOMATIONS.before.md", "downgrade automation backup")
+    restored_text = backup.read_text(encoding="utf-8")
+    exported_text = render_downgrade_automation(restored_text, receipt["prepared_utc"])
+    expected_current = restored_text if intent == "EXPORT" else exported_text
+    if sha256(worker / "AUTOMATIONS.md") != hashlib.sha256(expected_current.encode()).hexdigest():
+        raise ValueError("visible automation state changed before downgrade transaction; preserve and reconcile it first")
+    transaction = {
+        "schema": "ai-human.downgrade-transaction/v1", "intent": intent, "destination": intent,
+        "worker_path_sha256": hashlib.sha256(str(worker.resolve()).encode()).hexdigest(),
+        "worker_identity_sha256": worker_identity_sha256(worker),
+        "installed_version": install_metadata(worker)["installed_version"],
+        "install_sha256": sha256(worker / ".ai-human/install.json"),
+        "release_manifest_sha256": sha256(worker / ".ai-human/release-manifest.json"),
+        "archive_manifest": manifest, "prepared_receipt": receipt,
+        "unrelated_sha256": downgrade_unrelated_hash(worker, manifest["items"]),
+        "restored_automation_sha256": hashlib.sha256(restored_text.encode()).hexdigest(),
+        "exported_automation_sha256": hashlib.sha256(exported_text.encode()).hexdigest(),
+    }
+    write_downgrade_transaction(worker, transaction, "PREPARED")
+    downgrade_boundary("journal")
+    return transaction
+
+
+def read_downgrade_transaction(worker):
+    transaction = read_json(downgrade_transaction_path(worker))
+    downgrade_fields(transaction, "schema intent destination worker_path_sha256 worker_identity_sha256 installed_version install_sha256 release_manifest_sha256 archive_manifest prepared_receipt unrelated_sha256 restored_automation_sha256 exported_automation_sha256 phase record_sha256", "downgrade transaction")
+    if transaction["schema"] != "ai-human.downgrade-transaction/v1" or transaction["intent"] not in {"EXPORT", "RESTORE"} or transaction["destination"] not in {"EXPORT", "RESTORE"} or transaction["phase"] not in {"PREPARED", "MOVING", "AUTOMATION", "RECEIPT", "VALIDATING"}:
+        raise ValueError("invalid downgrade transaction state")
+    if transaction["record_sha256"] != canonical_json_sha256({key: value for key, value in transaction.items() if key != "record_sha256"}):
+        raise ValueError("downgrade transaction digest mismatch")
+    if transaction["worker_path_sha256"] != hashlib.sha256(str(worker.resolve()).encode()).hexdigest() or transaction["worker_identity_sha256"] != worker_identity_sha256(worker):
+        raise ValueError("downgrade transaction belongs to another worker")
+    if transaction["installed_version"] != install_metadata(worker)["installed_version"] or transaction["install_sha256"] != sha256(worker / ".ai-human/install.json") or transaction["release_manifest_sha256"] != sha256(worker / ".ai-human/release-manifest.json"):
+        raise ValueError("downgrade transaction release binding changed")
+    receipt = transaction["prepared_receipt"]
+    downgrade_fields(receipt, "archive from_version prepared_utc schema target_version validator", "transaction preparation receipt")
+    if receipt["schema"] != "ai-human.downgrade-preparation/v1" or receipt["validator"] != "PASS":
+        raise ValueError("invalid transaction preparation receipt")
+    version_tuple(receipt["from_version"])
+    if version_tuple(receipt["from_version"]) < (2, 4, 0) or version_tuple(receipt["target_version"]) >= (2, 4, 0):
+        raise ValueError("invalid transaction downgrade versions")
+    parse_recorded_utc(receipt["prepared_utc"], "downgrade preparation time")
+    relative = safe_relative(receipt["archive"], "transaction archive")
+    if len(relative.parts) != 3 or relative.parts[:2] != (".ai-human", "downgrade-exports"):
+        raise ValueError("transaction archive is outside the protected export area")
+    archive = worker_target(worker, relative, "transaction archive")
+    if not archive.is_dir():
+        raise ValueError("transaction archive is missing")
+    manifest = transaction["archive_manifest"]
+    downgrade_fields(manifest, "created_utc from_version items schema target_version", "transaction archive manifest")
+    if manifest["schema"] != "ai-human.downgrade-archive/v1" or manifest["created_utc"] != receipt["prepared_utc"] or any(manifest[key] != receipt[key] for key in ("from_version", "target_version")):
+        raise ValueError("transaction archive manifest differs from its receipt")
+    items = manifest["items"]
+    if not isinstance(items, list) or len(items) > len(downgrade_private_roots()):
+        raise ValueError("transaction root inventory is invalid")
+    seen = set()
+    positions = []
+    for item in items:
+        downgrade_fields(item, "file_count original sha256", "transaction root")
+        root = safe_relative(item["original"], "transaction private root")
+        if root not in downgrade_private_roots() or root in seen or type(item["file_count"]) is not int or item["file_count"] < 0 or not isinstance(item["sha256"], str) or not SHA256_HEX.fullmatch(item["sha256"]):
+            raise ValueError("transaction root inventory is invalid or duplicated")
+        seen.add(root)
+        source = worker_target(worker, root, "transaction private root")
+        archived = worker_target(worker, relative / root.name, "transaction archived root")
+        if source.exists() == archived.exists():
+            raise ValueError("private root must exist exactly once in worker or archive: " + str(root))
+        located = source if source.exists() else archived
+        if tree_sha256(located) != (item["sha256"], item["file_count"]):
+            raise ValueError("transaction private root integrity mismatch: " + str(root))
+        positions.append((source, archived))
+    if downgrade_unrelated_hash(worker, items) != transaction["unrelated_sha256"]:
+        raise ValueError("unrelated worker state changed during downgrade transaction")
+    backup = worker_target(worker, relative / "AUTOMATIONS.before.md", "transaction automation backup")
+    if not backup.is_file() or sha256(backup) != transaction["restored_automation_sha256"]:
+        raise ValueError("transaction automation backup integrity mismatch")
+    restored = backup.read_text(encoding="utf-8")
+    if hashlib.sha256(render_downgrade_automation(restored, receipt["prepared_utc"]).encode()).hexdigest() != transaction["exported_automation_sha256"]:
+        raise ValueError("transaction exported automation digest differs")
+    if sha256(worker / "AUTOMATIONS.md") not in {transaction["restored_automation_sha256"], transaction["exported_automation_sha256"]}:
+        raise ValueError("visible automation state changed outside downgrade transaction")
+    manifest_path = worker_target(worker, relative / "archive-manifest.json", "transaction archive manifest")
+    if manifest_path.exists() and read_json(manifest_path) != manifest:
+        raise ValueError("archive manifest changed outside downgrade transaction")
+    receipt_path = worker_target(worker, ".ai-human/control/downgrade-preparation.json", "transaction receipt")
+    if receipt_path.exists() and read_json(receipt_path) != receipt:
+        raise ValueError("preparation receipt changed outside downgrade transaction")
+    allowed = {root.name for root in seen} | {"AUTOMATIONS.before.md", "archive-manifest.json"}
+    atomic_temps = []
+    expected_manifest_bytes = (json.dumps(manifest, indent=2, sort_keys=True) + "\n").encode()
+    for child in archive.iterdir():
+        if child.is_symlink():
+            raise ValueError("unexpected object in downgrade transaction archive")
+        if child.name in allowed:
+            continue
+        if not re.fullmatch(r"\.archive-manifest\.json\.(?:[0-9a-f]{32}\.tmp|[a-z0-9_]{8})", child.name):
+            raise ValueError("unexpected object in downgrade transaction archive")
+        info = child.stat()
+        if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1 or info.st_size > len(expected_manifest_bytes) or len(atomic_temps) >= BATCH_CAP:
+            raise ValueError("unbounded or unsafe downgrade atomic temporary file")
+        with child.open("rb") as stream:
+            partial = stream.read(len(expected_manifest_bytes) + 1)
+        if not expected_manifest_bytes.startswith(partial):
+            raise ValueError("downgrade atomic temporary file differs from expected manifest bytes")
+        atomic_temps.append(child)
+    return transaction, archive, positions, atomic_temps
+
+
+def finish_downgrade_transaction(worker, destination):
+    transaction, archive, positions, atomic_temps = read_downgrade_transaction(worker)
+    if live_task(worker) or read_lease(worker, required=False):
+        raise ValueError("downgrade recovery requires a checkpoint without an active writer")
+    transaction["destination"] = destination
+    write_downgrade_transaction(worker, transaction, "MOVING")
+    for path in atomic_temps:
+        path.unlink()
+    downgrade_boundary("atomic-temp-cleanup")
+    for index, (source, archived) in enumerate(positions):
+        origin, target = (source, archived) if destination == "EXPORT" else (archived, source)
+        if origin.exists():
+            if target.exists():
+                raise ValueError("downgrade destination unexpectedly exists; refusing replacement")
+            # Atomic directory rename on one worker filesystem; never copy/delete.
+            os.replace(origin, target)
+        downgrade_boundary("move-" + str(index))
+        read_downgrade_transaction(worker)
+    atomic_json(archive / "archive-manifest.json", transaction["archive_manifest"])
+    downgrade_boundary("archive-manifest")
+    write_downgrade_transaction(worker, transaction, "AUTOMATION")
+    restored = (archive / "AUTOMATIONS.before.md").read_text(encoding="utf-8")
+    content = render_downgrade_automation(restored, transaction["prepared_receipt"]["prepared_utc"]) if destination == "EXPORT" else restored
+    atomic_text(worker / "AUTOMATIONS.md", content)
+    downgrade_boundary("automation")
+    write_downgrade_transaction(worker, transaction, "RECEIPT")
+    receipt_path = downgrade_preparation_receipt(worker)
+    if destination == "EXPORT":
+        atomic_json(receipt_path, transaction["prepared_receipt"])
+    else:
+        receipt_path.unlink(missing_ok=True)
+    downgrade_boundary("receipt")
+    write_downgrade_transaction(worker, transaction, "VALIDATING")
+    read_downgrade_transaction(worker)
+    if destination == transaction["intent"]:
+        ok, failures = validate_worker(worker, quiet=True, allow_transaction=True)
+        if not ok:
+            raise ValueError("downgrade transaction destination validation failed: " + "; ".join(failures))
+    # Reversing restores the exact pre-transaction byte inventory. A restoration
+    # attempt may have begun from a worker already failing a managed-file check;
+    # do not strand its private roots merely because that pre-existing fault remains.
+    downgrade_boundary("validated")
+    downgrade_transaction_path(worker).unlink()
+    downgrade_boundary("complete")
+    return destination
+
+
+def recover_downgrade(args):
+    worker = safe_worker(args.worker)
+    if not downgrade_transaction_path(worker).exists():
+        print("AI-HUMAN DOWNGRADE RECOVERY: NO_PENDING_TRANSACTION")
+        return
+    transaction, _archive, _positions, _atomic_temps = read_downgrade_transaction(worker)
+    destination = transaction["destination"]
+    if args.mode == "RESTORE_PREVIOUS":
+        destination = "RESTORE" if transaction["intent"] == "EXPORT" else "EXPORT"
+    finish_downgrade_transaction(worker, destination)
+    print("AI-HUMAN DOWNGRADE RECOVERY: PASS — " + destination)
+
+
 def render_downgrade_automation(content, timestamp):
     rows = {
         "USER-QUARTERLY-IMPROVEMENT-001": [
@@ -9423,6 +9656,8 @@ def render_downgrade_automation(content, timestamp):
 
 def prepare_downgrade(args):
     worker = safe_worker(args.worker)
+    if map_external_schedule_exists(work_map(worker, required=False)):
+        raise ValueError("remove and visibly verify the external radar schedule before downgrade preparation")
     metadata = install_metadata(worker)
     current = metadata["installed_version"]
     version_tuple(args.target_version)
@@ -9448,63 +9683,24 @@ def prepare_downgrade(args):
     archive = worker_target(
         worker,
         Path(".ai-human/downgrade-exports")
-        / ("v" + current + "-before-v" + args.target_version + "-" + timestamp),
+        / ("v" + current + "-before-v" + args.target_version + "-" + timestamp + "-" + secrets.token_hex(6)),
         "downgrade archive",
     )
+    inventory = []
+    for relative in downgrade_private_roots():
+        source = worker_target(worker, relative, "private downgrade source")
+        if source.exists():
+            digest, count = tree_sha256(source)
+            inventory.append({"file_count": count, "original": relative.as_posix(), "sha256": digest})
+    manifest = {"created_utc": timestamp, "from_version": current, "items": inventory,
+                "schema": "ai-human.downgrade-archive/v1", "target_version": args.target_version}
+    receipt = {"archive": archive.relative_to(worker).as_posix(), "from_version": current,
+               "prepared_utc": timestamp, "schema": "ai-human.downgrade-preparation/v1",
+               "target_version": args.target_version, "validator": "PASS"}
     archive.mkdir(parents=True)
-    automations_path = worker / "AUTOMATIONS.md"
-    automation_before = automations_path.read_text(encoding="utf-8")
-    atomic_text(archive / "AUTOMATIONS.before.md", automation_before)
-    moved = []
-    try:
-        for relative in (IMPROVEMENT_ROOT, AUTONOMY_ROOT):
-            source = worker / relative
-            if source.is_dir():
-                target = archive / relative.name
-                shutil.move(str(source), str(target))
-                digest, count = tree_sha256(target)
-                moved.append(
-                    {
-                        "file_count": count,
-                        "original": relative.as_posix(),
-                        "sha256": digest,
-                    }
-                )
-        atomic_json(
-            archive / "archive-manifest.json",
-            {
-                "created_utc": timestamp,
-                "from_version": current,
-                "items": moved,
-                "schema": "ai-human.downgrade-archive/v1",
-                "target_version": args.target_version,
-            },
-        )
-        atomic_text(automations_path, render_downgrade_automation(automation_before, timestamp))
-        atomic_json(
-            receipt_path,
-            {
-                "archive": archive.relative_to(worker).as_posix(),
-                "from_version": current,
-                "prepared_utc": timestamp,
-                "schema": "ai-human.downgrade-preparation/v1",
-                "target_version": args.target_version,
-                "validator": "PASS",
-            },
-        )
-        ok, failures = validate_worker(worker, quiet=True)
-        if not ok:
-            raise ValueError("prepared worker validation failed: " + "; ".join(failures))
-    except Exception:
-        receipt_path.unlink(missing_ok=True)
-        atomic_text(automations_path, automation_before)
-        for record in reversed(moved):
-            original = worker / record["original"]
-            archived = archive / Path(record["original"]).name
-            if archived.exists() and not original.exists():
-                shutil.move(str(archived), str(original))
-        shutil.rmtree(archive, ignore_errors=True)
-        raise
+    atomic_copy_file(worker / "AUTOMATIONS.md", archive / "AUTOMATIONS.before.md")
+    start_downgrade_transaction(worker, archive, manifest, receipt, "EXPORT")
+    finish_downgrade_transaction(worker, "EXPORT")
     print("AI-HUMAN DOWNGRADE PREPARATION: PASS")
     print("- target version: " + args.target_version)
     print("- v2 private state archive: " + str(archive))
@@ -9535,15 +9731,21 @@ def restore_downgrade(args):
     } or manifest.get("schema") != "ai-human.downgrade-archive/v1":
         raise ValueError("downgrade archive manifest is invalid")
     items = manifest.get("items")
-    if not isinstance(items, list) or len(items) > 2:
+    if not isinstance(items, list) or len(items) > len(downgrade_private_roots()):
         raise ValueError("downgrade archive inventory is invalid")
+    if any(manifest[key] != receipt[key] for key in ("from_version", "target_version")) or manifest["created_utc"] != receipt["prepared_utc"]:
+        raise ValueError("downgrade archive differs from its preparation receipt")
     validated = []
+    seen = set()
     for item in items:
         if not isinstance(item, dict) or set(item) != {"file_count", "original", "sha256"}:
             raise ValueError("downgrade archive item fields are invalid")
         original = safe_relative(item["original"], "downgrade restore target")
-        if original not in {IMPROVEMENT_ROOT, AUTONOMY_ROOT}:
+        if original not in downgrade_private_roots():
             raise ValueError("downgrade archive contains an unexpected private-state target")
+        if original in seen or type(item["file_count"]) is not int or item["file_count"] < 0 or not isinstance(item["sha256"], str) or not SHA256_HEX.fullmatch(item["sha256"]):
+            raise ValueError("downgrade archive contains a duplicate or invalid inventory record")
+        seen.add(original)
         source = archive / original.name
         digest, count = tree_sha256(source)
         if digest != item["sha256"] or count != item["file_count"]:
@@ -9554,26 +9756,15 @@ def restore_downgrade(args):
     automation_backup = archive / "AUTOMATIONS.before.md"
     if not automation_backup.is_file():
         raise ValueError("downgrade archive lacks the visible automation backup")
-    automation_path = worker / "AUTOMATIONS.md"
-    automation_before_restore = automation_path.read_text(encoding="utf-8")
-    restored = []
+    start_downgrade_transaction(worker, archive, manifest, receipt, "RESTORE")
     try:
-        for source, target in validated:
-            shutil.move(str(source), str(target))
-            restored.append((source, target))
-        atomic_copy_file(automation_backup, automation_path)
-        receipt_path.unlink()
-        ok, failures = validate_worker(worker, quiet=True)
-        if not ok:
-            raise ValueError("restored worker validation failed: " + "; ".join(failures))
-    except Exception:
-        atomic_text(automation_path, automation_before_restore)
-        for source, target in reversed(restored):
-            if target.exists() and not source.exists():
-                shutil.move(str(target), str(source))
-        if not receipt_path.exists():
-            atomic_json(receipt_path, receipt)
-        raise
+        finish_downgrade_transaction(worker, "RESTORE")
+    except Exception as exc:
+        # Preserve legacy caught-error rollback. A termination is a BaseException
+        # and leaves the durable transaction for explicit recovery instead.
+        if downgrade_transaction_path(worker).exists():
+            finish_downgrade_transaction(worker, "EXPORT")
+        raise ValueError("restored worker validation failed: " + str(exc)) from exc
     print("AI-HUMAN DOWNGRADE PREPARATION RESTORE: PASS")
     print("- private v2 state: RESTORED")
     print("- visible automation state: RESTORED")
@@ -9581,6 +9772,8 @@ def restore_downgrade(args):
 
 def rollback(args):
     worker = safe_worker(args.worker)
+    if map_external_schedule_exists(work_map(worker, required=False)):
+        raise ValueError("remove and visibly verify the external radar schedule before rollback")
     require_no_autonomy_effect(worker, "managed-core rollback")
     metadata = install_metadata(worker)
     current = metadata["installed_version"]
@@ -9598,6 +9791,8 @@ def rollback(args):
         raise ValueError("rollback source version differs from the requested version")
     if version_tuple(current) >= (2, 4, 0) and version_tuple(args.version) < (2, 4, 0):
         blockers = []
+        if (worker / PERSONAL_ROOT).exists():
+            blockers.append("private H-54 personal context")
         autonomy_root = worker / AUTONOMY_ROOT
         if autonomy_root.is_dir() and any(path.is_file() for path in autonomy_root.rglob("*")):
             blockers.append("v2.4 autonomy state")
@@ -10652,6 +10847,10 @@ def parser():
     restore_downgrade_p = sub.add_parser("restore-downgrade")
     restore_downgrade_p.add_argument("worker")
     restore_downgrade_p.set_defaults(handler=restore_downgrade)
+    recover_downgrade_p = sub.add_parser("recover-downgrade")
+    recover_downgrade_p.add_argument("worker")
+    recover_downgrade_p.add_argument("--mode", choices=("RESUME", "RESTORE_PREVIOUS"), required=True)
+    recover_downgrade_p.set_defaults(handler=recover_downgrade)
     uninstall_p = sub.add_parser("uninstall")
     uninstall_p.add_argument("worker")
     uninstall_p.add_argument("--at-checkpoint", action="store_true")
@@ -11124,6 +11323,8 @@ def main():
         worker = None
         if hasattr(args, "worker") and args.command != "install":
             worker = safe_worker(args.worker)
+            if args.command not in {"recover-downgrade", "session-status", "validate"} and downgrade_transaction_path(worker).exists():
+                raise ValueError("interrupted downgrade transaction detected; run recover-downgrade first")
             if args.command == "suspend":
                 if map_external_schedule_exists(work_map(worker, required=False)):
                     raise ValueError("remove and visibly verify the external radar schedule before suspension")
@@ -11142,6 +11343,8 @@ def main():
                 worker, wait_seconds=30 if args.command == "suspend" else 0
             )
         with operation:
+            if worker is not None and args.command not in {"recover-downgrade", "session-status", "validate"} and downgrade_transaction_path(worker).exists():
+                raise ValueError("interrupted downgrade transaction detected; run recover-downgrade first")
             if worker is not None and args.command in {"suspend", "uninstall", "rollback", "prepare-downgrade"} and map_external_schedule_exists(work_map(worker, required=False)):
                 raise ValueError("remove and visibly verify the external radar schedule before suspension, uninstall, rollback or downgrade")
             if worker is not None and args.command not in {"work-map-recover", "session-status", "validate"} and worker_target(worker, WORK_MAP_TX_PATH, "map transaction").exists():

@@ -8,12 +8,12 @@
   },
   "managed_files": [
     {
-      "sha256": "e0c0340613a52a32651b906364beb5bf2ddb985a4bac8815ac46f8cd02d4f773",
+      "sha256": "e7b64858664c3d5bade439ab1039797d2002c16b5d7d70289d365559e7b8a526",
       "source": "core/AI-HUMAN.md",
       "target": ".ai-human/system/AI-HUMAN.md"
     },
     {
-      "sha256": "358a6d8985d118f1ef196a9943beee9fae535ef8e510ceb79b88471a2ac08f90",
+      "sha256": "0104f2cf61df471c829e97cfa36f816043e9124e62ed17f669c8efa570550ad7",
       "source": "core/AGENT-RULES.md",
       "target": ".ai-human/system/AGENT-RULES.md"
     },
@@ -43,17 +43,27 @@
       "target": ".ai-human/system/WORK-GOVERNOR.md"
     },
     {
+      "sha256": "bb02d2fd37b3e8b9c1c641481b8861dc644266c9d4b1994c13b8bfbe73f57e57",
+      "source": "core/CONTEXT-CONTINUITY.md",
+      "target": ".ai-human/system/CONTEXT-CONTINUITY.md"
+    },
+    {
+      "sha256": "67430f49ed898156a09753497cdf3aea90abfb36545b272a0f826bc3ca393ad2",
+      "source": "core/RESOURCE-STEWARD.md",
+      "target": ".ai-human/system/RESOURCE-STEWARD.md"
+    },
+    {
       "sha256": "f5c1dcda603c3d3bc6a239470f7e0a7044f00b097c94ee99b52bf49dc1cdf972",
       "source": "core/GATES-SHARED.md",
       "target": ".ai-human/system/GATES-SHARED.md"
     },
     {
-      "sha256": "d8e1f73ab955f6697f2d4b7bcd6abc5a454c19214bf81642f9d47d3baf78b013",
+      "sha256": "db385c64c02776502b7802ac0089c1b6c424ac240bdabee11e6505392aa8bf8d",
       "source": "core/SESSION-START.md",
       "target": ".ai-human/system/SESSION-START.md"
     },
     {
-      "sha256": "01ce7615ea9899c68ea8291dbe03ecaefa61e86db31e402c77a3634e47192e07",
+      "sha256": "703565be5428c27943dc000eef42495343f1b6431f927bceeffaeb871e7d5781",
       "source": "core/SESSION-END.md",
       "target": ".ai-human/system/SESSION-END.md"
     },
@@ -68,7 +78,7 @@
       "target": ".ai-human/VERSION"
     },
     {
-      "sha256": "d0dbaa3306473571cdb08c8c9830296405ee9ab69c25837a42039a0cfbf7758f",
+      "sha256": "d31602521f39cdf459f071467dda154733818c617dcc90cd9c124cff4ffae989",
       "source": "scripts/ai_human.py",
       "target": ".ai-human/bin/ai_human.py"
     }
@@ -100,6 +110,8 @@
     ".ai-human/improvement/",
     ".ai-human/autonomy/",
     ".ai-human/governor/",
+    ".ai-human/continuity/",
+    ".ai-human/resources/",
     ".ai-human/backups/",
     ".ai-human/downgrade-exports/",
     ".ai-human/version-report.json",

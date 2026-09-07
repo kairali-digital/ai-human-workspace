@@ -2,16 +2,19 @@
 """Install and manage a durable, company-neutral AI-human workspace."""
 
 import argparse
+import csv
 import contextlib
 import datetime
 import decimal
 import hashlib
 import json
 import os
+import platform
 import re
 import secrets
 import shutil
 import stat
+import subprocess
 import sys
 import tempfile
 import time
@@ -105,6 +108,76 @@ GOVERNOR_OBSERVATION_FIELDS = {"code", "evidence"}
 GOVERNOR_OUTCOME_REQUEST_FIELDS = {
     "completed_units", "evidence", "plan_id", "schema", "status",
 }
+CONTINUITY_ROOT = Path(".ai-human/continuity")
+CONTINUITY_POLICY_PATH = CONTINUITY_ROOT / "policy.json"
+CONTINUITY_POLICIES_ROOT = CONTINUITY_ROOT / "policies"
+CONTEXT_OBSERVATIONS_ROOT = CONTINUITY_ROOT / "context"
+CONTINUITY_OUTBOX_ROOT = CONTINUITY_ROOT / "outbox"
+CONTINUITY_ACKS_ROOT = CONTINUITY_ROOT / "acknowledgements"
+CONTEXT_CHECKPOINT_LATCH_PATH = CONTINUITY_ROOT / "checkpoint-required.json"
+CONTINUITY_POLICY_FIELDS = {
+    "approval_reference", "context_signal_max_age_seconds", "context_soft_limit_used_percent",
+    "handoff_max_age_minutes", "owner", "policy_id", "policy_version", "schema",
+    "unknown_context_action",
+}
+CONTEXT_OBSERVATION_FIELDS = {
+    "atomic_state", "observation_id", "schema", "signal", "task_id", "worker_id",
+}
+CONTEXT_SIGNAL_AVAILABLE_FIELDS = {
+    "evidence", "metric", "observed_utc", "source", "status", "value",
+}
+CONTEXT_SIGNAL_UNKNOWN_FIELDS = {"observed_utc", "reason", "status"}
+CONTEXT_ATOMIC_STATES = {
+    "BEFORE_WORK", "SAFE_ATOMIC_STEP_IN_PROGRESS", "CONSEQUENTIAL_STEP_IN_PROGRESS",
+}
+CONTEXT_DIRECTIVES = {
+    "CONTINUE", "CHECKPOINT_SOON", "HALT_NEW_WORK_AND_CHECKPOINT",
+    "CHECKPOINT_NOW", "FINISH_SAFE_ATOMIC_STEP_THEN_CHECKPOINT",
+    "HALT_CONSEQUENTIAL_STEP_AND_CHECKPOINT",
+}
+CONTEXT_NEW_WORK_COMMANDS = {
+    "task-start", "governor-plan", "action-execute", "improvement-run",
+    "autonomy-skill-install", "resource-snapshot", "resource-plan",
+}
+HANDOFF_REQUEST_FIELDS = {
+    "active_gates", "approval_boundaries", "done_condition", "expires_utc",
+    "handoff_id", "intended_recipient_identity_sha256",
+    "intended_recipient_state_sha256", "intended_recipient_task_id",
+    "intended_recipient_worker_id", "last_completed_step", "mission", "next_action",
+    "purpose", "read_boundaries", "required_evidence", "required_files", "schema",
+    "sender_task_id", "tool_boundaries", "unresolved_decisions", "withheld_actions",
+    "write_boundaries",
+}
+HANDOFF_REQUIRED_FILE_FIELDS = {"path", "schema", "sha256"}
+HANDOFF_PACKET_FILE_FIELDS = {"bundle_path", "path", "schema", "sha256", "size_bytes"}
+HANDOFF_PURPOSES = {"SESSION_CONTINUATION", "WORKER_HANDOFF"}
+RESOURCE_ROOT = Path(".ai-human/resources")
+RESOURCE_POLICY_PATH = RESOURCE_ROOT / "policy.json"
+RESOURCE_POLICIES_ROOT = RESOURCE_ROOT / "policies"
+RESOURCE_SNAPSHOTS_ROOT = RESOURCE_ROOT / "snapshots"
+RESOURCE_PLANS_ROOT = RESOURCE_ROOT / "plans"
+RESOURCE_OUTCOMES_ROOT = RESOURCE_ROOT / "outcomes"
+RESOURCE_POLICY_FIELDS = {
+    "allow_browser_discard", "allow_tabs_not_opened_by_ai", "approval_reference",
+    "max_tab_candidates", "observation_max_age_minutes", "owner", "policy_id",
+    "policy_version", "retain_reopen_locator", "schema",
+}
+RESOURCE_OBSERVATION_FIELDS = {
+    "browser", "captured_utc", "host", "memory", "observation_id", "pressure",
+    "processes", "schema", "swap",
+}
+RESOURCE_TAB_FIELDS = {
+    "active_download", "auth_payment_admin", "classification", "discard_supported",
+    "estimated_memory_bytes", "inactive", "meeting", "opened_by_ai", "playing_audio",
+    "reopen_locator", "tab_id", "unsaved_form",
+}
+RESOURCE_OUTCOME_REQUEST_FIELDS = {
+    "after_snapshot_id", "evidence", "plan_id", "schema", "status",
+}
+RESOURCE_OUTCOME_STATUSES = {
+    "NOT_EXECUTED", "USER_REFUSED", "ADAPTER_UNAVAILABLE",
+    "EXECUTED_NO_IMPROVEMENT", "EXECUTED_IMPROVED",
+}
 LEASE_PATH = Path(".ai-human/control/session-lease.json")
 CONTROL_RECEIPTS = Path(".ai-human/control/receipts")
 CAPABILITY_ROOT = Path(".ai-human/capabilities")
@@ -149,6 +222,9 @@ MODE_GUARDED_COMMANDS = {
     "action-execute",
     "autonomy-skill-install",
     "governor-configure", "governor-plan", "governor-record",
+    "continuity-configure", "context-check", "handoff-create", "handoff-consume",
+    "continuity-recover",
+    "resource-configure", "resource-snapshot", "resource-plan", "resource-record",
 }
 COORDINATION_STATE_FILES = (
     "MASTER_CURSOR.md", "OPEN_REGISTER.md", "TODAY.md",
@@ -175,6 +251,8 @@ INTRINSIC_NEVER_MANAGED = set(STATE_FILES) | {
     ".ai-human/improvement/",
     ".ai-human/autonomy/",
     ".ai-human/governor/",
+    ".ai-human/continuity/",
+    ".ai-human/resources/",
     ".ai-human/backups/",
     ".ai-human/downgrade-exports/",
     ".ai-human/install.json",
@@ -1102,6 +1180,1110 @@ def validate_governor_state(worker):
     return failures
 
 
+def validate_continuity_policy(data):
+    if not isinstance(data, dict):
+        raise ValueError("continuity policy must be a JSON object")
+    require_exact_fields(data, CONTINUITY_POLICY_FIELDS, "continuity policy")
+    if data.get("schema") != "ai-human.continuity-policy/v1":
+        raise ValueError("unsupported continuity policy schema")
+    governor_safe_id(data.get("policy_id", ""), "continuity policy id")
+    positive_integer(data.get("policy_version"), "continuity policy version")
+    for field in ("owner", "approval_reference"):
+        if not isinstance(data.get(field), str):
+            raise ValueError("continuity policy " + field.replace("_", " ") + " must be text")
+        bounded_clean(data[field], "continuity policy " + field.replace("_", " "), 500)
+    soft_limit = data.get("context_soft_limit_used_percent")
+    if (
+        isinstance(soft_limit, bool)
+        or not isinstance(soft_limit, int)
+        or not 1 <= soft_limit <= 99
+    ):
+        raise ValueError("context soft limit must be an integer from 1 through 99")
+    positive_integer(
+        data.get("handoff_max_age_minutes"), "handoff maximum age minutes", 10_080
+    )
+    positive_integer(
+        data.get("context_signal_max_age_seconds"),
+        "context signal maximum age seconds", 3_600,
+    )
+    if data.get("unknown_context_action") not in {
+        "CHECKPOINT_SOON", "HALT_NEW_WORK_AND_CHECKPOINT",
+    }:
+        raise ValueError(
+            "unknown context action must be CHECKPOINT_SOON or HALT_NEW_WORK_AND_CHECKPOINT"
+        )
+    return data
+
+
+def context_percent(value):
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError("context percentage must be a number")
+    try:
+        number = decimal.Decimal(str(value))
+    except decimal.InvalidOperation as exc:
+        raise ValueError("context percentage is invalid") from exc
+    if not number.is_finite() or not decimal.Decimal("0") <= number <= decimal.Decimal("100"):
+        raise ValueError("context percentage must be between 0 and 100")
+    return number
+
+
+def validate_context_observation(data):
+    if not isinstance(data, dict):
+        raise ValueError("context observation must be a JSON object")
+    require_exact_fields(data, CONTEXT_OBSERVATION_FIELDS, "context observation")
+    if data.get("schema") != "ai-human.context-observation/v1":
+        raise ValueError("unsupported context observation schema")
+    governor_safe_id(data.get("observation_id", ""), "context observation id")
+    governor_safe_id(data.get("worker_id", ""), "context worker id")
+    governor_safe_id(data.get("task_id", ""), "context task id")
+    if data.get("atomic_state") not in CONTEXT_ATOMIC_STATES:
+        raise ValueError("unsupported context atomic state: " + repr(data.get("atomic_state")))
+    signal = data.get("signal")
+    if not isinstance(signal, dict):
+        raise ValueError("context signal must be a JSON object")
+    if signal.get("status") == "AVAILABLE":
+        require_exact_fields(
+            signal, CONTEXT_SIGNAL_AVAILABLE_FIELDS, "available context signal"
+        )
+        if signal.get("metric") != "USED_PERCENT":
+            raise ValueError("context signal metric must be USED_PERCENT")
+        context_percent(signal.get("value"))
+        if signal.get("source") not in {"HOST_REPORTED", "PROVIDER_REPORTED"}:
+            raise ValueError("context signal source is not a trusted source class")
+        if not isinstance(signal.get("evidence"), str):
+            raise ValueError("context signal evidence must be text")
+        bounded_clean(signal["evidence"], "context signal evidence", 1000)
+    elif signal.get("status") == "UNKNOWN":
+        require_exact_fields(
+            signal, CONTEXT_SIGNAL_UNKNOWN_FIELDS, "unknown context signal"
+        )
+        if not isinstance(signal.get("reason"), str):
+            raise ValueError("unknown context reason must be text")
+        bounded_clean(signal["reason"], "unknown context reason", 1000)
+    else:
+        raise ValueError("context signal status must be AVAILABLE or UNKNOWN")
+    parse_recorded_utc(signal.get("observed_utc"), "context signal observed_utc")
+    return data
+
+
+def handoff_text_list(values, label, allow_empty=False):
+    if not isinstance(values, list) or (not values and not allow_empty):
+        qualifier = "a list" if allow_empty else "a non-empty list"
+        raise ValueError(label + " must be " + qualifier)
+    if len(values) > BATCH_CAP:
+        raise ValueError(label + " exceeds the hard safety ceiling")
+    cleaned = []
+    seen = set()
+    for value in values:
+        if not isinstance(value, str):
+            raise ValueError(label + " entries must be text")
+        item = bounded_clean(value, label + " entry", 1000)
+        if item.casefold() in seen:
+            raise ValueError(label + " contains a duplicate")
+        seen.add(item.casefold())
+        cleaned.append(item)
+    return cleaned
+
+
+def validate_handoff_request(data):
+    if not isinstance(data, dict):
+        raise ValueError("handoff request must be a JSON object")
+    require_exact_fields(data, HANDOFF_REQUEST_FIELDS, "handoff request")
+    if data.get("schema") != "ai-human.handoff-request/v1":
+        raise ValueError("unsupported handoff request schema")
+    for field in (
+        "handoff_id", "intended_recipient_worker_id", "intended_recipient_task_id",
+        "sender_task_id",
+    ):
+        governor_safe_id(data.get(field, ""), "handoff " + field.replace("_", " "))
+    if data.get("purpose") not in HANDOFF_PURPOSES:
+        raise ValueError("unsupported handoff purpose: " + repr(data.get("purpose")))
+    for field in (
+        "intended_recipient_identity_sha256", "intended_recipient_state_sha256",
+    ):
+        if not SHA256_HEX.fullmatch(str(data.get(field, ""))):
+            raise ValueError("handoff " + field.replace("_", " ") + " is not SHA-256")
+    for field in (
+        "mission", "done_condition", "last_completed_step", "next_action",
+    ):
+        if not isinstance(data.get(field), str):
+            raise ValueError("handoff " + field.replace("_", " ") + " must be text")
+        bounded_clean(data[field], "handoff " + field.replace("_", " "), 2000)
+    parse_recorded_utc(data.get("expires_utc"), "handoff expires_utc")
+    for field in (
+        "active_gates", "approval_boundaries", "read_boundaries", "required_evidence",
+        "tool_boundaries", "withheld_actions", "write_boundaries",
+    ):
+        handoff_text_list(data.get(field), "handoff " + field.replace("_", " "))
+    handoff_text_list(
+        data.get("unresolved_decisions"), "handoff unresolved decisions", allow_empty=True
+    )
+    files = data.get("required_files")
+    minimum_files = 0 if data["purpose"] == "SESSION_CONTINUATION" else 1
+    if (
+        not isinstance(files, list)
+        or len(files) < minimum_files
+        or len(files) > BATCH_CAP
+    ):
+        raise ValueError(
+            "handoff required files must contain " + str(minimum_files)
+            + " through 25 records"
+        )
+    seen = set()
+    for index, record in enumerate(files, start=1):
+        if not isinstance(record, dict):
+            raise ValueError("handoff required file must be a JSON object")
+        require_exact_fields(
+            record, HANDOFF_REQUIRED_FILE_FIELDS,
+            "handoff required file " + str(index),
+        )
+        relative = safe_relative(record.get("path"), "handoff required file path")
+        key = portable_key(relative)
+        if key in seen:
+            raise ValueError("handoff required file path is duplicated: " + key)
+        seen.add(key)
+        if relative.parts[0] == ".ai-human" or (
+            len(relative.parts) == 1
+            and key in {portable_key(name) for name in STATE_FILES}
+        ):
+            raise ValueError("handoff may not copy controlled worker state: " + key)
+        if not SHA256_HEX.fullmatch(str(record.get("sha256", ""))):
+            raise ValueError("handoff required file hash is not SHA-256")
+        if not isinstance(record.get("schema"), str):
+            raise ValueError("handoff required file schema must be text")
+        bounded_clean(record["schema"], "handoff required file schema", 200)
+    return data
+
+
+def validate_resource_policy(data):
+    if not isinstance(data, dict):
+        raise ValueError("resource policy must be a JSON object")
+    require_exact_fields(data, RESOURCE_POLICY_FIELDS, "resource policy")
+    if data.get("schema") != "ai-human.resource-policy/v1":
+        raise ValueError("unsupported resource policy schema")
+    governor_safe_id(data.get("policy_id", ""), "resource policy id")
+    positive_integer(data.get("policy_version"), "resource policy version")
+    for field in ("owner", "approval_reference"):
+        if not isinstance(data.get(field), str):
+            raise ValueError("resource policy " + field.replace("_", " ") + " must be text")
+        bounded_clean(data[field], "resource policy " + field.replace("_", " "), 500)
+    for field in (
+        "allow_browser_discard", "allow_tabs_not_opened_by_ai", "retain_reopen_locator",
+    ):
+        if not isinstance(data.get(field), bool):
+            raise ValueError("resource policy " + field.replace("_", " ") + " must be true or false")
+    positive_integer(data.get("max_tab_candidates"), "maximum tab candidates", BATCH_CAP)
+    positive_integer(
+        data.get("observation_max_age_minutes"),
+        "resource observation maximum age minutes", 1_440,
+    )
+    return data
+
+
+def validate_unknown_or_fields(data, available_fields, label):
+    if not isinstance(data, dict):
+        raise ValueError(label + " must be a JSON object")
+    if data.get("status") == "UNKNOWN":
+        require_exact_fields(data, {"reason", "status"}, label)
+        if not isinstance(data.get("reason"), str):
+            raise ValueError(label + " unknown reason must be text")
+        bounded_clean(data["reason"], label + " unknown reason", 1000)
+        return False
+    if data.get("status") != "AVAILABLE":
+        raise ValueError(label + " status must be AVAILABLE or UNKNOWN")
+    require_exact_fields(data, available_fields, label)
+    return True
+
+
+def validate_resource_observation(data):
+    if not isinstance(data, dict):
+        raise ValueError("resource observation must be a JSON object")
+    require_exact_fields(data, RESOURCE_OBSERVATION_FIELDS, "resource observation")
+    if data.get("schema") != "ai-human.resource-observation/v1":
+        raise ValueError("unsupported resource observation schema")
+    governor_safe_id(data.get("observation_id", ""), "resource observation id")
+    parse_recorded_utc(data.get("captured_utc"), "resource observation captured_utc")
+    host = data.get("host")
+    if validate_unknown_or_fields(
+        host, {"platform", "source", "status"}, "resource host"
+    ):
+        if host.get("platform") not in {"macOS", "Windows", "Linux", "UNKNOWN"}:
+            raise ValueError("unsupported resource host platform")
+        if not isinstance(host.get("source"), str):
+            raise ValueError("resource host source must be text")
+        bounded_clean(host["source"], "resource host source", 500)
+    memory = data.get("memory")
+    if validate_unknown_or_fields(
+        memory,
+        {"available_bytes", "evidence", "status", "total_bytes", "used_percent"},
+        "resource memory",
+    ):
+        total = positive_integer(memory.get("total_bytes"), "resource total memory bytes")
+        available = positive_integer(
+            memory.get("available_bytes"), "resource available memory bytes", allow_zero=True
+        )
+        if available > total:
+            raise ValueError("resource available memory exceeds total memory")
+        context_percent(memory.get("used_percent"))
+        if not isinstance(memory.get("evidence"), str):
+            raise ValueError("resource memory evidence must be text")
+        bounded_clean(memory["evidence"], "resource memory evidence", 1000)
+    pressure = data.get("pressure")
+    if validate_unknown_or_fields(
+        pressure, {"evidence", "level", "status"}, "resource pressure"
+    ):
+        if pressure.get("level") not in {"NORMAL", "WARN", "CRITICAL"}:
+            raise ValueError("resource pressure level is invalid")
+        if not isinstance(pressure.get("evidence"), str):
+            raise ValueError("resource pressure evidence must be text")
+        bounded_clean(pressure["evidence"], "resource pressure evidence", 1000)
+    swap = data.get("swap")
+    if validate_unknown_or_fields(
+        swap, {"evidence", "status", "total_bytes", "used_bytes"}, "resource swap"
+    ):
+        total = positive_integer(
+            swap.get("total_bytes"), "resource total swap bytes", allow_zero=True
+        )
+        used = positive_integer(
+            swap.get("used_bytes"), "resource used swap bytes", allow_zero=True
+        )
+        if used > total:
+            raise ValueError("resource used swap exceeds total swap")
+        if not isinstance(swap.get("evidence"), str):
+            raise ValueError("resource swap evidence must be text")
+        bounded_clean(swap["evidence"], "resource swap evidence", 1000)
+    processes = data.get("processes")
+    if validate_unknown_or_fields(
+        processes, {"items", "source", "status"}, "resource processes"
+    ):
+        items = processes.get("items")
+        if not isinstance(items, list) or len(items) > BATCH_CAP:
+            raise ValueError("resource process list exceeds the safety ceiling")
+        seen_pids = set()
+        for item in items:
+            if not isinstance(item, dict):
+                raise ValueError("resource process must be a JSON object")
+            require_exact_fields(item, {"name", "pid", "rss_bytes"}, "resource process")
+            pid = positive_integer(item.get("pid"), "resource process pid")
+            if pid in seen_pids:
+                raise ValueError("resource process pid is duplicated")
+            seen_pids.add(pid)
+            positive_integer(
+                item.get("rss_bytes"), "resource process RSS bytes", allow_zero=True
+            )
+            if not isinstance(item.get("name"), str):
+                raise ValueError("resource process name must be text")
+            bounded_clean(item["name"], "resource process name", 500)
+        if not isinstance(processes.get("source"), str):
+            raise ValueError("resource process source must be text")
+        bounded_clean(processes["source"], "resource process source", 500)
+    browser = data.get("browser")
+    if validate_unknown_or_fields(
+        browser, {"evidence", "source", "status", "tabs"}, "resource browser"
+    ):
+        tabs = browser.get("tabs")
+        if not isinstance(tabs, list) or len(tabs) > BATCH_CAP:
+            raise ValueError("resource browser tab list exceeds the safety ceiling")
+        seen_tabs = set()
+        for tab in tabs:
+            if not isinstance(tab, dict):
+                raise ValueError("resource browser tab must be a JSON object")
+            require_exact_fields(tab, RESOURCE_TAB_FIELDS, "resource browser tab")
+            tab_id = governor_safe_id(tab.get("tab_id", ""), "resource browser tab id")
+            if tab_id in seen_tabs:
+                raise ValueError("resource browser tab id is duplicated")
+            seen_tabs.add(tab_id)
+            if tab.get("classification") not in {"PUBLIC_NON_SENSITIVE", "SENSITIVE", "UNKNOWN"}:
+                raise ValueError("resource browser tab classification is invalid")
+            for field in (
+                "active_download", "auth_payment_admin", "discard_supported", "inactive",
+                "meeting", "opened_by_ai", "playing_audio", "unsaved_form",
+            ):
+                if not isinstance(tab.get(field), bool):
+                    raise ValueError("resource browser tab " + field + " must be true or false")
+            estimated = tab.get("estimated_memory_bytes")
+            if estimated != "UNKNOWN":
+                positive_integer(estimated, "resource tab estimated memory bytes", allow_zero=True)
+            if not isinstance(tab.get("reopen_locator"), str):
+                raise ValueError("resource tab reopen locator must be text")
+            bounded_clean(tab["reopen_locator"], "resource tab reopen locator", 2000)
+        for field in ("source", "evidence"):
+            if not isinstance(browser.get(field), str):
+                raise ValueError("resource browser " + field + " must be text")
+            bounded_clean(browser[field], "resource browser " + field, 1000)
+    return data
+
+
+def validate_resource_outcome_request(data):
+    if not isinstance(data, dict):
+        raise ValueError("resource outcome must be a JSON object")
+    require_exact_fields(data, RESOURCE_OUTCOME_REQUEST_FIELDS, "resource outcome")
+    if data.get("schema") != "ai-human.resource-outcome-request/v1":
+        raise ValueError("unsupported resource outcome request schema")
+    governor_safe_id(data.get("plan_id", ""), "resource outcome plan id")
+    if data.get("status") not in RESOURCE_OUTCOME_STATUSES:
+        raise ValueError("unsupported resource outcome status")
+    after = data.get("after_snapshot_id")
+    if data["status"].startswith("EXECUTED_"):
+        governor_safe_id(after, "resource after snapshot id")
+    elif after != "NONE":
+        raise ValueError("an unexecuted resource outcome must use after_snapshot_id NONE")
+    if not isinstance(data.get("evidence"), str):
+        raise ValueError("resource outcome evidence must be text")
+    bounded_clean(data["evidence"], "resource outcome evidence", 2000)
+    return data
+
+
+def handoff_packet_sha256(packet):
+    payload = dict(packet)
+    payload.pop("packet_sha256", None)
+    return canonical_json_sha256(payload)
+
+
+def verify_handoff_file_schema(path, declared_schema):
+    if path.suffix.casefold() != ".json":
+        return
+    try:
+        data = read_json(path)
+    except Exception as exc:
+        raise ValueError("handoff JSON attachment is invalid: " + path.name + ": " + str(exc))
+    if not isinstance(data, dict) or data.get("schema") != declared_schema:
+        raise ValueError("handoff JSON attachment schema differs from its envelope: " + path.name)
+
+
+def worker_identity_sha256(worker):
+    metadata = install_metadata(worker)
+    fields = {
+        "company": metadata.get("company"),
+        "gate_profile_id": metadata.get("gate_profile_id"),
+        "gate_profile_sha256": metadata.get("gate_profile_sha256"),
+        "legal_entity": metadata.get("legal_entity"),
+        "purpose_scope": metadata.get("purpose_scope"),
+        "schema": "ai-human.worker-identity/v1",
+        "worker_id": installed_worker_id(worker),
+    }
+    if any(not isinstance(value, str) or not value for value in fields.values()):
+        raise ValueError("worker identity is incomplete")
+    return canonical_json_sha256(fields)
+
+
+def resume_state_sha256(worker):
+    digest = hashlib.sha256()
+    continuity_prefix = portable_key(CONTINUITY_ROOT) + "/"
+    for path in controlled_state_paths(worker):
+        relative = path.relative_to(worker).as_posix()
+        if portable_key(relative).startswith(continuity_prefix):
+            continue
+        digest.update(relative.encode("utf-8") + b"\0")
+        digest.update(bytes.fromhex(sha256(path)) if path.is_file() else b"MISSING")
+        digest.update(b"\n")
+    return digest.hexdigest()
+
+
+def active_gate_ids(worker):
+    profile = validate_gate_profile(read_json(worker / GATE_PROFILE_PATH))
+    return sorted(rule["gate_id"] for rule in profile["gates"])
+
+
+def continuity_policy(worker, required=True):
+    path = worker / CONTINUITY_POLICY_PATH
+    if not path.is_file():
+        if required:
+            raise ValueError("continuity guard is not configured")
+        return None
+    if path.is_symlink():
+        raise ValueError("continuity policy may not be a symbolic link")
+    return validate_continuity_policy(read_json(path))
+
+
+def continuity_record_files(worker, relative_root):
+    root = worker / relative_root
+    if not root.exists():
+        return []
+    if root.is_symlink() or not root.is_dir():
+        raise ValueError(str(relative_root) + " must be a real directory")
+    paths = []
+    for path in sorted(root.iterdir(), key=lambda item: item.name.casefold()):
+        if path.is_symlink() or not path.is_file() or path.suffix.casefold() != ".json":
+            raise ValueError("continuity state contains a forbidden entry: " + str(path))
+        paths.append(path)
+    return paths
+
+
+def continuity_policy_catalog(worker):
+    catalog = {}
+    versions = {}
+    current = continuity_policy(worker, required=False)
+    if current:
+        catalog[canonical_json_sha256(current)] = current
+    for path in continuity_record_files(worker, CONTINUITY_POLICIES_ROOT):
+        policy = validate_continuity_policy(read_json(path))
+        digest = canonical_json_sha256(policy)
+        expected_name = (
+            f"v{policy['policy_version']:06d}-{policy['policy_id']}-{digest[:12]}.json"
+        )
+        if path.name != expected_name:
+            raise ValueError("continuity policy history filename does not match its content")
+        if policy["policy_version"] in versions and versions[policy["policy_version"]] != digest:
+            raise ValueError("continuity policy version is ambiguous")
+        versions[policy["policy_version"]] = digest
+        catalog[digest] = policy
+    if current:
+        required_versions = set(range(1, current["policy_version"] + 1))
+        if not required_versions.issubset(versions):
+            raise ValueError("continuity policy history is incomplete")
+        if versions and max(versions) > current["policy_version"] + 1:
+            raise ValueError("continuity policy history advances beyond one pending version")
+        for policy in catalog.values():
+            if policy["policy_id"] != current["policy_id"] or policy["owner"] != current["owner"]:
+                raise ValueError("continuity policy history changed its identity or owner")
+    return catalog
+
+
+def context_decision(policy, observation):
+    signal = observation["signal"]
+    if signal["status"] == "UNKNOWN":
+        return {
+            "accept_new_work": False,
+            "context_status": "UNKNOWN",
+            "context_used_percent": "UNKNOWN",
+            "decision_reason": "No trustworthy live context percentage is available",
+            "directive": policy["unknown_context_action"],
+        }
+    used = context_percent(signal["value"])
+    soft_limit = decimal.Decimal(str(policy["context_soft_limit_used_percent"]))
+    if used < soft_limit:
+        directive = "CONTINUE"
+        accept_new_work = True
+        reason = "Trusted context use is below the owner-configured soft limit"
+    elif observation["atomic_state"] == "BEFORE_WORK":
+        directive = "CHECKPOINT_NOW"
+        accept_new_work = False
+        reason = "The soft limit was reached before starting another atomic step"
+    elif observation["atomic_state"] == "SAFE_ATOMIC_STEP_IN_PROGRESS":
+        directive = "FINISH_SAFE_ATOMIC_STEP_THEN_CHECKPOINT"
+        accept_new_work = False
+        reason = "Finish only the current safe atomic step, then checkpoint"
+    else:
+        directive = "HALT_CONSEQUENTIAL_STEP_AND_CHECKPOINT"
+        accept_new_work = False
+        reason = "Do not continue a consequential step after the context soft limit"
+    return {
+        "accept_new_work": accept_new_work,
+        "context_status": "AVAILABLE",
+        "context_used_percent": int(used) if used == used.to_integral() else float(used),
+        "decision_reason": reason,
+        "directive": directive,
+    }
+
+
+def context_records(worker):
+    records = []
+    prior_hash = "NONE"
+    catalog = continuity_policy_catalog(worker)
+    for sequence, path in enumerate(
+        continuity_record_files(worker, CONTEXT_OBSERVATIONS_ROOT), start=1
+    ):
+        record = read_json(path)
+        fields = {
+            "accept_new_work", "context_status", "context_used_percent", "created_utc",
+            "decision_reason", "directive", "observation", "observation_sha256",
+            "policy_sha256", "prior_record_sha256", "record_sha256", "schema", "sequence",
+        }
+        require_exact_fields(record, fields, "context decision record")
+        if record.get("schema") != "ai-human.context-decision/v1":
+            raise ValueError("unsupported context decision record schema")
+        if record.get("sequence") != sequence:
+            raise ValueError("context decision sequence is not contiguous")
+        observation = validate_context_observation(record.get("observation"))
+        observation_id = observation["observation_id"]
+        if path.name != f"{sequence:06d}-{observation_id}.json":
+            raise ValueError("context decision filename does not match its record")
+        if record.get("observation_sha256") != canonical_json_sha256(observation):
+            raise ValueError("context observation hash mismatch")
+        if record.get("policy_sha256") not in catalog:
+            raise ValueError("context decision references an unknown continuity policy")
+        if record.get("prior_record_sha256") != prior_hash:
+            raise ValueError("context decision hash chain is broken")
+        if record.get("record_sha256") != governed_record_sha256(record):
+            raise ValueError("context decision record hash mismatch")
+        replay = context_decision(catalog[record["policy_sha256"]], observation)
+        for field in (
+            "accept_new_work", "context_status", "context_used_percent",
+            "decision_reason", "directive",
+        ):
+            if record.get(field) != replay[field]:
+                raise ValueError("context decision replay mismatch: " + field)
+        parse_recorded_utc(record.get("created_utc"), "context decision created_utc")
+        prior_hash = record["record_sha256"]
+        records.append(record)
+    return records
+
+
+def context_checkpoint_latch(worker, records=None, required=False):
+    path = worker / CONTEXT_CHECKPOINT_LATCH_PATH
+    if not path.is_file():
+        if required:
+            raise ValueError("context checkpoint latch is missing")
+        return None
+    if path.is_symlink():
+        raise ValueError("context checkpoint latch may not be a symbolic link")
+    record = read_json(path)
+    fields = {
+        "context_record_sha256", "created_utc", "directive", "observation_id",
+        "record_sha256", "schema", "task_id", "worker_id",
+    }
+    require_exact_fields(record, fields, "context checkpoint latch")
+    if record.get("schema") != "ai-human.context-checkpoint-required/v1":
+        raise ValueError("unsupported context checkpoint latch schema")
+    if record.get("directive") not in CONTEXT_DIRECTIVES - {"CONTINUE"}:
+        raise ValueError("context checkpoint latch directive is invalid")
+    if record.get("record_sha256") != governed_record_sha256(record):
+        raise ValueError("context checkpoint latch hash mismatch")
+    governor_safe_id(record.get("worker_id", ""), "context checkpoint worker id")
+    governor_safe_id(record.get("task_id", ""), "context checkpoint task id")
+    governor_safe_id(record.get("observation_id", ""), "context checkpoint observation id")
+    parse_recorded_utc(record.get("created_utc"), "context checkpoint created_utc")
+    records = context_records(worker) if records is None else records
+    source = next(
+        (
+            item for item in records
+            if item["record_sha256"] == record["context_record_sha256"]
+        ),
+        None,
+    )
+    if not source:
+        raise ValueError("context checkpoint latch references an unknown decision")
+    observation = source["observation"]
+    if (
+        source["directive"] != record["directive"]
+        or observation["observation_id"] != record["observation_id"]
+        or observation["worker_id"] != record["worker_id"]
+        or observation["task_id"] != record["task_id"]
+    ):
+        raise ValueError("context checkpoint latch differs from its decision")
+    return record
+
+
+def validate_handoff_packet(packet, package_root, expected_digest=None):
+    if not isinstance(packet, dict):
+        raise ValueError("handoff packet must be a JSON object")
+    fields = {
+        *HANDOFF_REQUEST_FIELDS,
+        "checkpoint_latch_sha256", "created_utc", "delivery_state", "packet_sha256",
+        "policy", "policy_sha256", "result_location", "sender_identity_sha256",
+        "sender_state_sha256", "sender_worker_id",
+    }
+    require_exact_fields(packet, fields, "handoff packet")
+    if packet.get("schema") != "ai-human.handoff-packet/v1":
+        raise ValueError("unsupported handoff packet schema")
+    request_view = {
+        field: packet[field] for field in HANDOFF_REQUEST_FIELDS if field != "schema"
+    }
+    request_view["schema"] = "ai-human.handoff-request/v1"
+    required_files = packet.get("required_files")
+    if not isinstance(required_files, list):
+        raise ValueError("handoff packet required files must be a list")
+    request_view["required_files"] = [
+        {field: record.get(field) for field in HANDOFF_REQUIRED_FILE_FIELDS}
+        if isinstance(record, dict) else record
+        for record in required_files
+    ]
+    validate_handoff_request(request_view)
+    governor_safe_id(packet.get("sender_worker_id", ""), "handoff sender worker id")
+    for field in (
+        "sender_identity_sha256", "sender_state_sha256", "checkpoint_latch_sha256",
+    ):
+        value = str(packet.get(field, ""))
+        if field == "checkpoint_latch_sha256" and value == "NONE":
+            continue
+        if not SHA256_HEX.fullmatch(value):
+            raise ValueError("handoff packet " + field.replace("_", " ") + " is invalid")
+    if packet.get("delivery_state") != "QUEUED":
+        raise ValueError("handoff packet delivery state must remain QUEUED")
+    if packet.get("result_location") != "NOT_RECORDED":
+        raise ValueError("handoff packet result location must start as NOT_RECORDED")
+    created = parse_recorded_utc(packet.get("created_utc"), "handoff packet created_utc")
+    expires = parse_recorded_utc(packet.get("expires_utc"), "handoff packet expires_utc")
+    if expires <= created:
+        raise ValueError("handoff packet expiry must be after creation")
+    policy = validate_continuity_policy(packet.get("policy"))
+    policy_hash = canonical_json_sha256(policy)
+    if packet.get("policy_sha256") != policy_hash:
+        raise ValueError("handoff packet policy hash mismatch")
+    if expires - created > datetime.timedelta(minutes=policy["handoff_max_age_minutes"]):
+        raise ValueError("handoff packet exceeds the policy maximum age")
+    digest = handoff_packet_sha256(packet)
+    if packet.get("packet_sha256") != digest:
+        raise ValueError("handoff packet self-hash mismatch")
+    if expected_digest is not None:
+        if not SHA256_HEX.fullmatch(str(expected_digest)):
+            raise ValueError("expected handoff packet digest is not SHA-256")
+        if digest != expected_digest:
+            raise ValueError("handoff packet does not match the separately supplied digest")
+    package_root = Path(package_root).resolve()
+    expected_files = {"handoff.json"}
+    total_size = 0
+    seen_bundle_paths = set()
+    for index, record in enumerate(required_files, start=1):
+        if not isinstance(record, dict):
+            raise ValueError("handoff packet file must be a JSON object")
+        require_exact_fields(
+            record, HANDOFF_PACKET_FILE_FIELDS, "handoff packet file " + str(index)
+        )
+        bundle = safe_relative(record.get("bundle_path"), "handoff bundle path")
+        if not portable_key(bundle).startswith("attachments/"):
+            raise ValueError("handoff bundle path must be under attachments")
+        bundle_key = portable_key(bundle)
+        if bundle_key in seen_bundle_paths:
+            raise ValueError("handoff bundle path is duplicated")
+        seen_bundle_paths.add(bundle_key)
+        expected_files.add(bundle.as_posix())
+        positive_integer(
+            record.get("size_bytes"), "handoff attachment size", allow_zero=True
+        )
+        attachment = path_without_symlinks(
+            package_root, bundle, "handoff attachment"
+        )
+        if not attachment.is_file():
+            raise ValueError("handoff attachment is missing: " + bundle.as_posix())
+        if attachment.stat().st_size != record["size_bytes"]:
+            raise ValueError("handoff attachment size mismatch: " + bundle.as_posix())
+        if sha256(attachment) != record["sha256"]:
+            raise ValueError("handoff attachment hash mismatch: " + bundle.as_posix())
+        verify_handoff_file_schema(attachment, record["schema"])
+        total_size += record["size_bytes"]
+    if total_size > MAX_ARCHIVE_UNCOMPRESSED_BYTES:
+        raise ValueError("handoff attachments exceed the safe payload size")
+    actual_files = set()
+    for path in package_root.rglob("*"):
+        if path.is_symlink():
+            raise ValueError("handoff package may not contain symbolic links")
+        if path.is_file():
+            actual_files.add(path.relative_to(package_root).as_posix())
+    if actual_files != expected_files:
+        raise ValueError("handoff package files differ from the signed envelope")
+    return packet
+
+
+def handoff_packets(worker):
+    root = worker / CONTINUITY_OUTBOX_ROOT
+    if not root.exists():
+        return []
+    if root.is_symlink() or not root.is_dir():
+        raise ValueError("handoff outbox must be a real directory")
+    catalog = continuity_policy_catalog(worker)
+    packets = []
+    seen = set()
+    for package in sorted(root.iterdir(), key=lambda item: item.name.casefold()):
+        if package.is_symlink() or not package.is_dir():
+            raise ValueError("handoff outbox contains a forbidden entry")
+        packet_path = package / "handoff.json"
+        if not packet_path.is_file() or packet_path.is_symlink():
+            raise ValueError("handoff package is incomplete: " + package.name)
+        packet = validate_handoff_packet(read_json(packet_path), package)
+        if package.name != packet["handoff_id"]:
+            raise ValueError("handoff package directory differs from its id")
+        if packet["handoff_id"] in seen:
+            raise ValueError("duplicate handoff id in outbox")
+        seen.add(packet["handoff_id"])
+        if packet["policy_sha256"] not in catalog:
+            raise ValueError("handoff packet references unknown local continuity policy")
+        if catalog[packet["policy_sha256"]] != packet["policy"]:
+            raise ValueError("handoff packet policy differs from local policy history")
+        packets.append(packet)
+    return packets
+
+
+def incomplete_handoff_packages(worker):
+    """Return only uncommitted outbox directories that are safe to quarantine."""
+    root = worker / CONTINUITY_OUTBOX_ROOT
+    if not root.exists():
+        return []
+    if root.is_symlink() or not root.is_dir():
+        raise ValueError("handoff outbox must be a real directory")
+    packages = []
+    for package in sorted(root.iterdir(), key=lambda item: item.name.casefold()):
+        if package.is_symlink() or not package.is_dir():
+            raise ValueError("handoff outbox contains a forbidden entry")
+        packet_path = package / "handoff.json"
+        if packet_path.is_file() and not packet_path.is_symlink():
+            continue
+        for child in package.rglob("*"):
+            if child.is_symlink() or not (child.is_file() or child.is_dir()):
+                raise ValueError(
+                    "incomplete handoff contains an unsafe entry: " + package.name
+                )
+        packages.append(package)
+    return packages
+
+
+def handoff_acknowledgements(worker):
+    records = []
+    seen = set()
+    for path in continuity_record_files(worker, CONTINUITY_ACKS_ROOT):
+        record = read_json(path)
+        fields = {
+            "accepted_utc", "handoff_id", "packet_sha256", "recipient_identity_sha256",
+            "recipient_state_sha256", "recipient_task_id", "recipient_worker_id",
+            "record_sha256", "schema", "status",
+        }
+        require_exact_fields(record, fields, "handoff acknowledgement")
+        if record.get("schema") != "ai-human.handoff-acknowledgement/v1":
+            raise ValueError("unsupported handoff acknowledgement schema")
+        handoff_id = governor_safe_id(record.get("handoff_id", ""), "acknowledged handoff id")
+        if path.name != handoff_id + ".json":
+            raise ValueError("handoff acknowledgement filename differs from its id")
+        if handoff_id in seen:
+            raise ValueError("duplicate handoff acknowledgement")
+        seen.add(handoff_id)
+        if record.get("status") != "ACCEPTED":
+            raise ValueError("handoff acknowledgement status must be ACCEPTED")
+        for field in (
+            "packet_sha256", "recipient_identity_sha256", "recipient_state_sha256",
+        ):
+            if not SHA256_HEX.fullmatch(str(record.get(field, ""))):
+                raise ValueError("handoff acknowledgement hash is invalid: " + field)
+        governor_safe_id(record.get("recipient_worker_id", ""), "handoff recipient worker id")
+        governor_safe_id(record.get("recipient_task_id", ""), "handoff recipient task id")
+        parse_recorded_utc(record.get("accepted_utc"), "handoff accepted_utc")
+        if record.get("record_sha256") != governed_record_sha256(record):
+            raise ValueError("handoff acknowledgement hash mismatch")
+        records.append(record)
+    return records
+
+
+def validate_continuity_state(worker):
+    failures = []
+    root = worker / CONTINUITY_ROOT
+    if not root.exists():
+        return failures
+    if root.is_symlink() or not root.is_dir():
+        return ["continuity state root must be a real directory"]
+    allowed = {
+        "policy.json", "policies", "context", "outbox", "acknowledgements",
+        "resources", "checkpoint-required.json",
+    }
+    for path in root.iterdir():
+        if path.name not in allowed:
+            failures.append("continuity state contains a forbidden entry: " + path.name)
+        elif path.is_symlink():
+            failures.append("continuity state may not contain symbolic links: " + path.name)
+    try:
+        if not (worker / CONTINUITY_POLICY_PATH).is_file():
+            raise ValueError("continuity policy is missing")
+        continuity_policy(worker)
+        continuity_policy_catalog(worker)
+        records = context_records(worker)
+        context_checkpoint_latch(worker, records=records)
+        handoff_packets(worker)
+        handoff_acknowledgements(worker)
+    except Exception as exc:
+        failures.append("invalid continuity state: " + str(exc))
+    return failures
+
+
+def resource_policy(worker, required=True):
+    path = worker / RESOURCE_POLICY_PATH
+    if not path.is_file():
+        if required:
+            raise ValueError("resource steward is not configured")
+        return None
+    if path.is_symlink():
+        raise ValueError("resource policy may not be a symbolic link")
+    return validate_resource_policy(read_json(path))
+
+
+def resource_record_files(worker, relative_root):
+    root = worker / relative_root
+    if not root.exists():
+        return []
+    if root.is_symlink() or not root.is_dir():
+        raise ValueError(str(relative_root) + " must be a real directory")
+    paths = []
+    for path in sorted(root.iterdir(), key=lambda item: item.name.casefold()):
+        if path.is_symlink() or not path.is_file() or path.suffix.casefold() != ".json":
+            raise ValueError("resource state contains a forbidden entry: " + str(path))
+        paths.append(path)
+    return paths
+
+
+def resource_policy_catalog(worker):
+    catalog = {}
+    versions = {}
+    current = resource_policy(worker, required=False)
+    if current:
+        catalog[canonical_json_sha256(current)] = current
+    for path in resource_record_files(worker, RESOURCE_POLICIES_ROOT):
+        policy = validate_resource_policy(read_json(path))
+        digest = canonical_json_sha256(policy)
+        expected_name = (
+            f"v{policy['policy_version']:06d}-{policy['policy_id']}-{digest[:12]}.json"
+        )
+        if path.name != expected_name:
+            raise ValueError("resource policy history filename does not match its content")
+        if policy["policy_version"] in versions and versions[policy["policy_version"]] != digest:
+            raise ValueError("resource policy version is ambiguous")
+        versions[policy["policy_version"]] = digest
+        catalog[digest] = policy
+    if current:
+        required_versions = set(range(1, current["policy_version"] + 1))
+        if not required_versions.issubset(versions):
+            raise ValueError("resource policy history is incomplete")
+        if versions and max(versions) > current["policy_version"] + 1:
+            raise ValueError("resource policy history advances beyond one pending version")
+        for policy in catalog.values():
+            if policy["policy_id"] != current["policy_id"] or policy["owner"] != current["owner"]:
+                raise ValueError("resource policy history changed its identity or owner")
+    return catalog
+
+
+def resource_snapshots(worker):
+    records = []
+    prior_hash = "NONE"
+    catalog = resource_policy_catalog(worker)
+    for sequence, path in enumerate(
+        resource_record_files(worker, RESOURCE_SNAPSHOTS_ROOT), start=1
+    ):
+        record = read_json(path)
+        fields = {
+            "created_utc", "observation", "observation_sha256", "policy_sha256",
+            "prior_snapshot_sha256", "record_sha256", "schema", "sequence", "snapshot_id",
+        }
+        require_exact_fields(record, fields, "resource snapshot")
+        if record.get("schema") != "ai-human.resource-snapshot/v1":
+            raise ValueError("unsupported resource snapshot schema")
+        if record.get("sequence") != sequence:
+            raise ValueError("resource snapshot sequence is not contiguous")
+        observation = validate_resource_observation(record.get("observation"))
+        if record.get("snapshot_id") != observation["observation_id"]:
+            raise ValueError("resource snapshot id differs from its observation")
+        if path.name != f"{sequence:06d}-{record['snapshot_id']}.json":
+            raise ValueError("resource snapshot filename differs from its record")
+        if record.get("observation_sha256") != canonical_json_sha256(observation):
+            raise ValueError("resource observation hash mismatch")
+        if record.get("policy_sha256") not in catalog:
+            raise ValueError("resource snapshot references an unknown policy")
+        if record.get("prior_snapshot_sha256") != prior_hash:
+            raise ValueError("resource snapshot hash chain is broken")
+        if record.get("record_sha256") != governed_record_sha256(record):
+            raise ValueError("resource snapshot record hash mismatch")
+        parse_recorded_utc(record.get("created_utc"), "resource snapshot created_utc")
+        prior_hash = record["record_sha256"]
+        records.append(record)
+    return records
+
+
+def safe_resource_tab(policy, tab):
+    return (
+        policy["allow_browser_discard"]
+        and tab["classification"] == "PUBLIC_NON_SENSITIVE"
+        and tab["discard_supported"]
+        and tab["inactive"]
+        and (tab["opened_by_ai"] or policy["allow_tabs_not_opened_by_ai"])
+        and not any(
+            tab[field] for field in (
+                "active_download", "auth_payment_admin", "meeting", "playing_audio",
+                "unsaved_form",
+            )
+        )
+    )
+
+
+def resource_plan_decision(policy, observation):
+    browser = observation["browser"]
+    pressure = observation["pressure"]
+    candidates = []
+    if browser["status"] == "AVAILABLE":
+        for tab in browser["tabs"]:
+            if not safe_resource_tab(policy, tab):
+                continue
+            candidates.append(
+                {
+                    "action": "DISCARD_TAB",
+                    "estimated_memory_bytes": tab["estimated_memory_bytes"],
+                    "reopen_locator": (
+                        tab["reopen_locator"]
+                        if policy["retain_reopen_locator"] else "NOT_RETAINED"
+                    ),
+                    "tab_id": tab["tab_id"],
+                }
+            )
+            if len(candidates) >= policy["max_tab_candidates"]:
+                break
+    processes = observation["processes"]
+    application_review = []
+    if processes["status"] == "AVAILABLE":
+        application_review = sorted(
+            processes["items"], key=lambda item: (-item["rss_bytes"], item["pid"])
+        )[: policy["max_tab_candidates"]]
+    reasons = []
+    if pressure["status"] == "UNKNOWN":
+        decision = "DIAGNOSIS_INCOMPLETE"
+        candidates = []
+        reasons.append("Current memory pressure is UNKNOWN; no cleanup action is inferred")
+    elif pressure["level"] == "NORMAL":
+        decision = "NO_CLEANUP_NEEDED"
+        candidates = []
+        reasons.append("The host reports NORMAL current memory pressure")
+        if observation["swap"]["status"] == "AVAILABLE" and observation["swap"]["used_bytes"]:
+            reasons.append("Non-zero swap alone does not prove current pressure")
+    elif candidates:
+        decision = "CLEANUP_CANDIDATES"
+        reasons.append("The host reports pressure and every proposed tab passes the safe-discard policy")
+    else:
+        decision = "HUMAN_REVIEW_REQUIRED"
+        reasons.append("The host reports pressure but no browser tab passes every safe-discard condition")
+    if browser["status"] == "UNKNOWN":
+        reasons.append("Browser resource data is UNKNOWN; no tab is proposed")
+    return {
+        "application_action": "HUMAN_REVIEW_ONLY",
+        "application_review": application_review,
+        "decision": decision,
+        "execution": "APPROVED_HOST_ADAPTER_REQUIRED" if candidates else "NONE",
+        "reasons": reasons,
+        "tab_candidates": candidates,
+    }
+
+
+def resource_plan_records(worker, snapshots=None):
+    snapshots = resource_snapshots(worker) if snapshots is None else snapshots
+    snapshot_by_id = {item["snapshot_id"]: item for item in snapshots}
+    catalog = resource_policy_catalog(worker)
+    records = []
+    prior_hash = "NONE"
+    for sequence, path in enumerate(
+        resource_record_files(worker, RESOURCE_PLANS_ROOT), start=1
+    ):
+        record = read_json(path)
+        fields = {
+            "application_action", "application_review", "created_utc", "decision",
+            "execution", "plan_id", "policy_sha256", "prior_plan_sha256", "reasons",
+            "record_sha256", "schema", "sequence", "snapshot_id", "snapshot_sha256",
+            "tab_candidates",
+        }
+        require_exact_fields(record, fields, "resource plan")
+        if record.get("schema") != "ai-human.resource-plan/v1":
+            raise ValueError("unsupported resource plan schema")
+        if record.get("sequence") != sequence:
+            raise ValueError("resource plan sequence is not contiguous")
+        plan_id = governor_safe_id(record.get("plan_id", ""), "resource plan id")
+        if path.name != f"{sequence:06d}-{plan_id}.json":
+            raise ValueError("resource plan filename differs from its record")
+        snapshot = snapshot_by_id.get(record.get("snapshot_id"))
+        if not snapshot or snapshot["record_sha256"] != record.get("snapshot_sha256"):
+            raise ValueError("resource plan snapshot reference is invalid")
+        policy = catalog.get(record.get("policy_sha256"))
+        if not policy:
+            raise ValueError("resource plan references an unknown policy")
+        if record.get("prior_plan_sha256") != prior_hash:
+            raise ValueError("resource plan hash chain is broken")
+        if record.get("record_sha256") != governed_record_sha256(record):
+            raise ValueError("resource plan record hash mismatch")
+        replay = resource_plan_decision(policy, snapshot["observation"])
+        for field in (
+            "application_action", "application_review", "decision", "execution", "reasons",
+            "tab_candidates",
+        ):
+            if record.get(field) != replay[field]:
+                raise ValueError("resource plan decision replay mismatch: " + field)
+        parse_recorded_utc(record.get("created_utc"), "resource plan created_utc")
+        prior_hash = record["record_sha256"]
+        records.append(record)
+    return records
+
+
+def resource_outcome_records(worker, plans=None, snapshots=None):
+    snapshots = resource_snapshots(worker) if snapshots is None else snapshots
+    plans = resource_plan_records(worker, snapshots) if plans is None else plans
+    plan_by_id = {item["plan_id"]: item for item in plans}
+    snapshot_by_id = {item["snapshot_id"]: item for item in snapshots}
+    records = []
+    seen = set()
+    prior_hash = "NONE"
+    for sequence, path in enumerate(
+        resource_record_files(worker, RESOURCE_OUTCOMES_ROOT), start=1
+    ):
+        record = read_json(path)
+        fields = {
+            "after_snapshot_id", "created_utc", "evidence", "plan_id",
+            "plan_record_sha256", "prior_outcome_sha256", "record_sha256", "schema",
+            "sequence", "status",
+        }
+        require_exact_fields(record, fields, "resource outcome")
+        if record.get("schema") != "ai-human.resource-outcome/v1":
+            raise ValueError("unsupported resource outcome schema")
+        if record.get("sequence") != sequence:
+            raise ValueError("resource outcome sequence is not contiguous")
+        plan_id = governor_safe_id(record.get("plan_id", ""), "resource outcome plan id")
+        if path.name != f"{sequence:06d}-{plan_id}.json":
+            raise ValueError("resource outcome filename differs from its record")
+        if plan_id in seen:
+            raise ValueError("resource plan has more than one outcome")
+        seen.add(plan_id)
+        plan = plan_by_id.get(plan_id)
+        if not plan or plan["record_sha256"] != record.get("plan_record_sha256"):
+            raise ValueError("resource outcome plan reference is invalid")
+        if record.get("status") not in RESOURCE_OUTCOME_STATUSES:
+            raise ValueError("resource outcome status is invalid")
+        if record["status"].startswith("EXECUTED_") and plan["decision"] != "CLEANUP_CANDIDATES":
+            raise ValueError("resource outcome claims execution without cleanup candidates")
+        after_id = record.get("after_snapshot_id")
+        if record["status"].startswith("EXECUTED_"):
+            if after_id not in snapshot_by_id:
+                raise ValueError("resource outcome after snapshot is missing")
+            before = snapshot_by_id[plan["snapshot_id"]]
+            after = snapshot_by_id[after_id]
+            if after["sequence"] <= before["sequence"]:
+                raise ValueError("resource outcome after snapshot is not later than its baseline")
+            improved = resource_measurably_improved(
+                before["observation"], after["observation"]
+            )
+            if record["status"] == "EXECUTED_IMPROVED" and not improved:
+                raise ValueError("resource outcome falsely claims measurable improvement")
+            if record["status"] == "EXECUTED_NO_IMPROVEMENT" and improved:
+                raise ValueError("resource outcome falsely claims no improvement")
+        elif after_id != "NONE":
+            raise ValueError("unexecuted resource outcome has an after snapshot")
+        if record.get("prior_outcome_sha256") != prior_hash:
+            raise ValueError("resource outcome hash chain is broken")
+        if record.get("record_sha256") != governed_record_sha256(record):
+            raise ValueError("resource outcome record hash mismatch")
+        if not isinstance(record.get("evidence"), str):
+            raise ValueError("resource outcome evidence must be text")
+        bounded_clean(record["evidence"], "resource outcome evidence", 2000)
+        parse_recorded_utc(record.get("created_utc"), "resource outcome created_utc")
+        prior_hash = record["record_sha256"]
+        records.append(record)
+    return records
+
+
+def validate_resource_state(worker):
+    failures = []
+    root = worker / RESOURCE_ROOT
+    if not root.exists():
+        return failures
+    if root.is_symlink() or not root.is_dir():
+        return ["resource state root must be a real directory"]
+    allowed = {"policy.json", "policies", "snapshots", "plans", "outcomes"}
+    for path in root.iterdir():
+        if path.name not in allowed:
+            failures.append("resource state contains a forbidden entry: " + path.name)
+        elif path.is_symlink():
+            failures.append("resource state may not contain symbolic links: " + path.name)
+    try:
+        if not (worker / RESOURCE_POLICY_PATH).is_file():
+            raise ValueError("resource policy is missing")
+        resource_policy(worker)
+        resource_policy_catalog(worker)
+        snapshots = resource_snapshots(worker)
+        plans = resource_plan_records(worker, snapshots)
+        resource_outcome_records(worker, plans, snapshots)
+    except Exception as exc:
+        failures.append("invalid resource state: " + str(exc))
+    return failures
+
+
 def validate_gate_profile(data, expected=None):
     """Validate one confirmed, exact-scope local Gate 0 profile."""
     if not isinstance(data, dict):
@@ -1544,7 +2726,8 @@ def improvement_task_prompt(config):
         + "Use only these approved local source categories: "
         + ", ".join(config["approved_sources"]) + ". Read their current configuration from "
         ".ai-human/improvement/config.json. Acquire the exclusive lifecycle session lease and keep "
-        "the returned expected-state hash current. Keep independently executed items at 25 or fewer. "
+        "the returned expected-state hash current. Use the configured Work Governor for independently "
+        "executed items; a legacy unconfigured worker falls back to its installed hard ceiling. "
         "When research is enabled, create an ai-human.research-batch/v1 file containing only "
         "ai-human.research-receipt/v2 records, then import it with improvement-research-import. "
         "Run improvement-run in SCHEDULED mode with now-local exactly equal to the verified next run "
@@ -2131,6 +3314,23 @@ def controlled_state_paths(worker):
     governor_root = worker / GOVERNOR_ROOT
     if governor_root.is_dir():
         paths.extend(path for path in governor_root.rglob("*.json") if path.is_file())
+    continuity_root = worker / CONTINUITY_ROOT
+    if continuity_root.is_dir():
+        for path in continuity_root.rglob("*"):
+            if not path.is_file():
+                continue
+            relative = path.relative_to(continuity_root)
+            if relative.parts[:1] == ("outbox",) and len(relative.parts) >= 2:
+                package = continuity_root / "outbox" / relative.parts[1]
+                packet_path = package / "handoff.json"
+                # A handoff becomes controlled state only when its signed envelope is
+                # atomically committed. Partial copies remain recoverable after a crash.
+                if not packet_path.is_file() or packet_path.is_symlink():
+                    continue
+            paths.append(path)
+    resource_root = worker / RESOURCE_ROOT
+    if resource_root.is_dir():
+        paths.extend(path for path in resource_root.rglob("*.json") if path.is_file())
     return sorted(paths, key=lambda path: path.relative_to(worker).as_posix())
 
 
@@ -2597,6 +3797,1062 @@ def governor_show(args):
     print("- hard safety ceiling: " + str(policy["hard_ceiling"]))
     print("- latest state: " + (plans[-1]["governor_state"] if plans else "NOT YET PLANNED"))
     print("- outstanding plan: " + (outstanding[0] if outstanding else "NONE"))
+    print("- recorded outcomes: " + str(len(outcomes)))
+
+
+def continuity_path(worker, relative, label):
+    relative = safe_relative(relative, label)
+    key = portable_key(relative)
+    prefix = portable_key(CONTINUITY_ROOT) + "/"
+    if not key.startswith(prefix):
+        raise ValueError(label + " is outside continuity state")
+    return worker_target(worker, relative, label)
+
+
+def installed_worker_id(worker):
+    value = install_metadata(worker).get("worker_id")
+    if not value:
+        raise ValueError("worker id is not configured; configure the control plane first")
+    return governor_safe_id(value, "installed worker id")
+
+
+def write_continuity_policy_history(worker, policy):
+    digest = canonical_json_sha256(policy)
+    filename = (
+        f"v{policy['policy_version']:06d}-{policy['policy_id']}-{digest[:12]}.json"
+    )
+    path = continuity_path(
+        worker, CONTINUITY_POLICIES_ROOT / filename, "continuity policy history target"
+    )
+    if path.exists():
+        if not path.is_file() or read_json(path) != policy:
+            raise ValueError("continuity policy history target contains different data")
+        return path
+    path.parent.mkdir(parents=True, exist_ok=True)
+    atomic_json(path, policy)
+    return path
+
+
+def continuity_configure(args):
+    worker = safe_worker(args.worker)
+    lease, _state_hash = require_lease(
+        worker, args.session_id, args.expected_state_hash
+    )
+    proposed = validate_continuity_policy(
+        read_governor_input(args.policy, "continuity policy source")
+    )
+    if proposed["owner"] != lease["actor"]:
+        raise ValueError("continuity policy owner must match the active lease actor")
+    current = continuity_policy(worker, required=False)
+    if current:
+        failures = validate_continuity_state(worker)
+        if failures:
+            raise ValueError("cannot replace invalid continuity state: " + "; ".join(failures))
+        if proposed["policy_id"] != current["policy_id"]:
+            raise ValueError("continuity policy id cannot change in place")
+        if proposed["owner"] != current["owner"]:
+            raise ValueError("continuity policy owner cannot change in place")
+        if proposed["policy_version"] != current["policy_version"] + 1:
+            raise ValueError("continuity policy version must advance by exactly one")
+        if proposed["approval_reference"] == current["approval_reference"]:
+            raise ValueError("a new continuity policy version needs a new approval reference")
+        for existing in continuity_policy_catalog(worker).values():
+            if (
+                existing["policy_version"] == proposed["policy_version"]
+                and existing != proposed
+            ):
+                raise ValueError("a different pending continuity policy uses that version")
+        write_continuity_policy_history(worker, current)
+    elif proposed["policy_version"] != 1:
+        raise ValueError("the first continuity policy version must be 1")
+    history_path = write_continuity_policy_history(worker, proposed)
+    policy_path = continuity_path(
+        worker, CONTINUITY_POLICY_PATH, "continuity policy target"
+    )
+    policy_path.parent.mkdir(parents=True, exist_ok=True)
+    atomic_json(policy_path, proposed)
+    updated = refresh_lease_state(worker, lease)
+    print("AI-HUMAN CONTINUITY CONFIGURATION: PASS")
+    print("- policy: " + proposed["policy_id"])
+    print("- policy version: " + str(proposed["policy_version"]))
+    print(
+        "- context soft limit used percent: "
+        + str(proposed["context_soft_limit_used_percent"])
+    )
+    print("- history: " + str(history_path))
+    print("- new expected-state hash: " + updated["state_hash"])
+
+
+def context_check(args):
+    worker = safe_worker(args.worker)
+    lease, _state_hash = require_lease(
+        worker, args.session_id, args.expected_state_hash
+    )
+    failures = validate_continuity_state(worker)
+    if failures:
+        raise ValueError("cannot check invalid continuity state: " + "; ".join(failures))
+    existing_latch = context_checkpoint_latch(worker)
+    if existing_latch:
+        raise ValueError(
+            "context checkpoint is already required by observation "
+            + existing_latch["observation_id"] + "; create and consume its handoff"
+        )
+    policy = continuity_policy(worker)
+    observation = validate_context_observation(
+        read_governor_input(args.observation, "context observation source")
+    )
+    observed = parse_recorded_utc(
+        observation["signal"]["observed_utc"], "context signal observed_utc"
+    )
+    if abs(datetime.datetime.now(datetime.timezone.utc) - observed) > datetime.timedelta(
+        seconds=policy["context_signal_max_age_seconds"]
+    ):
+        raise ValueError("context signal is outside the owner-configured freshness window")
+    worker_id = installed_worker_id(worker)
+    if observation["worker_id"] != worker_id:
+        raise ValueError("context observation targets another worker")
+    current_task = live_task_id(worker)
+    if not current_task:
+        raise ValueError("context guard requires one live task")
+    if observation["task_id"] != current_task:
+        raise ValueError("context observation targets another or stale task")
+    records = context_records(worker)
+    if any(
+        record["observation"]["observation_id"] == observation["observation_id"]
+        for record in records
+    ):
+        raise ValueError("context observation id was already recorded")
+    decision = context_decision(policy, observation)
+    sequence = len(records) + 1
+    record = {
+        **decision,
+        "created_utc": now_utc(),
+        "observation": observation,
+        "observation_sha256": canonical_json_sha256(observation),
+        "policy_sha256": canonical_json_sha256(policy),
+        "prior_record_sha256": records[-1]["record_sha256"] if records else "NONE",
+        "schema": "ai-human.context-decision/v1",
+        "sequence": sequence,
+    }
+    record["record_sha256"] = governed_record_sha256(record)
+    target = continuity_path(
+        worker,
+        CONTEXT_OBSERVATIONS_ROOT
+        / f"{sequence:06d}-{observation['observation_id']}.json",
+        "context decision target",
+    )
+    target.parent.mkdir(parents=True, exist_ok=True)
+    atomic_json(target, record)
+    if record["directive"] != "CONTINUE":
+        latch = {
+            "context_record_sha256": record["record_sha256"],
+            "created_utc": now_utc(),
+            "directive": record["directive"],
+            "observation_id": observation["observation_id"],
+            "schema": "ai-human.context-checkpoint-required/v1",
+            "task_id": observation["task_id"],
+            "worker_id": observation["worker_id"],
+        }
+        latch["record_sha256"] = governed_record_sha256(latch)
+        atomic_json(
+            continuity_path(
+                worker, CONTEXT_CHECKPOINT_LATCH_PATH, "context checkpoint latch target"
+            ),
+            latch,
+        )
+    updated = refresh_lease_state(worker, lease)
+    print("AI-HUMAN CONTEXT CHECK: PASS")
+    print("- context status: " + record["context_status"])
+    if record["context_status"] == "AVAILABLE":
+        print("- context used percent: " + str(record["context_used_percent"]))
+    print("- directive: " + record["directive"])
+    print("- accept new work: " + ("YES" if record["accept_new_work"] else "NO"))
+    print("- reason: " + record["decision_reason"])
+    print("- receipt: " + str(target))
+    print("- new expected-state hash: " + updated["state_hash"])
+
+
+def continuity_show(args):
+    worker = safe_worker(args.worker)
+    policy = continuity_policy(worker, required=False)
+    print("AI-HUMAN CONTINUITY GUARD")
+    if not policy:
+        print("- status: UNCONFIGURED")
+        return
+    failures = validate_continuity_state(worker)
+    if failures:
+        raise ValueError("invalid continuity state: " + "; ".join(failures))
+    records = context_records(worker)
+    print("- status: CONFIGURED")
+    print("- worker id: " + installed_worker_id(worker))
+    print("- policy version: " + str(policy["policy_version"]))
+    print(
+        "- context soft limit used percent: "
+        + str(policy["context_soft_limit_used_percent"])
+    )
+    if records:
+        print("- latest context status: " + records[-1]["context_status"])
+        print("- latest directive: " + records[-1]["directive"])
+    else:
+        print("- latest context status: NOT YET OBSERVED")
+
+
+def continuity_recover(args):
+    """Quarantine crash-left partial handoff copies without touching their sources."""
+    worker = safe_worker(args.worker)
+    lease, _state_hash = require_lease(
+        worker, args.session_id, args.expected_state_hash
+    )
+    continuity_policy(worker)
+    reason = bounded_clean(args.reason, "continuity recovery reason", 1000)
+    packages = incomplete_handoff_packages(worker)
+    if not packages:
+        raise ValueError("no incomplete handoff package is available to recover")
+    if len(packages) > BATCH_CAP:
+        raise ValueError("incomplete handoff recovery exceeds the hard safety ceiling")
+    backup_root = worker / ".ai-human/backups/continuity-recovery" / now_utc()
+    suffix = 2
+    while backup_root.exists():
+        backup_root = backup_root.with_name(backup_root.name + "-" + str(suffix))
+        suffix += 1
+    moved = []
+    records = []
+    try:
+        backup_root.mkdir(parents=True, exist_ok=False)
+        for package in packages:
+            files = []
+            total_size = 0
+            for path in sorted(package.rglob("*")):
+                if path.is_file():
+                    size = path.stat().st_size
+                    total_size += size
+                    files.append(
+                        {
+                            "path": path.relative_to(package).as_posix(),
+                            "sha256": sha256(path),
+                            "size_bytes": size,
+                        }
+                    )
+            if len(files) > BATCH_CAP or total_size > MAX_ARCHIVE_UNCOMPRESSED_BYTES:
+                raise ValueError(
+                    "incomplete handoff is too large for bounded recovery: " + package.name
+                )
+            target = backup_root / package.name
+            os.replace(package, target)
+            moved.append((package, target))
+            records.append(
+                {
+                    "backup_path": target.relative_to(worker).as_posix(),
+                    "files": files,
+                    "handoff_id": governor_safe_id(
+                        package.name, "incomplete handoff id"
+                    ),
+                    "source_path": package.relative_to(worker).as_posix(),
+                }
+            )
+        failures = validate_continuity_state(worker)
+        if failures:
+            raise ValueError(
+                "continuity recovery left invalid state: " + "; ".join(failures)
+            )
+        updated = refresh_lease_state(worker, lease)
+    except Exception:
+        for source, target in reversed(moved):
+            if target.exists() and not source.exists():
+                source.parent.mkdir(parents=True, exist_ok=True)
+                os.replace(target, source)
+        if backup_root.exists():
+            shutil.rmtree(backup_root)
+        atomic_json(lease_file(worker), lease)
+        raise
+    receipt = unique_receipt(worker, "continuity-recovery")
+    atomic_json(
+        receipt,
+        {
+            "packages": records,
+            "reason": reason,
+            "recovered_utc": now_utc(),
+            "schema": "ai-human.continuity-recovery/v1",
+            "source_files_preserved": True,
+            "validator": "PASS",
+        },
+    )
+    print("AI-HUMAN CONTINUITY RECOVERY: PASS")
+    print("- incomplete packages quarantined: " + str(len(records)))
+    print("- source files preserved: YES")
+    print("- backup: " + str(backup_root))
+    print("- receipt: " + str(receipt))
+    print("- new expected-state hash: " + updated["state_hash"])
+
+
+def handoff_create(args):
+    worker = safe_worker(args.worker)
+    lease, _state_hash = require_lease(
+        worker, args.session_id, args.expected_state_hash
+    )
+    failures = validate_continuity_state(worker)
+    if failures:
+        raise ValueError("cannot create handoff from invalid continuity state: " + "; ".join(failures))
+    policy = continuity_policy(worker)
+    request = validate_handoff_request(
+        read_governor_input(args.request, "handoff request source")
+    )
+    sender_worker_id = installed_worker_id(worker)
+    sender_task_id = live_task_id(worker)
+    if not sender_task_id or request["sender_task_id"] != sender_task_id:
+        raise ValueError("handoff sender task is not the current live task")
+    if request["active_gates"] != active_gate_ids(worker):
+        raise ValueError("handoff active gates differ from the worker gate profile")
+    created_utc = now_utc()
+    created = parse_recorded_utc(created_utc, "handoff created_utc")
+    expires = parse_recorded_utc(request["expires_utc"], "handoff expires_utc")
+    if expires <= created:
+        raise ValueError("handoff is already expired")
+    if expires - created > datetime.timedelta(minutes=policy["handoff_max_age_minutes"]):
+        raise ValueError("handoff expiry exceeds the owner policy maximum")
+    checkpoint_latch = context_checkpoint_latch(worker)
+    if request["purpose"] == "SESSION_CONTINUATION":
+        if not checkpoint_latch:
+            raise ValueError("session continuation requires a context checkpoint latch")
+        if request["intended_recipient_worker_id"] != sender_worker_id:
+            raise ValueError("session continuation must target the same worker")
+        if request["intended_recipient_task_id"] != sender_task_id:
+            raise ValueError("session continuation must target the same task")
+        if request["intended_recipient_identity_sha256"] != worker_identity_sha256(worker):
+            raise ValueError("session continuation recipient identity is stale")
+        if request["intended_recipient_state_sha256"] != resume_state_sha256(worker):
+            raise ValueError("session continuation recipient state is stale")
+        if (
+            checkpoint_latch["worker_id"] != sender_worker_id
+            or checkpoint_latch["task_id"] != sender_task_id
+        ):
+            raise ValueError("context checkpoint latch targets another worker or task")
+        checkpoint_latch_sha = checkpoint_latch["record_sha256"]
+    else:
+        checkpoint_latch_sha = "NONE"
+    package = continuity_path(
+        worker, CONTINUITY_OUTBOX_ROOT / request["handoff_id"],
+        "handoff package target",
+    )
+    if package.exists():
+        raise ValueError("handoff id already exists in the outbox")
+    required_files = []
+    package_created = False
+    try:
+        package.mkdir(parents=True, exist_ok=False)
+        package_created = True
+        total_size = 0
+        for source_record in request["required_files"]:
+            relative = safe_relative(source_record["path"], "handoff source file")
+            source = path_without_symlinks(worker, relative, "handoff source file")
+            if not source.is_file() or source.stat().st_size == 0:
+                raise ValueError("handoff source file is missing or empty: " + relative.as_posix())
+            if sha256(source) != source_record["sha256"]:
+                raise ValueError("handoff source file hash mismatch: " + relative.as_posix())
+            verify_handoff_file_schema(source, source_record["schema"])
+            total_size += source.stat().st_size
+            if total_size > MAX_ARCHIVE_UNCOMPRESSED_BYTES:
+                raise ValueError("handoff source files exceed the safe payload size")
+            bundle = Path("attachments") / relative
+            target = package / bundle
+            atomic_copy_file(source, target)
+            required_files.append(
+                {
+                    "bundle_path": bundle.as_posix(),
+                    "path": relative.as_posix(),
+                    "schema": source_record["schema"],
+                    "sha256": source_record["sha256"],
+                    "size_bytes": source.stat().st_size,
+                }
+            )
+        packet = {
+            **{field: request[field] for field in HANDOFF_REQUEST_FIELDS if field != "schema"},
+            "checkpoint_latch_sha256": checkpoint_latch_sha,
+            "created_utc": created_utc,
+            "delivery_state": "QUEUED",
+            "packet_sha256": "",
+            "policy": policy,
+            "policy_sha256": canonical_json_sha256(policy),
+            "required_files": required_files,
+            "result_location": "NOT_RECORDED",
+            "schema": "ai-human.handoff-packet/v1",
+            "sender_identity_sha256": worker_identity_sha256(worker),
+            "sender_state_sha256": resume_state_sha256(worker),
+            "sender_worker_id": sender_worker_id,
+        }
+        packet["packet_sha256"] = handoff_packet_sha256(packet)
+        packet_path = package / "handoff.json"
+        atomic_json(packet_path, packet)
+        validate_handoff_packet(packet, package, packet["packet_sha256"])
+        updated = refresh_lease_state(worker, lease)
+        ok, failures = validate_worker(worker, quiet=True)
+        if not ok:
+            raise ValueError("handoff checkpoint validation failed: " + "; ".join(failures))
+    except Exception:
+        if package_created and package.exists():
+            shutil.rmtree(package)
+        refresh_lease_state(worker, lease)
+        raise
+    lease_released = request["purpose"] == "SESSION_CONTINUATION"
+    if lease_released:
+        receipt = unique_receipt(worker, "session-handoff-release")
+        atomic_json(
+            receipt,
+            {
+                "handoff_id": packet["handoff_id"],
+                "packet_sha256": packet["packet_sha256"],
+                "released_utc": now_utc(),
+                "schema": "ai-human.session-handoff-release/v1",
+                "session_id": args.session_id,
+                "state_hash": updated["state_hash"],
+                "validator": "PASS",
+            },
+        )
+        lease_file(worker).unlink()
+    print("AI-HUMAN HANDOFF CREATE: PASS")
+    print("- handoff id: " + packet["handoff_id"])
+    print("- purpose: " + packet["purpose"])
+    print("- delivery state: QUEUED")
+    print("- packet: " + str(packet_path))
+    print("- packet SHA-256: " + packet["packet_sha256"])
+    print("- lease released: " + ("YES" if lease_released else "NO"))
+    if lease_released:
+        print("- final-state hash: " + updated["state_hash"])
+    else:
+        print("- new expected-state hash: " + updated["state_hash"])
+
+
+def handoff_consume(args):
+    worker = safe_worker(args.worker)
+    lease, _state_hash = require_lease(
+        worker, args.session_id, args.expected_state_hash
+    )
+    failures = validate_continuity_state(worker)
+    if failures:
+        raise ValueError("cannot consume handoff into invalid continuity state: " + "; ".join(failures))
+    packet_path = Path(args.packet).expanduser().resolve()
+    if not packet_path.is_file() or packet_path.is_symlink():
+        raise ValueError("handoff packet is not a regular file")
+    packet = validate_handoff_packet(
+        read_json(packet_path), packet_path.parent, args.expected_packet_sha256
+    )
+    recipient_worker_id = installed_worker_id(worker)
+    if packet["intended_recipient_worker_id"] != recipient_worker_id:
+        raise ValueError("handoff packet targets another worker")
+    recipient_identity = worker_identity_sha256(worker)
+    if packet["intended_recipient_identity_sha256"] != recipient_identity:
+        raise ValueError("handoff recipient identity fingerprint mismatch")
+    recipient_state = resume_state_sha256(worker)
+    if packet["intended_recipient_state_sha256"] != recipient_state:
+        raise ValueError("handoff recipient state fingerprint mismatch")
+    recipient_task = live_task_id(worker)
+    if not recipient_task or packet["intended_recipient_task_id"] != recipient_task:
+        raise ValueError("handoff packet targets another or stale recipient task")
+    acknowledgement = continuity_path(
+        worker, CONTINUITY_ACKS_ROOT / (packet["handoff_id"] + ".json"),
+        "handoff acknowledgement target",
+    )
+    latch = context_checkpoint_latch(worker)
+    if acknowledgement.exists():
+        acknowledgement_record = read_json(acknowledgement)
+        expected_ack = {
+            "handoff_id": packet["handoff_id"],
+            "packet_sha256": packet["packet_sha256"],
+            "recipient_identity_sha256": recipient_identity,
+            "recipient_state_sha256": recipient_state,
+            "recipient_task_id": recipient_task,
+            "recipient_worker_id": recipient_worker_id,
+            "schema": "ai-human.handoff-acknowledgement/v1",
+            "status": "ACCEPTED",
+        }
+        for field, value in expected_ack.items():
+            if acknowledgement_record.get(field) != value:
+                raise ValueError(
+                    "existing handoff acknowledgement differs from the packet: " + field
+                )
+        accepted = parse_recorded_utc(
+            acknowledgement_record.get("accepted_utc"), "handoff accepted_utc"
+        )
+        created = parse_recorded_utc(packet["created_utc"], "handoff created_utc")
+        expires = parse_recorded_utc(packet["expires_utc"], "handoff expires_utc")
+        if accepted < created or accepted > expires:
+            raise ValueError("existing handoff acknowledgement was not timely")
+        if (
+            packet["purpose"] != "SESSION_CONTINUATION"
+            or not latch
+            or latch["record_sha256"] != packet["checkpoint_latch_sha256"]
+        ):
+            raise ValueError("handoff was already acknowledged")
+        (worker / CONTEXT_CHECKPOINT_LATCH_PATH).unlink()
+        try:
+            updated = refresh_lease_state(worker, lease)
+            ok, failures = validate_worker(worker, quiet=True)
+            if not ok:
+                raise ValueError(
+                    "handoff acknowledgement recovery validation failed: "
+                    + "; ".join(failures)
+                )
+        except Exception:
+            atomic_json(worker / CONTEXT_CHECKPOINT_LATCH_PATH, latch)
+            atomic_json(lease_file(worker), lease)
+            raise
+        print("AI-HUMAN HANDOFF CONSUME: RECOVERED")
+        print("- handoff id: " + packet["handoff_id"])
+        print("- acknowledgement preserved: YES")
+        print("- checkpoint latch cleared: YES")
+        print("- new expected-state hash: " + updated["state_hash"])
+        return
+    if parse_recorded_utc(packet["expires_utc"], "handoff expires_utc") <= datetime.datetime.now(
+        datetime.timezone.utc
+    ):
+        raise ValueError("handoff packet is expired")
+    if packet["purpose"] == "SESSION_CONTINUATION":
+        if packet["sender_worker_id"] != recipient_worker_id:
+            raise ValueError("session continuation sender and recipient differ")
+        if not latch or latch["record_sha256"] != packet["checkpoint_latch_sha256"]:
+            raise ValueError("session continuation does not match the active checkpoint latch")
+    elif latch:
+        raise ValueError("recipient must finish its context checkpoint before accepting new work")
+    record = {
+        "accepted_utc": now_utc(),
+        "handoff_id": packet["handoff_id"],
+        "packet_sha256": packet["packet_sha256"],
+        "recipient_identity_sha256": recipient_identity,
+        "recipient_state_sha256": recipient_state,
+        "recipient_task_id": recipient_task,
+        "recipient_worker_id": recipient_worker_id,
+        "schema": "ai-human.handoff-acknowledgement/v1",
+        "status": "ACCEPTED",
+    }
+    record["record_sha256"] = governed_record_sha256(record)
+    acknowledgement.parent.mkdir(parents=True, exist_ok=True)
+    latch_backup = latch.copy() if latch else None
+    try:
+        atomic_json(acknowledgement, record)
+        if latch:
+            (worker / CONTEXT_CHECKPOINT_LATCH_PATH).unlink()
+        updated = refresh_lease_state(worker, lease)
+        ok, failures = validate_worker(worker, quiet=True)
+        if not ok:
+            raise ValueError("handoff acceptance validation failed: " + "; ".join(failures))
+    except Exception:
+        if acknowledgement.exists():
+            acknowledgement.unlink()
+        if latch_backup:
+            atomic_json(worker / CONTEXT_CHECKPOINT_LATCH_PATH, latch_backup)
+        refresh_lease_state(worker, lease)
+        raise
+    print("AI-HUMAN HANDOFF CONSUME: PASS")
+    print("- handoff id: " + packet["handoff_id"])
+    print("- delivery state: ACCEPTED")
+    print("- worker id: " + recipient_worker_id)
+    print("- task id: " + recipient_task)
+    print("- next action: " + packet["next_action"])
+    print("- acknowledgement: " + str(acknowledgement))
+    print("- new expected-state hash: " + updated["state_hash"])
+
+
+def resource_path(worker, relative, label):
+    relative = safe_relative(relative, label)
+    key = portable_key(relative)
+    prefix = portable_key(RESOURCE_ROOT) + "/"
+    if not key.startswith(prefix):
+        raise ValueError(label + " is outside resource state")
+    return worker_target(worker, relative, label)
+
+
+def write_resource_policy_history(worker, policy):
+    digest = canonical_json_sha256(policy)
+    filename = (
+        f"v{policy['policy_version']:06d}-{policy['policy_id']}-{digest[:12]}.json"
+    )
+    path = resource_path(
+        worker, RESOURCE_POLICIES_ROOT / filename, "resource policy history target"
+    )
+    if path.exists():
+        if not path.is_file() or read_json(path) != policy:
+            raise ValueError("resource policy history target contains different data")
+        return path
+    path.parent.mkdir(parents=True, exist_ok=True)
+    atomic_json(path, policy)
+    return path
+
+
+def resource_configure(args):
+    worker = safe_worker(args.worker)
+    lease, _state_hash = require_lease(
+        worker, args.session_id, args.expected_state_hash
+    )
+    proposed = validate_resource_policy(
+        read_governor_input(args.policy, "resource policy source")
+    )
+    if proposed["owner"] != lease["actor"]:
+        raise ValueError("resource policy owner must match the active lease actor")
+    worker_cap = installed_worker_batch_cap(worker)
+    if proposed["max_tab_candidates"] > worker_cap:
+        raise ValueError(
+            "resource tab candidate limit cannot exceed the worker policy cap of "
+            + str(worker_cap)
+        )
+    current = resource_policy(worker, required=False)
+    if current:
+        failures = validate_resource_state(worker)
+        if failures:
+            raise ValueError("cannot replace invalid resource state: " + "; ".join(failures))
+        if proposed["policy_id"] != current["policy_id"]:
+            raise ValueError("resource policy id cannot change in place")
+        if proposed["owner"] != current["owner"]:
+            raise ValueError("resource policy owner cannot change in place")
+        if proposed["policy_version"] != current["policy_version"] + 1:
+            raise ValueError("resource policy version must advance by exactly one")
+        if proposed["approval_reference"] == current["approval_reference"]:
+            raise ValueError("a new resource policy version needs a new approval reference")
+        for existing in resource_policy_catalog(worker).values():
+            if (
+                existing["policy_version"] == proposed["policy_version"]
+                and existing != proposed
+            ):
+                raise ValueError("a different pending resource policy uses that version")
+        write_resource_policy_history(worker, current)
+    elif proposed["policy_version"] != 1:
+        raise ValueError("the first resource policy version must be 1")
+    history_path = write_resource_policy_history(worker, proposed)
+    policy_path = resource_path(worker, RESOURCE_POLICY_PATH, "resource policy target")
+    policy_path.parent.mkdir(parents=True, exist_ok=True)
+    atomic_json(policy_path, proposed)
+    updated = refresh_lease_state(worker, lease)
+    print("AI-HUMAN RESOURCE STEWARD CONFIGURATION: PASS")
+    print("- policy: " + proposed["policy_id"])
+    print("- policy version: " + str(proposed["policy_version"]))
+    print("- browser discard allowed: " + ("YES" if proposed["allow_browser_discard"] else "NO"))
+    print("- force quit allowed: NO")
+    print("- history: " + str(history_path))
+    print("- new expected-state hash: " + updated["state_hash"])
+
+
+def run_resource_probe(command):
+    try:
+        result = subprocess.run(
+            command, text=True, capture_output=True, check=False, timeout=5
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return result.stdout.strip() if result.returncode == 0 and result.stdout.strip() else None
+
+
+def process_observation_for_host(system):
+    if system == "Windows":
+        output = run_resource_probe(["tasklist", "/FO", "CSV", "/NH"])
+        if not output:
+            return {"reason": "Windows process table was unavailable", "status": "UNKNOWN"}
+        items = []
+        for row in csv.reader(output.splitlines()):
+            if len(row) < 5:
+                continue
+            try:
+                pid = int(row[1])
+                rss = int(re.sub(r"[^0-9]", "", row[4]) or "0") * 1024
+            except ValueError:
+                continue
+            items.append({"name": row[0], "pid": pid, "rss_bytes": rss})
+    else:
+        output = run_resource_probe(["ps", "-axo", "pid=,rss=,comm="])
+        if not output:
+            return {"reason": "POSIX process table was unavailable", "status": "UNKNOWN"}
+        items = []
+        for line in output.splitlines():
+            parts = line.strip().split(None, 2)
+            if len(parts) != 3:
+                continue
+            try:
+                items.append(
+                    {"name": parts[2], "pid": int(parts[0]), "rss_bytes": int(parts[1]) * 1024}
+                )
+            except ValueError:
+                continue
+    items = sorted(items, key=lambda item: (-item["rss_bytes"], item["pid"]))[:BATCH_CAP]
+    return {"items": items, "source": "HOST_PROCESS_TABLE", "status": "AVAILABLE"}
+
+
+def byte_value(number, unit):
+    multipliers = {"K": 1024, "M": 1024 ** 2, "G": 1024 ** 3, "T": 1024 ** 4}
+    return int(decimal.Decimal(number) * multipliers[unit.upper()])
+
+
+def mac_resource_memory_and_swap():
+    total_text = run_resource_probe(["sysctl", "-n", "hw.memsize"])
+    pressure_text = run_resource_probe(["memory_pressure", "-Q"])
+    if total_text and pressure_text:
+        match = re.search(r"free percentage:\s*([0-9]+(?:\.[0-9]+)?)%", pressure_text, re.I)
+    else:
+        match = None
+    if total_text and match:
+        total = int(total_text)
+        free_percent = decimal.Decimal(match.group(1))
+        available = int(decimal.Decimal(total) * free_percent / decimal.Decimal(100))
+        memory = {
+            "available_bytes": available,
+            "evidence": "sysctl hw.memsize; memory_pressure -Q",
+            "status": "AVAILABLE",
+            "total_bytes": total,
+            "used_percent": float(decimal.Decimal(100) - free_percent),
+        }
+    else:
+        memory = {
+            "reason": "macOS total/free memory signal was unavailable",
+            "status": "UNKNOWN",
+        }
+    swap_text = run_resource_probe(["sysctl", "vm.swapusage"])
+    match = re.search(
+        r"total\s*=\s*([0-9.]+)([KMGT])\s+used\s*=\s*([0-9.]+)([KMGT])",
+        swap_text or "", re.I,
+    )
+    if match:
+        swap = {
+            "evidence": "sysctl vm.swapusage",
+            "status": "AVAILABLE",
+            "total_bytes": byte_value(match.group(1), match.group(2)),
+            "used_bytes": byte_value(match.group(3), match.group(4)),
+        }
+    else:
+        swap = {"reason": "macOS swap signal was unavailable", "status": "UNKNOWN"}
+    return memory, swap
+
+
+def linux_resource_memory_and_swap():
+    path = Path("/proc/meminfo")
+    if not path.is_file():
+        unknown = {"reason": "Linux /proc/meminfo was unavailable", "status": "UNKNOWN"}
+        return unknown, dict(unknown)
+    values = {}
+    for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+        match = re.match(r"^([A-Za-z_()]+):\s+([0-9]+)\s+kB$", line)
+        if match:
+            values[match.group(1)] = int(match.group(2)) * 1024
+    total = values.get("MemTotal")
+    available = values.get("MemAvailable")
+    if total and available is not None:
+        memory = {
+            "available_bytes": available,
+            "evidence": "/proc/meminfo MemTotal and MemAvailable",
+            "status": "AVAILABLE",
+            "total_bytes": total,
+            "used_percent": round((total - available) * 100 / total, 2),
+        }
+    else:
+        memory = {"reason": "Linux memory totals were unavailable", "status": "UNKNOWN"}
+    swap_total = values.get("SwapTotal")
+    swap_free = values.get("SwapFree")
+    if swap_total is not None and swap_free is not None:
+        swap = {
+            "evidence": "/proc/meminfo SwapTotal and SwapFree",
+            "status": "AVAILABLE",
+            "total_bytes": swap_total,
+            "used_bytes": swap_total - swap_free,
+        }
+    else:
+        swap = {"reason": "Linux swap totals were unavailable", "status": "UNKNOWN"}
+    return memory, swap
+
+
+def windows_resource_memory_and_swap():
+    try:
+        import ctypes
+
+        class MemoryStatus(ctypes.Structure):
+            _fields_ = [
+                ("length", ctypes.c_ulong), ("memory_load", ctypes.c_ulong),
+                ("total_physical", ctypes.c_ulonglong),
+                ("available_physical", ctypes.c_ulonglong),
+                ("total_page_file", ctypes.c_ulonglong),
+                ("available_page_file", ctypes.c_ulonglong),
+                ("total_virtual", ctypes.c_ulonglong),
+                ("available_virtual", ctypes.c_ulonglong),
+                ("available_extended_virtual", ctypes.c_ulonglong),
+            ]
+
+        status = MemoryStatus()
+        status.length = ctypes.sizeof(MemoryStatus)
+        if not ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(status)):
+            raise OSError("GlobalMemoryStatusEx failed")
+        memory = {
+            "available_bytes": status.available_physical,
+            "evidence": "Windows GlobalMemoryStatusEx",
+            "status": "AVAILABLE",
+            "total_bytes": status.total_physical,
+            "used_percent": status.memory_load,
+        }
+        swap = {
+            "reason": (
+                "Windows GlobalMemoryStatusEx commit counters do not isolate physical "
+                "pagefile or swap use"
+            ),
+            "status": "UNKNOWN",
+        }
+        return memory, swap
+    except Exception:
+        unknown = {"reason": "Windows memory counters were unavailable", "status": "UNKNOWN"}
+        return unknown, dict(unknown)
+
+
+def collect_local_resource_observation():
+    system = platform.system()
+    if system == "Darwin":
+        platform_name = "macOS"
+        memory, swap = mac_resource_memory_and_swap()
+    elif system == "Windows":
+        platform_name = "Windows"
+        memory, swap = windows_resource_memory_and_swap()
+    elif system == "Linux":
+        platform_name = "Linux"
+        memory, swap = linux_resource_memory_and_swap()
+    else:
+        platform_name = "UNKNOWN"
+        unknown = {"reason": "Unsupported operating system", "status": "UNKNOWN"}
+        memory, swap = unknown, dict(unknown)
+    return {
+        "browser": {
+            "reason": "No trusted browser resource adapter supplied tab state",
+            "status": "UNKNOWN",
+        },
+        "captured_utc": now_utc(),
+        "host": {
+            "platform": platform_name,
+            "source": "LOCAL_READ_ONLY_PROBE",
+            "status": "AVAILABLE",
+        },
+        "memory": memory,
+        "observation_id": "host-" + now_utc().casefold() + "-" + secrets.token_hex(3),
+        "pressure": {
+            "reason": "No stable host-classified NORMAL/WARN/CRITICAL signal was available",
+            "status": "UNKNOWN",
+        },
+        "processes": process_observation_for_host(system),
+        "schema": "ai-human.resource-observation/v1",
+        "swap": swap,
+    }
+
+
+def resource_snapshot(args):
+    worker = safe_worker(args.worker)
+    lease, _state_hash = require_lease(
+        worker, args.session_id, args.expected_state_hash
+    )
+    failures = validate_resource_state(worker)
+    if failures:
+        raise ValueError("cannot record snapshot in invalid resource state: " + "; ".join(failures))
+    policy = resource_policy(worker)
+    observation = (
+        validate_resource_observation(read_governor_input(args.observation, "resource observation source"))
+        if args.observation else validate_resource_observation(collect_local_resource_observation())
+    )
+    captured = parse_recorded_utc(observation["captured_utc"], "resource captured_utc")
+    if abs(datetime.datetime.now(datetime.timezone.utc) - captured) > datetime.timedelta(
+        minutes=policy["observation_max_age_minutes"]
+    ):
+        raise ValueError("resource observation is outside the owner-configured freshness window")
+    snapshots = resource_snapshots(worker)
+    if any(item["snapshot_id"] == observation["observation_id"] for item in snapshots):
+        raise ValueError("resource observation id was already recorded")
+    sequence = len(snapshots) + 1
+    record = {
+        "created_utc": now_utc(),
+        "observation": observation,
+        "observation_sha256": canonical_json_sha256(observation),
+        "policy_sha256": canonical_json_sha256(policy),
+        "prior_snapshot_sha256": snapshots[-1]["record_sha256"] if snapshots else "NONE",
+        "schema": "ai-human.resource-snapshot/v1",
+        "sequence": sequence,
+        "snapshot_id": observation["observation_id"],
+    }
+    record["record_sha256"] = governed_record_sha256(record)
+    target = resource_path(
+        worker, RESOURCE_SNAPSHOTS_ROOT / f"{sequence:06d}-{record['snapshot_id']}.json",
+        "resource snapshot target",
+    )
+    target.parent.mkdir(parents=True, exist_ok=True)
+    atomic_json(target, record)
+    updated = refresh_lease_state(worker, lease)
+    print("AI-HUMAN RESOURCE SNAPSHOT: PASS")
+    print("- snapshot id: " + record["snapshot_id"])
+    print("- platform: " + observation["host"].get("platform", "UNKNOWN"))
+    print("- pressure: " + observation["pressure"].get("level", "UNKNOWN"))
+    print(
+        "- swap used bytes: "
+        + str(observation["swap"].get("used_bytes", "UNKNOWN"))
+    )
+    print("- browser data: " + observation["browser"]["status"])
+    print("- top applications: " + str(len(observation["processes"].get("items", []))))
+    print("- new expected-state hash: " + updated["state_hash"])
+
+
+def resource_plan(args):
+    worker = safe_worker(args.worker)
+    lease, _state_hash = require_lease(
+        worker, args.session_id, args.expected_state_hash
+    )
+    failures = validate_resource_state(worker)
+    if failures:
+        raise ValueError("cannot plan from invalid resource state: " + "; ".join(failures))
+    policy = resource_policy(worker)
+    snapshots = resource_snapshots(worker)
+    if not snapshots:
+        raise ValueError("resource plan requires a current snapshot")
+    snapshot = snapshots[-1]
+    captured = parse_recorded_utc(
+        snapshot["observation"]["captured_utc"], "resource captured_utc"
+    )
+    if abs(datetime.datetime.now(datetime.timezone.utc) - captured) > datetime.timedelta(
+        minutes=policy["observation_max_age_minutes"]
+    ):
+        raise ValueError("latest resource snapshot is stale")
+    plans = resource_plan_records(worker, snapshots)
+    outcomes = resource_outcome_records(worker, plans, snapshots)
+    completed = {item["plan_id"] for item in outcomes}
+    outstanding = next(
+        (
+            plan for plan in plans
+            if plan["decision"] == "CLEANUP_CANDIDATES" and plan["plan_id"] not in completed
+        ),
+        None,
+    )
+    if outstanding:
+        raise ValueError("resource cleanup plan is still awaiting a truthful outcome")
+    decision = resource_plan_decision(policy, snapshot["observation"])
+    sequence = len(plans) + 1
+    plan_id = f"resource-plan-{sequence:06d}-{snapshot['snapshot_id']}"
+    if len(plan_id.encode("utf-8")) > 100:
+        plan_id = f"resource-plan-{sequence:06d}-{snapshot['record_sha256'][:16]}"
+    record = {
+        **decision,
+        "created_utc": now_utc(),
+        "plan_id": plan_id,
+        "policy_sha256": canonical_json_sha256(policy),
+        "prior_plan_sha256": plans[-1]["record_sha256"] if plans else "NONE",
+        "schema": "ai-human.resource-plan/v1",
+        "sequence": sequence,
+        "snapshot_id": snapshot["snapshot_id"],
+        "snapshot_sha256": snapshot["record_sha256"],
+    }
+    record["record_sha256"] = governed_record_sha256(record)
+    target = resource_path(
+        worker, RESOURCE_PLANS_ROOT / f"{sequence:06d}-{plan_id}.json",
+        "resource plan target",
+    )
+    target.parent.mkdir(parents=True, exist_ok=True)
+    atomic_json(target, record)
+    updated = refresh_lease_state(worker, lease)
+    print("AI-HUMAN RESOURCE PLAN: PASS")
+    print("- plan id: " + plan_id)
+    print("- decision: " + record["decision"])
+    print("- tab candidates: " + (
+        ", ".join(item["tab_id"] for item in record["tab_candidates"]) or "NONE"
+    ))
+    print("- application action: " + record["application_action"])
+    print("- execution: " + record["execution"])
+    for reason in record["reasons"]:
+        print("- reason: " + reason)
+    print("- new expected-state hash: " + updated["state_hash"])
+
+
+def resource_measurably_improved(before, after):
+    before_host = before["host"].get("platform")
+    after_host = after["host"].get("platform")
+    if before_host != after_host:
+        return False
+    pressure_order = {"NORMAL": 0, "WARN": 1, "CRITICAL": 2}
+    before_pressure = before["pressure"]
+    after_pressure = after["pressure"]
+    if before_pressure["status"] == after_pressure["status"] == "AVAILABLE":
+        if pressure_order[after_pressure["level"]] < pressure_order[before_pressure["level"]]:
+            return True
+    before_memory = before["memory"]
+    after_memory = after["memory"]
+    if before_memory["status"] == after_memory["status"] == "AVAILABLE":
+        return (
+            after_memory["available_bytes"] > before_memory["available_bytes"]
+            and context_percent(after_memory["used_percent"])
+            < context_percent(before_memory["used_percent"])
+        )
+    return False
+
+
+def resource_record(args):
+    worker = safe_worker(args.worker)
+    lease, _state_hash = require_lease(
+        worker, args.session_id, args.expected_state_hash
+    )
+    failures = validate_resource_state(worker)
+    if failures:
+        raise ValueError("cannot record into invalid resource state: " + "; ".join(failures))
+    request = validate_resource_outcome_request(
+        read_governor_input(args.outcome, "resource outcome source")
+    )
+    snapshots = resource_snapshots(worker)
+    plans = resource_plan_records(worker, snapshots)
+    outcomes = resource_outcome_records(worker, plans, snapshots)
+    plan = next((item for item in plans if item["plan_id"] == request["plan_id"]), None)
+    if not plan:
+        raise ValueError("resource outcome references an unknown plan")
+    if any(item["plan_id"] == plan["plan_id"] for item in outcomes):
+        raise ValueError("resource plan already has an immutable outcome")
+    if request["status"].startswith("EXECUTED_") and plan["decision"] != "CLEANUP_CANDIDATES":
+        raise ValueError("resource plan authorized no adapter cleanup action")
+    snapshot_by_id = {item["snapshot_id"]: item for item in snapshots}
+    if request["status"].startswith("EXECUTED_"):
+        after = snapshot_by_id.get(request["after_snapshot_id"])
+        before = snapshot_by_id[plan["snapshot_id"]]
+        if not after or after["sequence"] <= before["sequence"]:
+            raise ValueError("resource outcome requires a later after snapshot")
+        improved = resource_measurably_improved(before["observation"], after["observation"])
+        if request["status"] == "EXECUTED_IMPROVED" and not improved:
+            raise ValueError("after snapshot does not prove improvement")
+        if request["status"] == "EXECUTED_NO_IMPROVEMENT" and improved:
+            raise ValueError("after snapshot contradicts the no-improvement outcome")
+    sequence = len(outcomes) + 1
+    record = {
+        "after_snapshot_id": request["after_snapshot_id"],
+        "created_utc": now_utc(),
+        "evidence": request["evidence"],
+        "plan_id": plan["plan_id"],
+        "plan_record_sha256": plan["record_sha256"],
+        "prior_outcome_sha256": outcomes[-1]["record_sha256"] if outcomes else "NONE",
+        "schema": "ai-human.resource-outcome/v1",
+        "sequence": sequence,
+        "status": request["status"],
+    }
+    record["record_sha256"] = governed_record_sha256(record)
+    target = resource_path(
+        worker, RESOURCE_OUTCOMES_ROOT / f"{sequence:06d}-{plan['plan_id']}.json",
+        "resource outcome target",
+    )
+    target.parent.mkdir(parents=True, exist_ok=True)
+    atomic_json(target, record)
+    updated = refresh_lease_state(worker, lease)
+    print("AI-HUMAN RESOURCE OUTCOME: PASS")
+    print("- plan id: " + plan["plan_id"])
+    print("- outcome: " + record["status"])
+    print("- new expected-state hash: " + updated["state_hash"])
+
+
+def resource_show(args):
+    worker = safe_worker(args.worker)
+    policy = resource_policy(worker, required=False)
+    print("AI-HUMAN RESOURCE STEWARD")
+    if not policy:
+        print("- status: UNCONFIGURED")
+        return
+    failures = validate_resource_state(worker)
+    if failures:
+        raise ValueError("invalid resource state: " + "; ".join(failures))
+    snapshots = resource_snapshots(worker)
+    plans = resource_plan_records(worker, snapshots)
+    outcomes = resource_outcome_records(worker, plans, snapshots)
+    print("- status: CONFIGURED")
+    print("- policy version: " + str(policy["policy_version"]))
+    print("- force quit allowed: NO")
+    print("- latest snapshot: " + (snapshots[-1]["snapshot_id"] if snapshots else "NONE"))
+    print("- latest decision: " + (plans[-1]["decision"] if plans else "NONE"))
     print("- recorded outcomes: " + str(len(outcomes)))
 
 
@@ -3212,6 +5468,8 @@ def validate_worker(worker, quiet=False, allow_transaction=False):
     failures.extend(validate_improvement_state(worker))
     failures.extend(validate_autonomy_state(worker, version))
     failures.extend(validate_governor_state(worker))
+    failures.extend(validate_continuity_state(worker))
+    failures.extend(validate_resource_state(worker))
     failures.extend(validate_completion_records(worker))
     lease = None
     try:
@@ -3885,7 +6143,7 @@ def task_start(args):
             [
                 task_id,
                 title,
-                "Declared task; separately executed units remain capped at 25",
+                "Declared task; separately executed units use the Work Governor at or below the installed hard ceiling",
                 next_action,
                 "LIVE",
             ],
@@ -7933,6 +10191,77 @@ def parser():
     governor_show_p.add_argument("worker")
     governor_show_p.set_defaults(handler=governor_show)
 
+    continuity_configure_p = sub.add_parser("continuity-configure")
+    continuity_configure_p.add_argument("worker")
+    continuity_configure_p.add_argument("--session-id", required=True)
+    continuity_configure_p.add_argument("--expected-state-hash", required=True)
+    continuity_configure_p.add_argument("--policy", required=True)
+    continuity_configure_p.set_defaults(handler=continuity_configure)
+
+    context_check_p = sub.add_parser("context-check")
+    context_check_p.add_argument("worker")
+    context_check_p.add_argument("--session-id", required=True)
+    context_check_p.add_argument("--expected-state-hash", required=True)
+    context_check_p.add_argument("--observation", required=True)
+    context_check_p.set_defaults(handler=context_check)
+
+    continuity_recover_p = sub.add_parser("continuity-recover")
+    continuity_recover_p.add_argument("worker")
+    continuity_recover_p.add_argument("--session-id", required=True)
+    continuity_recover_p.add_argument("--expected-state-hash", required=True)
+    continuity_recover_p.add_argument("--reason", required=True)
+    continuity_recover_p.set_defaults(handler=continuity_recover)
+
+    handoff_create_p = sub.add_parser("handoff-create")
+    handoff_create_p.add_argument("worker")
+    handoff_create_p.add_argument("--session-id", required=True)
+    handoff_create_p.add_argument("--expected-state-hash", required=True)
+    handoff_create_p.add_argument("--request", required=True)
+    handoff_create_p.set_defaults(handler=handoff_create)
+
+    handoff_consume_p = sub.add_parser("handoff-consume")
+    handoff_consume_p.add_argument("worker")
+    handoff_consume_p.add_argument("--session-id", required=True)
+    handoff_consume_p.add_argument("--expected-state-hash", required=True)
+    handoff_consume_p.add_argument("--packet", required=True)
+    handoff_consume_p.add_argument("--expected-packet-sha256", required=True)
+    handoff_consume_p.set_defaults(handler=handoff_consume)
+
+    continuity_show_p = sub.add_parser("continuity-show")
+    continuity_show_p.add_argument("worker")
+    continuity_show_p.set_defaults(handler=continuity_show)
+
+    resource_configure_p = sub.add_parser("resource-configure")
+    resource_configure_p.add_argument("worker")
+    resource_configure_p.add_argument("--session-id", required=True)
+    resource_configure_p.add_argument("--expected-state-hash", required=True)
+    resource_configure_p.add_argument("--policy", required=True)
+    resource_configure_p.set_defaults(handler=resource_configure)
+
+    resource_snapshot_p = sub.add_parser("resource-snapshot")
+    resource_snapshot_p.add_argument("worker")
+    resource_snapshot_p.add_argument("--session-id", required=True)
+    resource_snapshot_p.add_argument("--expected-state-hash", required=True)
+    resource_snapshot_p.add_argument("--observation")
+    resource_snapshot_p.set_defaults(handler=resource_snapshot)
+
+    resource_plan_p = sub.add_parser("resource-plan")
+    resource_plan_p.add_argument("worker")
+    resource_plan_p.add_argument("--session-id", required=True)
+    resource_plan_p.add_argument("--expected-state-hash", required=True)
+    resource_plan_p.set_defaults(handler=resource_plan)
+
+    resource_record_p = sub.add_parser("resource-record")
+    resource_record_p.add_argument("worker")
+    resource_record_p.add_argument("--session-id", required=True)
+    resource_record_p.add_argument("--expected-state-hash", required=True)
+    resource_record_p.add_argument("--outcome", required=True)
+    resource_record_p.set_defaults(handler=resource_record)
+
+    resource_show_p = sub.add_parser("resource-show")
+    resource_show_p.add_argument("worker")
+    resource_show_p.set_defaults(handler=resource_show)
+
     batch_plan_p = sub.add_parser("batch-plan")
     batch_plan_p.add_argument("kind", choices=BATCH_KINDS)
     batch_plan_p.add_argument("--units", type=int, required=True)
@@ -8015,6 +10344,13 @@ def main():
                     raise ValueError(
                         "AI-human system is suspended; resume it before managed work, "
                         "or uninstall it to remove the system"
+                    )
+            if worker is not None and args.command in CONTEXT_NEW_WORK_COMMANDS:
+                latch = context_checkpoint_latch(worker)
+                if latch:
+                    raise ValueError(
+                        "context checkpoint required; do not start new work before a "
+                        "verified handoff is consumed"
                     )
             args.handler(args)
         return 0

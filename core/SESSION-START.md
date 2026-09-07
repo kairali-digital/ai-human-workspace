@@ -31,3 +31,7 @@
     lifecycle path; it auto-generates an ID when needed and owns the lease and exact
     state format. Use the manual lease path only for consequential or other controlled
     changes the task command does not cover.
+12. If the host exposes a trustworthy context-used signal, record it through the
+    Context Guard. If not, keep the status `UNKNOWN`; never estimate a percentage from
+    message count or files. When a checkpoint latch exists, accept no new work. In the
+    intended new session, verify and consume the exact packet before continuing.

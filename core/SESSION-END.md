@@ -21,3 +21,7 @@
    tool counts or routine validation housekeeping unless the requested exit proof or a
    failure makes one of them relevant. Those details stay available to Monitor and
    recovery.
+6. When context requires continuation, create the immutable session packet only after
+   the safe atomic step and worker checkpoint validate. The runtime releases the old
+   lease. Carry the packet path and its separately displayed SHA-256 to the new session;
+   delivery is not acceptance, and duplicate consumption fails closed.

@@ -37,6 +37,9 @@
    explicit approval. Entries embedded in one authorized artifact or assignment intake
    are content, not separate units; preserve the complete artifact. Separately executed
    records or actions remain separate units.
+   Follow `CONTEXT-CONTINUITY.md` whenever the host reports context pressure or a
+   checkpoint latch exists. Follow `RESOURCE-STEWARD.md` for RAM, swap, process or tab
+   work; browser/app cleanup is never implied by a diagnostic snapshot.
 4. A change is not complete until the result is verified and recorded.
 5. Capture new ideas in `OPEN_REGISTER.md`; do not interrupt the live task.
 6. Never invent a number, fact, source, permission, approval or completion. Use only

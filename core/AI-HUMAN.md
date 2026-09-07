@@ -57,6 +57,16 @@ never exceed the worker policy or product safety ceiling. Runtime evidence may p
 a proven scope from pilot to steady operation; missing or unhealthy evidence can only
 reduce capacity or halt it. Updates never manage or replace this private state.
 
+Context decisions, resume packets and acknowledgements live in private continuity
+state. A full-context session stops new work, finishes only a safe atomic step, binds a
+packet to the exact worker/task/state/files and releases its lease only after validation.
+The next session checks a separately supplied packet digest and acknowledges once.
+
+Resource snapshots keep host-reported RAM, swap, pressure, process and browser signals
+separate. Missing data remains `UNKNOWN`; non-zero swap alone is not current pressure.
+Only an approved host adapter may act on a fully safe tab-discard candidate, and every
+claimed improvement requires a later host snapshot. No force-quit path is provided.
+
 Process stays proportional to effect. A read-only answer creates no task state. A clear
 user request for ordinary reversible local work uses standing worker-local permissions
 and deterministic task start/close commands, which auto-name the task when needed and

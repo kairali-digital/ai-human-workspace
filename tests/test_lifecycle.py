@@ -360,7 +360,7 @@ class LifecycleTests(unittest.TestCase):
         weekday="SUNDAY",
         day_of_month=None,
         rollout_lane="PILOT",
-        legacy_schedule_removed=False,
+        max_retry_attempts=2,
     ):
         return SimpleNamespace(
             approval_reference="DECISIONS.md H-57 owner approval",
@@ -368,8 +368,8 @@ class LifecycleTests(unittest.TestCase):
             command=command,
             confirm_native_timezone_matches_iana=True,
             day_of_month=day_of_month,
-            legacy_schedule_removed=legacy_schedule_removed,
             local_time=local_time,
+            max_retry_attempts=max_retry_attempts,
             native_timezone_id=native_timezone_id,
             platform=platform,
             python_executable=sys.executable,
@@ -8501,10 +8501,69 @@ class LifecycleTests(unittest.TestCase):
         ):
             with self.assertRaisesRegex(ValueError, "legacy ACTIVE"):
                 AI_HUMAN.update_schedule_configure(configure)
-            self.assertEqual(registry, {})
+            # A caller-supplied boolean is not evidence and may not bypass migration.
             configure.legacy_schedule_removed = True
-            with mock.patch("builtins.print"):
+            with self.assertRaisesRegex(ValueError, "legacy ACTIVE"):
                 AI_HUMAN.update_schedule_configure(configure)
+            self.assertEqual(registry, {})
+        cli_bypass = self.run_cli(
+            "update-schedule-configure", legacy,
+            "--cadence", "WEEKLY", "--local-time", "02:30",
+            "--max-retry-attempts", "2", "--timezone", "Asia/Kolkata",
+            "--native-timezone-id", "Asia/Kolkata",
+            "--confirm-native-timezone-matches-iana", "--platform", "MACOS",
+            "--weekday", "SUNDAY", "--rollout-lane", "PILOT",
+            "--approval-reference", "invalid boolean bypass",
+            "--legacy-schedule-removed", expect=2,
+        )
+        self.assertIn("unrecognized arguments: --legacy-schedule-removed", cli_bypass.stderr)
+        with (
+            mock.patch.object(AI_HUMAN, "native_update_adapter") as native_adapter,
+            mock.patch("builtins.print"),
+        ):
+            AI_HUMAN.update_schedule_legacy_disable(
+                SimpleNamespace(
+                    approval_reference="DECISIONS.md H-57 legacy disable",
+                    external_id="legacy-monthly-update-card",
+                    removal_evidence="Owner reopened Scheduled tasks and verified removal",
+                    worker=str(legacy),
+                )
+            )
+            native_adapter.assert_not_called()
+        self.assertEqual(
+            AI_HUMAN.update_schedule_config(legacy.resolve(), required=True)["status"],
+            "DISABLED",
+        )
+        self.assertEqual(
+            json.loads((legacy / ".ai-human/install.json").read_text(encoding="utf-8"))[
+                "automatic_updates"
+            ],
+            "DISABLED",
+        )
+        migration = json.loads(
+            (legacy / AI_HUMAN.UPDATE_LEGACY_MIGRATION_PATH).read_text(encoding="utf-8")
+        )
+        self.assertEqual(migration["status"], "VERIFIED_REMOVED_BY_OWNER_EVIDENCE")
+        self.assertEqual(
+            migration["record_sha256"], AI_HUMAN.update_legacy_migration_sha256(migration)
+        )
+        migration["removal_evidence"] = "edited without updating the receipt hash"
+        (legacy / AI_HUMAN.UPDATE_LEGACY_MIGRATION_PATH).write_text(
+            json.dumps(migration, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        )
+        self.assertFalse(AI_HUMAN.validate_worker(legacy.resolve(), quiet=True)[0])
+        migration["removal_evidence"] = "Owner reopened Scheduled tasks and verified removal"
+        migration["record_sha256"] = AI_HUMAN.update_legacy_migration_sha256(migration)
+        (legacy / AI_HUMAN.UPDATE_LEGACY_MIGRATION_PATH).write_text(
+            json.dumps(migration, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        )
+        with (
+            mock.patch.object(
+                AI_HUMAN, "native_update_adapter", side_effect=self.fake_native_factory(registry)
+            ),
+            mock.patch("builtins.print"),
+        ):
+            AI_HUMAN.update_schedule_configure(configure)
         self.assertEqual(len(registry), 1)
 
     def test_native_schedule_rendering_dst_timezone_and_windows_query_are_deterministic(self):
@@ -8540,13 +8599,24 @@ class LifecycleTests(unittest.TestCase):
         xml_text = xml_bytes.decode("utf-8")
         self.assertIn("&amp;", xml_text)
         self.assertIn("WeeksInterval", xml_text)
+        start_boundary = AI_HUMAN.windows_task_semantics(xml_text)["start_boundary"]
+        self.assertEqual(
+            start_boundary,
+            AI_HUMAN.parse_offset_datetime(
+                windows["not_before_local"], "Windows fixture"
+            ).strftime("%Y-%m-%dT%H:%M:%S"),
+        )
+        self.assertNotRegex(start_boundary, r"(?:Z|[+-]\d\d:\d\d)$")
         definition = worker / ".ai-human/update-schedule/definitions/windows-test.xml"
         definition.write_bytes(xml_bytes)
         adapter = AI_HUMAN.NativeUpdateAdapter(worker, windows)
         active = SimpleNamespace(returncode=0, stdout=xml_text, stderr="")
+        paused_root = AI_HUMAN.ET.fromstring(xml_text)
+        namespace = {"t": "http://schemas.microsoft.com/windows/2004/02/mit/task"}
+        paused_root.find("t:Settings/t:Enabled", namespace).text = "false"
         paused = SimpleNamespace(
             returncode=0,
-            stdout=xml_text.replace("<Enabled>true</Enabled>", "<Enabled>false</Enabled>"),
+            stdout=AI_HUMAN.ET.tostring(paused_root, encoding="unicode"),
             stderr="",
         )
         with mock.patch.object(AI_HUMAN.subprocess, "run", return_value=active):
@@ -8554,10 +8624,47 @@ class LifecycleTests(unittest.TestCase):
         with mock.patch.object(AI_HUMAN.subprocess, "run", return_value=paused):
             self.assertEqual(adapter.query(definition)["status"], "PAUSED")
 
+        tampered_root = AI_HUMAN.ET.fromstring(xml_text)
+        tampered_root.find(".//t:Command", namespace).text = "C:\\attacker.exe"
+        tampered_xml = AI_HUMAN.ET.tostring(tampered_root, encoding="unicode")
+        with mock.patch.object(
+            AI_HUMAN.subprocess, "run",
+            return_value=SimpleNamespace(returncode=0, stdout=tampered_xml, stderr=""),
+        ):
+            self.assertIsNone(adapter.query(definition)["definition_sha256"])
+
+        defaulted_root = AI_HUMAN.ET.fromstring(xml_text)
+        defaulted_settings = defaulted_root.find("t:Settings", namespace)
+        AI_HUMAN.ET.SubElement(
+            defaulted_settings,
+            "{http://schemas.microsoft.com/windows/2004/02/mit/task}DisallowStartIfOnBatteries",
+        ).text = "true"
+        defaulted_xml = AI_HUMAN.ET.tostring(defaulted_root, encoding="unicode")
+        with mock.patch.object(
+            AI_HUMAN.subprocess, "run",
+            return_value=SimpleNamespace(returncode=0, stdout=defaulted_xml, stderr=""),
+        ):
+            self.assertEqual(adapter.query(definition)["status"], "ACTIVE")
+
+        extra_root = AI_HUMAN.ET.fromstring(xml_text)
+        settings = extra_root.find("t:Settings", namespace)
+        restart = AI_HUMAN.ET.SubElement(
+            settings, "{http://schemas.microsoft.com/windows/2004/02/mit/task}RestartOnFailure"
+        )
+        AI_HUMAN.ET.SubElement(
+            restart, "{http://schemas.microsoft.com/windows/2004/02/mit/task}Interval"
+        ).text = "PT1M"
+        extra_xml = AI_HUMAN.ET.tostring(extra_root, encoding="unicode")
+        with mock.patch.object(
+            AI_HUMAN.subprocess, "run",
+            return_value=SimpleNamespace(returncode=0, stdout=extra_xml, stderr=""),
+        ):
+            self.assertIsNone(adapter.query(definition)["definition_sha256"])
+
         spring = dict(config)
         spring.update(
             {
-                "not_before_local": "2026-03-08T03:00:00-04:00",
+                "not_before_local": "2026-03-15T02:30:00-04:00",
                 "native_timezone_id": "America/New_York",
                 "timezone": "America/New_York",
                 "updated_utc": AI_HUMAN.now_utc(),
@@ -8566,8 +8673,20 @@ class LifecycleTests(unittest.TestCase):
         spring = AI_HUMAN.validate_update_schedule_config(spring)
         after = datetime.datetime.fromisoformat("2026-03-07T00:00:00-05:00")
         spring_run = AI_HUMAN.next_update_occurrence(spring, after)
-        self.assertEqual((spring_run.hour, spring_run.minute), (3, 0))
+        self.assertEqual(spring_run.isoformat(), "2026-03-15T02:30:00-04:00")
         self.assertEqual(spring_run.utcoffset(), datetime.timedelta(hours=-4))
+
+        wrong_occurrence = dict(config)
+        wrong_occurrence["not_before_local"] = (
+            AI_HUMAN.parse_offset_datetime(config["not_before_local"], "fixture")
+            + datetime.timedelta(minutes=1)
+        ).isoformat()
+        with self.assertRaisesRegex(ValueError, "exact configured occurrence"):
+            AI_HUMAN.validate_update_schedule_config(wrong_occurrence)
+        wrong_order = dict(config)
+        wrong_order["created_utc"] = "20990101T000000Z"
+        with self.assertRaisesRegex(ValueError, "precedes created"):
+            AI_HUMAN.validate_update_schedule_config(wrong_order)
 
         fall = dict(spring)
         fall.update(
@@ -8583,6 +8702,11 @@ class LifecycleTests(unittest.TestCase):
         )
         self.assertEqual(fall_run.fold, 0)
         self.assertEqual(fall_run.utcoffset(), datetime.timedelta(hours=-4))
+        winter_run = AI_HUMAN.next_update_occurrence(
+            fall, datetime.datetime.fromisoformat("2026-11-02T00:00:00-05:00")
+        )
+        self.assertEqual((winter_run.hour, winter_run.minute), (1, 30))
+        self.assertEqual(winter_run.utcoffset(), datetime.timedelta(hours=-5))
 
         mismatch_worker = self.base / "native-zone-mismatch"
         self.install(mismatch_worker)
@@ -8617,6 +8741,11 @@ class LifecycleTests(unittest.TestCase):
         ):
             AI_HUMAN.update_schedule_configure(configure)
         original = AI_HUMAN.update_schedule_config(worker.resolve(), required=True)
+        with mock.patch.object(
+            AI_HUMAN, "native_update_adapter", side_effect=factory
+        ):
+            with self.assertRaisesRegex(ValueError, "use update-schedule-edit"):
+                AI_HUMAN.update_schedule_configure(self.schedule_args(worker))
         edit = self.schedule_args(
             worker, command="update-schedule-edit", local_time="03:15"
         )
@@ -8646,6 +8775,11 @@ class LifecycleTests(unittest.TestCase):
                     worker=str(worker), action="PAUSE", approval_reference="owner pause"
                 )
             )
+            AI_HUMAN.update_schedule_control(
+                SimpleNamespace(
+                    worker=str(worker), action="PAUSE", approval_reference="idempotent pause"
+                )
+            )
             paused_edit = self.schedule_args(
                 worker, command="update-schedule-edit", local_time="04:00"
             )
@@ -8655,6 +8789,13 @@ class LifecycleTests(unittest.TestCase):
                 "PAUSED",
             )
             self.assertEqual(next(iter(registry.values()))["status"], "PAUSED")
+            native_id = next(iter(registry))
+            registry[native_id]["status"] = "ACTIVE"
+            with self.assertRaisesRegex(ValueError, "readback differs"):
+                AI_HUMAN.suspend(
+                    SimpleNamespace(worker=str(worker), reason="drift must block")
+                )
+            registry[native_id]["status"] = "PAUSED"
             AI_HUMAN.suspend(SimpleNamespace(worker=str(worker), reason="owner pause"))
             self.assertEqual(AI_HUMAN.worker_mode(worker.resolve()), AI_HUMAN.MODE_SUSPENDED)
             AI_HUMAN.resume(SimpleNamespace(worker=str(worker)))
@@ -8665,10 +8806,634 @@ class LifecycleTests(unittest.TestCase):
                     worker=str(worker), action="REMOVE", approval_reference="owner removal"
                 )
             )
+            AI_HUMAN.update_schedule_control(
+                SimpleNamespace(
+                    worker=str(worker), action="REMOVE", approval_reference="idempotent remove"
+                )
+            )
+            native = AI_HUMAN.native_update_schedule(
+                worker.resolve(), required=True,
+                config=AI_HUMAN.update_schedule_config(worker.resolve(), required=True),
+            )
+            registry[native["external_id"]] = {
+                "status": "ACTIVE", "definition_sha256": native["definition_sha256"],
+            }
+            with self.assertRaisesRegex(ValueError, "readback differs"):
+                AI_HUMAN.uninstall(
+                    SimpleNamespace(worker=str(worker), at_checkpoint=False)
+                )
+            registry.clear()
+            with self.assertRaisesRegex(ValueError, "invalid update schedule transition"):
+                AI_HUMAN.update_schedule_control(
+                    SimpleNamespace(
+                        worker=str(worker), action="RESUME",
+                        approval_reference="removed schedules do not resume",
+                    )
+                )
+            with self.assertRaisesRegex(ValueError, "configure an update schedule"):
+                AI_HUMAN.update_schedule_configure(
+                    self.schedule_args(worker, command="update-schedule-edit")
+                )
         self.assertEqual(registry, {})
-        with mock.patch("builtins.print"):
+        with (
+            mock.patch.object(AI_HUMAN, "native_update_adapter", side_effect=factory),
+            mock.patch("builtins.print"),
+        ):
             AI_HUMAN.uninstall(SimpleNamespace(worker=str(worker), at_checkpoint=False))
         self.assertFalse((worker / ".ai-human").exists())
+
+    def test_native_schedule_recovery_blocks_until_candidate_removal_is_verified(self):
+        worker = self.base / "native-recovery-block-worker"
+        self.install(worker)
+        registry = {}
+        normal_factory = self.fake_native_factory(registry)
+        with (
+            mock.patch.object(AI_HUMAN, "native_update_adapter", side_effect=normal_factory),
+            mock.patch("builtins.print"),
+        ):
+            AI_HUMAN.update_schedule_configure(self.schedule_args(worker))
+        original = AI_HUMAN.update_schedule_config(worker.resolve(), required=True)
+        edit = self.schedule_args(
+            worker, command="update-schedule-edit", local_time="05:10"
+        )
+        calls = 0
+
+        def factory_with_blocked_recovery(adapter_worker, config):
+            nonlocal calls
+            calls += 1
+            adapter = FakeNativeUpdateAdapter(adapter_worker, config, registry)
+            if calls >= 2:
+                adapter.remove = mock.Mock(side_effect=ValueError("simulated removal failure"))
+            return adapter
+
+        with (
+            mock.patch.object(
+                AI_HUMAN, "native_update_adapter", side_effect=factory_with_blocked_recovery
+            ),
+            mock.patch.object(
+                AI_HUMAN, "commit_update_schedule_local", side_effect=OSError("forced crash")
+            ),
+        ):
+            with self.assertRaisesRegex(OSError, "forced crash"):
+                AI_HUMAN.update_schedule_configure(edit)
+        transaction = worker / AI_HUMAN.UPDATE_SCHEDULE_TRANSACTION_PATH
+        self.assertTrue(transaction.is_file())
+        ok, failures = AI_HUMAN.validate_worker(worker.resolve(), quiet=True)
+        self.assertFalse(ok)
+        self.assertTrue(any("requires recover-update-schedule" in item for item in failures))
+
+        original_transaction = json.loads(transaction.read_text(encoding="utf-8"))
+        tampered_transaction = dict(original_transaction)
+        tampered_transaction["phase"] = "PREPARED"
+        transaction.write_text(
+            json.dumps(tampered_transaction, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        with self.assertRaisesRegex(ValueError, "record hash mismatch"):
+            AI_HUMAN.recover_update_schedule_internal(worker.resolve())
+        transaction.write_text(
+            json.dumps(original_transaction, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+
+        malicious_transaction = json.loads(transaction.read_text(encoding="utf-8"))
+        malicious_transaction["candidate"]["schedule_id"] = "update-malicious-task"
+        malicious_transaction["definition_path"] = (
+            ".ai-human/update-schedule/definitions/update-malicious-task.plist"
+        )
+        malicious_transaction["candidate_sha256"] = (
+            AI_HUMAN.update_schedule_config_sha256(malicious_transaction["candidate"])
+        )
+        malicious_transaction["record_sha256"] = AI_HUMAN.governed_record_sha256(
+            malicious_transaction
+        )
+        transaction.write_text(
+            json.dumps(malicious_transaction, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        with self.assertRaisesRegex(ValueError, "different worker or release"):
+            AI_HUMAN.recover_update_schedule_internal(worker.resolve())
+        transaction.write_text(
+            json.dumps(original_transaction, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+
+        backup = worker / original_transaction["backup"]
+        extra = backup / "files/unexpected.txt"
+        extra.write_text("not in the backup inventory\n", encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "unexpected or missing files"):
+            AI_HUMAN.recover_update_schedule_internal(worker.resolve())
+        extra.unlink()
+
+        backup_manifest_path = backup / "backup.json"
+        original_backup_manifest = backup_manifest_path.read_bytes()
+        backup_manifest = json.loads(original_backup_manifest)
+        backup_manifest["created_utc"] = "20260101T000000Z"
+        backup_manifest["record_sha256"] = AI_HUMAN.governed_record_sha256(
+            backup_manifest
+        )
+        backup_manifest_path.write_text(
+            json.dumps(backup_manifest, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        with self.assertRaisesRegex(ValueError, "backup manifest hash mismatch"):
+            AI_HUMAN.recover_update_schedule_internal(worker.resolve())
+        backup_manifest_path.write_bytes(original_backup_manifest)
+
+        backed_automation = backup / "files/AUTOMATIONS.md"
+        original_automation = backed_automation.read_bytes()
+        backed_automation.write_text("tampered backup\n", encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "backup hash mismatch"):
+            AI_HUMAN.recover_update_schedule_internal(worker.resolve())
+        backed_automation.write_bytes(original_automation)
+
+        copied = self.base / "native-copied-journal-worker"
+        self.install(copied)
+        copied_backup = copied / original_transaction["backup"]
+        copied_backup.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copytree(backup, copied_backup)
+        copied_transaction = copied / AI_HUMAN.UPDATE_SCHEDULE_TRANSACTION_PATH
+        copied_transaction.write_text(
+            json.dumps(original_transaction, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        with self.assertRaisesRegex(ValueError, "different worker or release"):
+            AI_HUMAN.recover_update_schedule_internal(copied.resolve())
+        self.assertTrue(copied_transaction.is_file())
+
+        def factory_with_blocked_query(adapter_worker, config):
+            adapter = FakeNativeUpdateAdapter(adapter_worker, config, registry)
+            adapter.query = mock.Mock(side_effect=ValueError("simulated query failure"))
+            return adapter
+
+        with mock.patch.object(
+            AI_HUMAN, "native_update_adapter", side_effect=factory_with_blocked_query
+        ):
+            with self.assertRaisesRegex(ValueError, "simulated query failure"):
+                AI_HUMAN.recover_update_schedule_internal(worker.resolve())
+        self.assertTrue(transaction.is_file())
+
+        with mock.patch.object(
+            AI_HUMAN, "native_update_adapter", side_effect=normal_factory
+        ):
+            AI_HUMAN.recover_update_schedule_internal(worker.resolve())
+        self.assertFalse(transaction.exists())
+        self.assertEqual(
+            AI_HUMAN.update_schedule_config(worker.resolve(), required=True), original
+        )
+        self.assertEqual(next(iter(registry.values()))["status"], "ACTIVE")
+
+    def test_native_schedule_backup_rejects_symlinked_and_over_cap_definition_inventory(self):
+        worker = self.base / "native-backup-inventory-worker"
+        self.install(worker, automatic=True)
+        definitions = worker / AI_HUMAN.UPDATE_SCHEDULE_DEFINITIONS_ROOT
+        definitions.mkdir(parents=True)
+        outside = self.base / "outside-native-definition.plist"
+        outside.write_text("outside\n", encoding="utf-8")
+        (definitions / "update-symlink.plist").symlink_to(outside)
+        args = SimpleNamespace(
+            approval_reference="DECISIONS.md H-57 legacy disable",
+            external_id="legacy-native-task",
+            removal_evidence="Owner verified native removal",
+            worker=str(worker),
+        )
+        with self.assertRaisesRegex(ValueError, "symbolic links"):
+            AI_HUMAN.update_schedule_legacy_disable(args)
+        self.assertFalse(
+            (worker / AI_HUMAN.UPDATE_SCHEDULE_TRANSACTION_PATH).exists()
+        )
+        (definitions / "update-symlink.plist").unlink()
+        for index in range(26):
+            (definitions / ("unexpected-" + str(index) + ".plist")).write_text(
+                "fixture\n", encoding="utf-8"
+            )
+        with self.assertRaisesRegex(ValueError, "exceeds the cap of 25"):
+            AI_HUMAN.update_schedule_legacy_disable(args)
+        self.assertFalse(
+            (worker / AI_HUMAN.UPDATE_SCHEDULE_TRANSACTION_PATH).exists()
+        )
+
+    def test_native_schedule_show_verifies_live_readback_and_rejects_drift(self):
+        worker = self.base / "native-show-worker"
+        self.install(worker)
+        registry = {}
+        factory = self.fake_native_factory(registry)
+        with (
+            mock.patch.object(AI_HUMAN, "native_update_adapter", side_effect=factory),
+            mock.patch("builtins.print"),
+        ):
+            AI_HUMAN.update_schedule_configure(self.schedule_args(worker))
+        with mock.patch("builtins.print") as output:
+            AI_HUMAN.update_schedule_show(
+                SimpleNamespace(worker=str(worker), verify_native=False)
+            )
+        self.assertTrue(
+            any("stored native proof" in str(call) for call in output.call_args_list)
+        )
+        with (
+            mock.patch.object(AI_HUMAN, "native_update_adapter", side_effect=factory),
+            mock.patch("builtins.print") as output,
+        ):
+            AI_HUMAN.update_schedule_show(
+                SimpleNamespace(worker=str(worker), verify_native=True)
+            )
+        self.assertTrue(
+            any("current native readback" in str(call) for call in output.call_args_list)
+        )
+        registry.clear()
+        with mock.patch.object(
+            AI_HUMAN, "native_update_adapter", side_effect=factory
+        ):
+            with self.assertRaisesRegex(ValueError, "readback differs"):
+                AI_HUMAN.update_schedule_show(
+                    SimpleNamespace(worker=str(worker), verify_native=True)
+                )
+
+    def test_native_schedule_readback_rejects_local_and_launchagent_symlinks(self):
+        worker = self.base / "native-symlink-worker"
+        self.install(worker)
+        registry = {}
+        factory = self.fake_native_factory(registry)
+        with (
+            mock.patch.object(AI_HUMAN, "native_update_adapter", side_effect=factory),
+            mock.patch("builtins.print"),
+        ):
+            AI_HUMAN.update_schedule_configure(self.schedule_args(worker))
+        config = AI_HUMAN.update_schedule_config(worker.resolve(), required=True)
+        native = AI_HUMAN.native_update_schedule(
+            worker.resolve(), required=True, config=config
+        )
+        definition = worker / native["definition_path"]
+        outside = self.base / "outside-definition.plist"
+        outside.write_bytes(definition.read_bytes())
+        definition.unlink()
+        definition.symlink_to(outside)
+        ok, failures = AI_HUMAN.validate_worker(worker.resolve(), quiet=True)
+        self.assertFalse(ok)
+        self.assertTrue(any("symbolic links" in item for item in failures))
+        with mock.patch.object(
+            AI_HUMAN, "native_update_adapter", side_effect=factory
+        ):
+            with self.assertRaisesRegex(ValueError, "symbolic links"):
+                AI_HUMAN.update_schedule_show(
+                    SimpleNamespace(worker=str(worker), verify_native=True)
+                )
+
+        fake_home = self.base / "fake-home"
+        launchagents = fake_home / "Library/LaunchAgents"
+        launchagents.mkdir(parents=True)
+        adapter = AI_HUMAN.NativeUpdateAdapter(worker.resolve(), config)
+        launch_target = launchagents / (adapter.external_id + ".plist")
+        launch_target.symlink_to(outside)
+        with mock.patch.object(AI_HUMAN.Path, "home", return_value=fake_home):
+            with self.assertRaisesRegex(ValueError, "symbolic links"):
+                adapter._macos_target()
+
+    def test_native_schedule_refuses_task_collision_and_legacy_update_entry_points(self):
+        worker = self.base / "native-collision-worker"
+        self.install(worker)
+        metadata = AI_HUMAN.install_metadata(worker.resolve())
+        disabled = AI_HUMAN.update_schedule_config(worker.resolve(), required=True)
+        schedule_id = AI_HUMAN.expected_update_schedule_id(
+            worker.resolve(), metadata, disabled
+        )
+        external_id = "com.aihuman.update." + schedule_id[-16:]
+        registry = {
+            external_id: {"status": "ACTIVE", "definition_sha256": "f" * 64}
+        }
+        factory = self.fake_native_factory(registry)
+        with mock.patch.object(
+            AI_HUMAN, "native_update_adapter", side_effect=factory
+        ):
+            with self.assertRaisesRegex(ValueError, "without managed ownership proof"):
+                AI_HUMAN.update_schedule_configure(self.schedule_args(worker))
+        self.assertEqual(
+            registry[external_id],
+            {"status": "ACTIVE", "definition_sha256": "f" * 64},
+        )
+        self.assertFalse((worker / AI_HUMAN.UPDATE_SCHEDULE_TRANSACTION_PATH).exists())
+        self.assertEqual(
+            AI_HUMAN.update_schedule_config(worker.resolve(), required=True)["status"],
+            "DISABLED",
+        )
+
+        registry.clear()
+        with (
+            mock.patch.object(AI_HUMAN, "native_update_adapter", side_effect=factory),
+            mock.patch("builtins.print"),
+        ):
+            AI_HUMAN.update_schedule_configure(self.schedule_args(worker))
+        config = AI_HUMAN.update_schedule_config(worker.resolve(), required=True)
+        due = AI_HUMAN.parse_offset_datetime(config["not_before_local"], "native due")
+        with (
+            mock.patch.object(AI_HUMAN, "native_update_adapter", side_effect=factory),
+            mock.patch.object(AI_HUMAN, "download_release", side_effect=OSError("offline")),
+        ):
+            AI_HUMAN.update_schedule_tick_internal(
+                worker.resolve(), config["schedule_id"],
+                AI_HUMAN.update_schedule_config_sha256(config), now_local=due,
+            )
+        report_path = worker / ".ai-human/version-report.json"
+        report_before = report_path.read_bytes()
+        manifest = json.loads(
+            (self.release / "release-manifest.json").read_text(encoding="utf-8")
+        )
+        with self.assertRaisesRegex(ValueError, "legacy automatic-update is refused"):
+            AI_HUMAN.run_automatic_update(
+                worker.resolve(), self.release, manifest,
+                datetime.datetime.fromisoformat("2026-09-01T10:00:00+05:30"),
+            )
+        self.assertEqual(report_path.read_bytes(), report_before)
+        automatic_args = SimpleNamespace(
+            latest=True, now_local="2026-09-01T10:00:00+05:30",
+            source=None, worker=str(worker),
+        )
+        with mock.patch.object(AI_HUMAN, "download_release") as download:
+            with self.assertRaisesRegex(ValueError, "legacy automatic-update is refused"):
+                AI_HUMAN.automatic_update(automatic_args)
+        download.assert_not_called()
+
+        fleet_path = self.write_json_fixture(
+            "native-owned-fleet.json",
+            {
+                "batch_id": "native-owned-fleet", "schema": "ai-human.fleet-batch/v1",
+                "timezone": "Asia/Kolkata",
+                "workers": [{
+                    "lane": "daily-email-triage", "path": str(worker),
+                    "phase": "pilot", "worker_id": metadata["worker_id"],
+                }],
+            },
+        )
+        fleet_args = SimpleNamespace(
+            fleet=str(fleet_path), fleet_state=str(self.base / "native-fleet-state.json"),
+            latest=True, now_local="2026-09-01T10:00:00+05:30",
+            repository=AI_HUMAN.DEFAULT_REPOSITORY, source=None,
+        )
+        with mock.patch.object(AI_HUMAN, "download_release") as download:
+            with self.assertRaisesRegex(ValueError, "legacy automatic-update is refused"):
+                AI_HUMAN.fleet_update(fleet_args)
+        download.assert_not_called()
+        self.assertEqual(report_path.read_bytes(), report_before)
+
+    def test_native_schedule_recovers_after_each_local_write_and_rejects_drift(self):
+        order = (
+            AI_HUMAN.UPDATE_SCHEDULE_CONFIG_PATH,
+            AI_HUMAN.UPDATE_SCHEDULE_NATIVE_PATH,
+            Path(".ai-human/install.json"),
+            Path("AUTOMATIONS.md"),
+            Path(".ai-human/version-report.json"),
+            AI_HUMAN.UPDATE_LEGACY_MIGRATION_PATH,
+        )
+        for index, crash_relative in enumerate(order):
+            with self.subTest(local_write=crash_relative.as_posix()):
+                worker = self.base / ("native-local-crash-" + str(index))
+                self.install(worker)
+                registry = {}
+                factory = self.fake_native_factory(registry)
+                with (
+                    mock.patch.object(AI_HUMAN, "native_update_adapter", side_effect=factory),
+                    mock.patch("builtins.print"),
+                ):
+                    AI_HUMAN.update_schedule_configure(self.schedule_args(worker))
+                before = AI_HUMAN.current_update_schedule_base_records(worker.resolve())
+                original_apply = AI_HUMAN.apply_update_schedule_local_target
+
+                def crash_after_write(target, content, *, expected=crash_relative):
+                    original_apply(target, content)
+                    if Path(target).resolve() == (worker.resolve() / expected):
+                        raise SystemExit("simulated process termination")
+
+                edit = self.schedule_args(
+                    worker, command="update-schedule-edit", local_time="05:20"
+                )
+                with (
+                    mock.patch.object(AI_HUMAN, "native_update_adapter", side_effect=factory),
+                    mock.patch.object(
+                        AI_HUMAN, "apply_update_schedule_local_target",
+                        side_effect=crash_after_write,
+                    ),
+                    mock.patch("builtins.print"),
+                ):
+                    with self.assertRaisesRegex(SystemExit, "process termination"):
+                        AI_HUMAN.update_schedule_configure(edit)
+                transaction = worker / AI_HUMAN.UPDATE_SCHEDULE_TRANSACTION_PATH
+                self.assertTrue(transaction.is_file())
+                with mock.patch.object(
+                    AI_HUMAN, "native_update_adapter", side_effect=factory
+                ):
+                    AI_HUMAN.recover_update_schedule_internal(worker.resolve())
+                self.assertFalse(transaction.exists())
+                self.assertEqual(
+                    AI_HUMAN.current_update_schedule_base_records(worker.resolve()), before
+                )
+
+        worker = self.base / "native-local-drift"
+        self.install(worker)
+        registry = {}
+        factory = self.fake_native_factory(registry)
+        with (
+            mock.patch.object(AI_HUMAN, "native_update_adapter", side_effect=factory),
+            mock.patch("builtins.print"),
+        ):
+            AI_HUMAN.update_schedule_configure(self.schedule_args(worker))
+        automation = worker / "AUTOMATIONS.md"
+        original_automation = automation.read_bytes()
+        original_apply = AI_HUMAN.apply_update_schedule_local_target
+
+        def crash_after_config(target, content):
+            original_apply(target, content)
+            if Path(target).resolve() == (
+                worker.resolve() / AI_HUMAN.UPDATE_SCHEDULE_CONFIG_PATH
+            ):
+                raise SystemExit("simulated process termination")
+
+        with (
+            mock.patch.object(AI_HUMAN, "native_update_adapter", side_effect=factory),
+            mock.patch.object(
+                AI_HUMAN, "apply_update_schedule_local_target",
+                side_effect=crash_after_config,
+            ),
+        ):
+            with self.assertRaises(SystemExit):
+                AI_HUMAN.update_schedule_configure(
+                    self.schedule_args(
+                        worker, command="update-schedule-edit", local_time="05:25"
+                    )
+                )
+        automation.write_text("unrelated concurrent mutation\n", encoding="utf-8")
+        with mock.patch.object(
+            AI_HUMAN, "native_update_adapter", side_effect=factory
+        ):
+            with self.assertRaisesRegex(ValueError, "unrelated drift"):
+                AI_HUMAN.recover_update_schedule_internal(worker.resolve())
+        self.assertTrue((worker / AI_HUMAN.UPDATE_SCHEDULE_TRANSACTION_PATH).exists())
+        automation.write_bytes(original_automation)
+        with mock.patch.object(
+            AI_HUMAN, "native_update_adapter", side_effect=factory
+        ):
+            AI_HUMAN.recover_update_schedule_internal(worker.resolve())
+
+    def test_macos_native_adapter_is_fail_closed_and_pause_is_persistent(self):
+        worker = self.base / "mac-native-render-only"
+        self.install(worker)
+        registry = {}
+        with (
+            mock.patch.object(
+                AI_HUMAN, "native_update_adapter",
+                side_effect=self.fake_native_factory(registry),
+            ),
+            mock.patch("builtins.print"),
+        ):
+            AI_HUMAN.update_schedule_configure(self.schedule_args(worker))
+        config = AI_HUMAN.update_schedule_config(worker.resolve(), required=True)
+        with mock.patch.object(AI_HUMAN.sys, "platform", "darwin"):
+            with self.assertRaisesRegex(ValueError, "exact loaded command and calendar"):
+                AI_HUMAN.native_update_adapter(worker.resolve(), config)
+
+        definition = worker / ".ai-human/update-schedule/definitions/mac-test.plist"
+        definition.parent.mkdir(parents=True, exist_ok=True)
+        definition.write_bytes(AI_HUMAN.render_macos_update_definition(worker, config))
+        fake_home = self.base / "mac-home"
+        (fake_home / "Library/LaunchAgents").mkdir(parents=True)
+        adapter = AI_HUMAN.NativeUpdateAdapter(worker.resolve(), config)
+        missing = SimpleNamespace(returncode=1, stdout="", stderr="could not find service")
+        success = SimpleNamespace(returncode=0, stdout="", stderr="")
+        with (
+            mock.patch.object(AI_HUMAN.Path, "home", return_value=fake_home),
+            mock.patch.object(adapter, "observed_timezone_id", return_value="Asia/Kolkata"),
+            mock.patch.object(
+                AI_HUMAN.subprocess, "run", side_effect=[missing, success, success, missing]
+            ),
+        ):
+            adapter.install(definition)
+            self.assertTrue(
+                (worker / ".ai-human/update-schedule/logs").is_dir()
+            )
+            target = adapter._macos_target()
+            self.assertTrue(target.is_file())
+            adapter.pause()
+            self.assertFalse(target.exists())
+            paused_config = dict(config)
+            paused_config["status"] = "PAUSED"
+            paused_adapter = AI_HUMAN.NativeUpdateAdapter(
+                worker.resolve(), paused_config
+            )
+            self.assertEqual(
+                paused_adapter.query(definition),
+                {"status": "PAUSED", "definition_sha256": AI_HUMAN.sha256(definition)},
+            )
+
+    def test_native_schedule_retries_are_owner_bounded_and_v2_reports_fail_closed(self):
+        worker = self.base / "native-retry-worker"
+        self.install(worker)
+        registry = {}
+        factory = self.fake_native_factory(registry)
+        with (
+            mock.patch.object(AI_HUMAN, "native_update_adapter", side_effect=factory),
+            mock.patch("builtins.print"),
+        ):
+            AI_HUMAN.update_schedule_configure(
+                self.schedule_args(worker, max_retry_attempts=1)
+            )
+        config = AI_HUMAN.update_schedule_config(worker.resolve(), required=True)
+        config_hash = AI_HUMAN.update_schedule_config_sha256(config)
+        due = AI_HUMAN.parse_offset_datetime(config["not_before_local"], "retry due")
+        with (
+            mock.patch.object(AI_HUMAN, "native_update_adapter", side_effect=factory),
+            mock.patch.object(
+                AI_HUMAN, "download_release", side_effect=OSError("offline")
+            ) as download,
+        ):
+            failed = AI_HUMAN.update_schedule_tick_internal(
+                worker.resolve(), config["schedule_id"], config_hash, now_local=due
+            )
+        self.assertEqual(failed["status"], "FAILED")
+        self.assertEqual(failed["attempt_number"], 1)
+        self.assertEqual(download.call_count, 1)
+
+        with (
+            mock.patch.object(AI_HUMAN, "native_update_adapter", side_effect=factory),
+            mock.patch.object(AI_HUMAN, "download_release") as download,
+        ):
+            held = AI_HUMAN.update_schedule_tick_internal(
+                worker.resolve(), config["schedule_id"], config_hash, now_local=due
+            )
+        self.assertEqual(held["reason"], "RETRY_REQUIRES_OWNER_OR_NEXT_OCCURRENCE")
+        download.assert_not_called()
+
+        with (
+            mock.patch.object(AI_HUMAN, "native_update_adapter", side_effect=factory),
+            mock.patch.object(
+                AI_HUMAN, "download_release", side_effect=OSError("offline again")
+            ) as download,
+        ):
+            retried = AI_HUMAN.update_schedule_tick_internal(
+                worker.resolve(), config["schedule_id"], config_hash,
+                force_retry=True, now_local=due,
+            )
+        self.assertEqual(retried["attempt_number"], 2)
+        self.assertEqual(download.call_count, 1)
+        with (
+            mock.patch.object(AI_HUMAN, "native_update_adapter", side_effect=factory),
+            mock.patch.object(AI_HUMAN, "download_release") as download,
+        ):
+            with self.assertRaisesRegex(ValueError, "retry limit reached"):
+                AI_HUMAN.update_schedule_tick_internal(
+                    worker.resolve(), config["schedule_id"], config_hash,
+                    force_retry=True, now_local=due,
+                )
+        download.assert_not_called()
+        with mock.patch.object(
+            AI_HUMAN, "native_update_adapter", side_effect=factory
+        ):
+            with self.assertRaisesRegex(ValueError, "current due occurrence"):
+                AI_HUMAN.update_schedule_tick_internal(
+                    worker.resolve(), config["schedule_id"], config_hash,
+                    force_retry=True, now_local=due + datetime.timedelta(days=7),
+                )
+
+        report_path = worker / ".ai-human/version-report.json"
+        valid_report = json.loads(report_path.read_text(encoding="utf-8"))
+        tampered = dict(valid_report)
+        tampered["config_sha256"] = "0" * 64
+        report_path.write_text(
+            json.dumps(tampered, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        )
+        ok, failures = AI_HUMAN.validate_worker(worker.resolve(), quiet=True)
+        self.assertFalse(ok)
+        self.assertTrue(any("does not bind" in item for item in failures))
+        tampered = dict(valid_report)
+        tampered["unexpected"] = True
+        report_path.write_text(
+            json.dumps(tampered, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        )
+        self.assertFalse(AI_HUMAN.validate_worker(worker.resolve(), quiet=True)[0])
+
+        metadata = AI_HUMAN.install_metadata(worker.resolve())
+        legacy = AI_HUMAN.safe_worker_report(
+            metadata, metadata["installed_version"], metadata["installed_version"],
+            "CURRENT", "PASS", due, True, "CHECK_COMPLETE",
+        )
+        report_path.write_text(
+            json.dumps(legacy, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        )
+        self.assertTrue(AI_HUMAN.validate_worker(worker.resolve(), quiet=True)[0])
+
+        invalid_worker = self.base / "native-invalid-retry-worker"
+        self.install(invalid_worker)
+        invalid_registry = {}
+        with mock.patch.object(
+            AI_HUMAN, "native_update_adapter",
+            side_effect=self.fake_native_factory(invalid_registry),
+        ):
+            with self.assertRaisesRegex(ValueError, "1 through 25"):
+                AI_HUMAN.update_schedule_configure(
+                    self.schedule_args(invalid_worker, max_retry_attempts=0)
+                )
+        self.assertEqual(invalid_registry, {})
+        self.assertFalse(
+            (invalid_worker / AI_HUMAN.UPDATE_SCHEDULE_TRANSACTION_PATH).exists()
+        )
 
     def test_native_tick_has_no_network_before_due_dedupes_and_requires_exact_pilot(self):
         worker = self.base / "native-tick-worker"
@@ -8717,7 +9482,18 @@ class LifecycleTests(unittest.TestCase):
             {
                 "lane": "daily-email-triage",
                 "phase": "pilot",
-                "report": {"status": "UPDATED", "validator": "PASS"},
+                "report": {
+                    "checked_month": "2026-09",
+                    "installed_version": manifest["version"],
+                    "last_check_utc": "2026-09-08T00:00:00Z",
+                    "latest_version": manifest["version"],
+                    "reason": "CHECK_COMPLETE",
+                    "scheduled_check": "DUE",
+                    "schema": "ai-human.version-report/v1",
+                    "status": "UPDATED",
+                    "validator": "PASS",
+                    "worker_id": "email-pilot-001",
+                },
                 "worker_id": "email-pilot-001",
             }
         ]
@@ -8744,6 +9520,24 @@ class LifecycleTests(unittest.TestCase):
                     approval_reference="forged pilot must not approve",
                     approved_by="Mission Owner",
                     fleet_state=str(forged_state),
+                    source=str(upgrade),
+                    worker=str(worker),
+                )
+            )
+        forged_release = json.loads(fleet_state.read_text(encoding="utf-8"))
+        forged_release["pilot_results"][0]["report"]["installed_version"] = CURRENT_VERSION
+        forged_release["pilot_proof_sha256"] = AI_HUMAN.canonical_json_sha256(
+            forged_release["pilot_results"]
+        )
+        forged_release_state = self.write_json_fixture(
+            "native-tick-forged-release-pilot.json", forged_release
+        )
+        with self.assertRaisesRegex(ValueError, "exact release run"):
+            AI_HUMAN.update_pilot_approve(
+                SimpleNamespace(
+                    approval_reference="wrong release pilot must not approve",
+                    approved_by="Mission Owner",
+                    fleet_state=str(forged_release_state),
                     source=str(upgrade),
                     worker=str(worker),
                 )

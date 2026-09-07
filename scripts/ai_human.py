@@ -266,6 +266,7 @@ UPDATE_SCHEDULE_TRANSACTION_PATH = Path(
     ".ai-human/control/update-schedule-transaction.json"
 )
 UPDATE_PILOT_APPROVAL_PATH = UPDATE_SCHEDULE_ROOT / "pilot-approval.json"
+UPDATE_LEGACY_MIGRATION_PATH = UPDATE_SCHEDULE_ROOT / "legacy-migration.json"
 UPDATE_SCHEDULE_CADENCES = {"WEEKLY", "MONTHLY"}
 UPDATE_SCHEDULE_PLATFORMS = {"MACOS", "WINDOWS"}
 UPDATE_SCHEDULE_STATUSES = {"DISABLED", "ENABLED", "PAUSED", "REMOVED"}
@@ -329,7 +330,8 @@ MODE_GUARDED_COMMANDS = {
     "exchange-join", "exchange-directory-refresh", "exchange-leave", "exchange-local-recover",
     "exchange-send", "exchange-ack", "exchange-decide",
     "exchange-result", "exchange-mission-create", "exchange-integrate",
-    "update-schedule-configure", "update-schedule-edit", "update-pilot-approve",
+    "update-schedule-configure", "update-schedule-edit",
+    "update-schedule-legacy-disable", "update-pilot-approve",
 }
 COORDINATION_STATE_FILES = (
     "MASTER_CURSOR.md", "OPEN_REGISTER.md", "TODAY.md",
@@ -5237,7 +5239,7 @@ def controlled_state_paths(worker):
     if update_root.is_dir():
         for relative in (
             UPDATE_SCHEDULE_CONFIG_PATH, UPDATE_SCHEDULE_NATIVE_PATH,
-            UPDATE_PILOT_APPROVAL_PATH,
+            UPDATE_PILOT_APPROVAL_PATH, UPDATE_LEGACY_MIGRATION_PATH,
         ):
             path = worker / relative
             if path.is_file():
@@ -9252,7 +9254,7 @@ def validate_update_schedule_config(value):
         required = base | {
             "approval_reference", "cadence", "config_id", "config_version",
             "day_of_month", "local_time", "native_timezone_id", "not_before_local",
-            "native_timezone_confirmed", "platform", "python_executable",
+            "max_retry_attempts", "native_timezone_confirmed", "platform", "python_executable",
             "retry_policy", "rollout_lane",
             "schedule_id", "timezone", "weekday",
         }
@@ -9268,6 +9270,12 @@ def validate_update_schedule_config(value):
             raise ValueError("update schedule rollout lane must be PILOT or GENERAL")
         if value["retry_policy"] != "OWNER_OR_NEXT_OCCURRENCE":
             raise ValueError("unsupported update schedule retry policy")
+        if (
+            isinstance(value["max_retry_attempts"], bool)
+            or not isinstance(value["max_retry_attempts"], int)
+            or not 1 <= value["max_retry_attempts"] <= BATCH_CAP
+        ):
+            raise ValueError("update schedule max retry attempts must be 1 through 25")
         if not LOCAL_CLOCK.fullmatch(str(value["local_time"])):
             raise ValueError("update schedule local time must be HH:MM")
         validate_timezone(str(value["timezone"]))
@@ -9292,8 +9300,23 @@ def validate_update_schedule_config(value):
                 raise ValueError("monthly update schedule requires day 1 through 28 and no weekday")
         moment = parse_offset_datetime(value["not_before_local"], "update schedule not-before")
         validate_moment_in_timezone(moment, value["timezone"], "update schedule not-before")
-    for field in ("created_utc", "updated_utc"):
-        parse_recorded_utc(value[field], "update schedule " + field)
+        hour, minute = (int(part) for part in value["local_time"].split(":"))
+        recurrence_matches = (
+            moment.weekday() == UPDATE_WEEKDAYS[value["weekday"]]
+            if value["cadence"] == "WEEKLY"
+            else moment.day == value["day_of_month"]
+        )
+        if (
+            not recurrence_matches
+            or (moment.hour, moment.minute, moment.second, moment.microsecond)
+            != (hour, minute, 0, 0)
+            or local_schedule_candidate(value, moment.date()).isoformat() != moment.isoformat()
+        ):
+            raise ValueError("update schedule not-before is not an exact configured occurrence")
+    created = parse_recorded_utc(value["created_utc"], "update schedule created_utc")
+    updated = parse_recorded_utc(value["updated_utc"], "update schedule updated_utc")
+    if updated < created:
+        raise ValueError("update schedule updated_utc precedes created_utc")
     bounded_clean(value["owner"], "update schedule owner", 300)
     return value
 
@@ -9311,13 +9334,48 @@ def update_schedule_config_sha256(config):
     return canonical_json_sha256(config)
 
 
+def update_legacy_migration_sha256(value):
+    return canonical_json_sha256(
+        {key: item for key, item in value.items() if key != "record_sha256"}
+    )
+
+
+def validate_update_legacy_migration(value, metadata=None, owner=None):
+    required = {
+        "approval_reference", "external_id", "owner", "recorded_utc",
+        "record_sha256", "removal_evidence", "schema", "status", "worker_id",
+    }
+    require_exact_fields(value, required, "legacy update schedule migration")
+    if (
+        value.get("schema") != "ai-human.legacy-update-schedule-migration/v1"
+        or value.get("status") != "VERIFIED_REMOVED_BY_OWNER_EVIDENCE"
+    ):
+        raise ValueError("unsupported legacy update schedule migration")
+    for field, limit in (
+        ("approval_reference", 1000), ("external_id", 300),
+        ("owner", 300), ("removal_evidence", 2000),
+    ):
+        bounded_clean(value[field], "legacy update schedule " + field, limit)
+    worker_id = safe_identity(str(value["worker_id"]), "legacy update schedule worker id")
+    if not SHA256_HEX.fullmatch(str(value["record_sha256"])):
+        raise ValueError("legacy update schedule migration has an invalid record hash")
+    if value["record_sha256"] != update_legacy_migration_sha256(value):
+        raise ValueError("legacy update schedule migration record hash mismatch")
+    if metadata is not None and worker_id != metadata.get("worker_id"):
+        raise ValueError("legacy update schedule migration belongs to a different worker")
+    if owner is not None and value["owner"] != owner:
+        raise ValueError("legacy update schedule migration belongs to a different owner")
+    parse_recorded_utc(value["recorded_utc"], "legacy update schedule recorded_utc")
+    return value
+
+
 def validate_native_update_schedule(value, config=None):
     if not isinstance(value, dict):
         raise ValueError("native update schedule proof must be a JSON object")
     required = {
         "adapter", "config_sha256", "definition_path", "definition_sha256",
-        "external_id", "native_timezone_id", "next_run_local", "platform",
-        "reason", "schedule_id", "schema", "status", "verified_utc",
+        "external_id", "native_timezone_id", "next_run_local", "next_run_source",
+        "platform", "reason", "schedule_id", "schema", "status", "verified_utc",
     }
     require_exact_fields(value, required, "native update schedule proof")
     if value.get("schema") != "ai-human.native-update-schedule/v1":
@@ -9334,7 +9392,9 @@ def validate_native_update_schedule(value, config=None):
     bounded_clean(value["adapter"], "native update adapter", 100)
     bounded_clean(value["native_timezone_id"], "native update time-zone id", 200)
     parse_recorded_utc(value["verified_utc"], "native update verified_utc")
-    safe_relative(value["definition_path"], "native update definition path")
+    definition_relative = safe_relative(
+        value["definition_path"], "native update definition path"
+    )
     if value["status"] == "UNAVAILABLE":
         bounded_clean(value["reason"], "native update unavailable reason", 1000)
     elif value["reason"] is not None:
@@ -9343,6 +9403,10 @@ def validate_native_update_schedule(value, config=None):
         moment = parse_offset_datetime(value["next_run_local"], "native update next run")
         if config:
             validate_moment_in_timezone(moment, config["timezone"], "native update next run")
+        if value["next_run_source"] != "INTERNAL_RULE_AFTER_NATIVE_DEFINITION_READBACK":
+            raise ValueError("native schedule next run source is invalid")
+    elif value["next_run_source"] != "NONE":
+        raise ValueError("native schedule empty next run must have source NONE")
     if config:
         if value["schedule_id"] != config["schedule_id"]:
             raise ValueError("native schedule id differs from config")
@@ -9352,6 +9416,34 @@ def validate_native_update_schedule(value, config=None):
             raise ValueError("native schedule platform differs from config")
         if value["native_timezone_id"] != config["native_timezone_id"]:
             raise ValueError("native schedule time zone differs from config")
+        if definition_relative != update_schedule_definition_path(config):
+            raise ValueError("native schedule definition path differs from config")
+        if value["external_id"] != native_update_external_id(config):
+            raise ValueError("native schedule external id differs from config")
+        expected_adapter = (
+            "launchd LaunchAgent"
+            if config["platform"] == "MACOS" else "Windows Task Scheduler"
+        )
+        if value["adapter"] != expected_adapter:
+            raise ValueError("native schedule adapter differs from config")
+        expected_status = {
+            "ENABLED": "VERIFIED_ACTIVE", "PAUSED": "VERIFIED_PAUSED",
+            "REMOVED": "VERIFIED_REMOVED",
+        }.get(config["status"])
+        if expected_status and value["status"] != expected_status:
+            raise ValueError("native schedule status differs from config")
+        if (
+            (expected_status in {"VERIFIED_ACTIVE", "VERIFIED_PAUSED"}
+             and value["next_run_local"] is None)
+            or (expected_status == "VERIFIED_REMOVED"
+                and value["next_run_local"] is not None)
+        ):
+            raise ValueError("native schedule next run contradicts its status")
+        if value["next_run_local"] is not None and not valid_update_occurrence(
+            config,
+            parse_offset_datetime(value["next_run_local"], "native update next run"),
+        ):
+            raise ValueError("native schedule next run is not a configured occurrence")
     return value
 
 
@@ -9368,18 +9460,15 @@ def local_schedule_candidate(config, date_value):
     hour, minute = (int(part) for part in config["local_time"].split(":"))
     zone = ZoneInfo(config["timezone"])
     naive = datetime.datetime.combine(date_value, datetime.time(hour, minute))
-    for offset_minutes in range(181):
-        adjusted = naive + datetime.timedelta(minutes=offset_minutes)
-        for fold in (0, 1):
-            candidate = adjusted.replace(tzinfo=zone, fold=fold)
-            round_trip = candidate.astimezone(datetime.timezone.utc).astimezone(zone)
-            if round_trip.replace(tzinfo=None) == adjusted:
-                return candidate
-    raise ValueError("update schedule local time has no valid occurrence")
+    for fold in (0, 1):
+        candidate = naive.replace(tzinfo=zone, fold=fold)
+        round_trip = candidate.astimezone(datetime.timezone.utc).astimezone(zone)
+        if round_trip.replace(tzinfo=None) == naive:
+            return candidate
+    raise ValueError("update schedule local time does not exist on this date")
 
 
-def next_update_occurrence(config, after_local, inclusive=False):
-    validate_update_schedule_config(config)
+def calculate_next_update_occurrence(config, after_local, inclusive=False):
     zone = ZoneInfo(config["timezone"])
     after_local = after_local.astimezone(zone)
     for offset in range(370):
@@ -9390,10 +9479,18 @@ def next_update_occurrence(config, after_local, inclusive=False):
             matches = date_value.day == config["day_of_month"]
         if not matches:
             continue
-        candidate = local_schedule_candidate(config, date_value)
+        try:
+            candidate = local_schedule_candidate(config, date_value)
+        except ValueError:
+            continue
         if candidate > after_local or (inclusive and candidate == after_local):
             return candidate
     raise ValueError("cannot calculate the next update schedule occurrence")
+
+
+def next_update_occurrence(config, after_local, inclusive=False):
+    validate_update_schedule_config(config)
+    return calculate_next_update_occurrence(config, after_local, inclusive)
 
 
 def latest_due_update_occurrence(config, now_local):
@@ -9463,7 +9560,15 @@ def render_windows_update_definition(worker, config):
     )
     triggers = ET.SubElement(task, "{" + namespace + "}Triggers")
     trigger = ET.SubElement(triggers, "{" + namespace + "}CalendarTrigger")
-    ET.SubElement(trigger, "{" + namespace + "}StartBoundary").text = config["not_before_local"]
+    # Task Scheduler interprets a StartBoundary without an offset as local wall
+    # time.  Supplying the current UTC offset would freeze that offset and move
+    # the owner's requested clock time after a daylight-saving transition.
+    not_before = parse_offset_datetime(
+        config["not_before_local"], "update schedule not-before"
+    )
+    ET.SubElement(trigger, "{" + namespace + "}StartBoundary").text = (
+        not_before.strftime("%Y-%m-%dT%H:%M:%S")
+    )
     ET.SubElement(trigger, "{" + namespace + "}Enabled").text = "true"
     if config["cadence"] == "WEEKLY":
         schedule = ET.SubElement(trigger, "{" + namespace + "}ScheduleByWeek")
@@ -9488,6 +9593,7 @@ def render_windows_update_definition(worker, config):
     ET.SubElement(settings, "{" + namespace + "}MultipleInstancesPolicy").text = "IgnoreNew"
     ET.SubElement(settings, "{" + namespace + "}StartWhenAvailable").text = "true"
     ET.SubElement(settings, "{" + namespace + "}RunOnlyIfNetworkAvailable").text = "true"
+    ET.SubElement(settings, "{" + namespace + "}Enabled").text = "true"
     ET.SubElement(settings, "{" + namespace + "}ExecutionTimeLimit").text = "PT30M"
     actions = ET.SubElement(task, "{" + namespace + "}Actions", {"Context": "Author"})
     action = ET.SubElement(actions, "{" + namespace + "}Exec")
@@ -9495,6 +9601,193 @@ def render_windows_update_definition(worker, config):
     ET.SubElement(action, "{" + namespace + "}Command").text = arguments[0]
     ET.SubElement(action, "{" + namespace + "}Arguments").text = subprocess.list2cmdline(arguments[1:])
     return ET.tostring(task, encoding="utf-8", xml_declaration=True)
+
+
+def windows_task_semantics(content):
+    if isinstance(content, bytes):
+        content = content.decode("utf-8")
+    if not isinstance(content, str) or "<!DOCTYPE" in content.upper():
+        raise ValueError("Windows task definition is not safe XML")
+    try:
+        root = ET.fromstring(content)
+    except ET.ParseError as error:
+        raise ValueError("Windows task definition is invalid XML") from error
+    namespace = "http://schemas.microsoft.com/windows/2004/02/mit/task"
+    prefix = "{" + namespace + "}"
+    if root.tag != prefix + "Task":
+        raise ValueError("Windows task definition has the wrong root namespace")
+
+    def one(parent, tag, label):
+        matches = parent.findall(prefix + tag)
+        if len(matches) != 1:
+            raise ValueError("Windows task definition requires exactly one " + label)
+        return matches[0]
+
+    def text_of(parent, tag, label):
+        value = one(parent, tag, label).text
+        if value is None or not value.strip():
+            raise ValueError("Windows task definition has empty " + label)
+        return value.strip()
+
+    registration = one(root, "RegistrationInfo", "registration block")
+    triggers = one(root, "Triggers", "trigger block")
+    trigger = one(triggers, "CalendarTrigger", "calendar trigger")
+    if len(list(triggers)) != 1:
+        raise ValueError("Windows task definition may contain only one trigger")
+    trigger_enabled_text = text_of(
+        trigger, "Enabled", "trigger enabled state"
+    ).casefold()
+    if trigger_enabled_text not in {"true", "false"}:
+        raise ValueError("Windows task definition has invalid enabled state")
+    weekly = trigger.findall(prefix + "ScheduleByWeek")
+    monthly = trigger.findall(prefix + "ScheduleByMonth")
+    if (len(weekly), len(monthly)) not in {(1, 0), (0, 1)}:
+        raise ValueError("Windows task definition must have one recurrence")
+    if weekly:
+        schedule = weekly[0]
+        days = one(schedule, "DaysOfWeek", "weekly days")
+        selected_days = [item.tag.removeprefix(prefix) for item in list(days)]
+        if len(selected_days) != 1 or selected_days[0].upper() not in UPDATE_WEEKDAYS:
+            raise ValueError("Windows task definition requires one valid weekday")
+        recurrence = {
+            "cadence": "WEEKLY",
+            "day": selected_days[0].upper(),
+            "interval": text_of(schedule, "WeeksInterval", "week interval"),
+        }
+    else:
+        schedule = monthly[0]
+        days = one(schedule, "DaysOfMonth", "monthly days")
+        day_values = [item.text.strip() for item in list(days) if item.text]
+        months = one(schedule, "Months", "monthly months")
+        month_values = sorted(item.tag.removeprefix(prefix) for item in list(months))
+        if len(day_values) != 1:
+            raise ValueError("Windows task definition requires one month day")
+        recurrence = {
+            "cadence": "MONTHLY", "day": day_values[0], "months": month_values,
+        }
+    principals = one(root, "Principals", "principals block")
+    principal = one(principals, "Principal", "principal")
+    if len(list(principals)) != 1:
+        raise ValueError("Windows task definition may contain only one principal")
+    user_nodes = principal.findall(prefix + "UserId")
+    if len(user_nodes) > 1:
+        raise ValueError("Windows task definition has duplicate user identity")
+    user_id = user_nodes[0].text.strip() if user_nodes and user_nodes[0].text else None
+    settings = one(root, "Settings", "settings block")
+    task_enabled_text = text_of(settings, "Enabled", "task enabled state").casefold()
+    if task_enabled_text not in {"true", "false"}:
+        raise ValueError("Windows task definition has invalid task enabled state")
+    actions = one(root, "Actions", "actions block")
+    action = one(actions, "Exec", "exec action")
+    if len(list(actions)) != 1:
+        raise ValueError("Windows task definition may contain only one action")
+    return {
+        "action_arguments": text_of(action, "Arguments", "action arguments"),
+        "action_command": text_of(action, "Command", "action command"),
+        "actions_context": actions.attrib.get("Context"),
+        "description": text_of(registration, "Description", "description"),
+        "enabled": task_enabled_text == "true",
+        "execution_time_limit": text_of(
+            settings, "ExecutionTimeLimit", "execution time limit"
+        ),
+        "logon_type": text_of(principal, "LogonType", "principal logon type"),
+        "multiple_instances": text_of(
+            settings, "MultipleInstancesPolicy", "multiple instances policy"
+        ),
+        "principal_id": principal.attrib.get("id"),
+        "recurrence": recurrence,
+        "run_level": text_of(principal, "RunLevel", "principal run level"),
+        "run_only_if_network": text_of(
+            settings, "RunOnlyIfNetworkAvailable", "network setting"
+        ).casefold(),
+        "start_boundary": text_of(trigger, "StartBoundary", "start boundary"),
+        "start_when_available": text_of(
+            settings, "StartWhenAvailable", "start-when-available setting"
+        ).casefold(),
+        "task_version": root.attrib.get("version"),
+        "trigger_enabled": trigger_enabled_text == "true",
+        "user_id": user_id,
+    }
+
+
+def canonical_windows_task(content, normalize_enabled=False, drop_user_id=False):
+    if isinstance(content, bytes):
+        content = content.decode("utf-8")
+    if not isinstance(content, str) or "<!DOCTYPE" in content.upper():
+        raise ValueError("Windows task definition is not safe XML")
+    try:
+        root = ET.fromstring(content)
+    except ET.ParseError as error:
+        raise ValueError("Windows task definition is invalid XML") from error
+    namespace = "http://schemas.microsoft.com/windows/2004/02/mit/task"
+    prefix = "{" + namespace + "}"
+    registration = root.find(prefix + "RegistrationInfo")
+    if registration is not None:
+        # Task Scheduler may add descriptive registration metadata. These fields do
+        # not change execution authority, trigger, action or retry behavior.
+        for child in list(registration):
+            if child.tag in {prefix + "Author", prefix + "Date", prefix + "URI"}:
+                registration.remove(child)
+    settings = root.find(prefix + "Settings")
+    if settings is not None:
+        harmless_defaults = {
+            "AllowHardTerminate": "true",
+            "AllowStartOnDemand": "true",
+            "DisallowStartIfOnBatteries": "true",
+            "Hidden": "false",
+            "Priority": "7",
+            "RunOnlyIfIdle": "false",
+            "StopIfGoingOnBatteries": "true",
+            "UseUnifiedSchedulingEngine": "false",
+            "WakeToRun": "false",
+        }
+        for child in list(settings):
+            local = child.tag.removeprefix(prefix)
+            if (
+                local in harmless_defaults
+                and not child.attrib
+                and not list(child)
+                and (child.text or "").strip().casefold()
+                == harmless_defaults[local]
+            ):
+                settings.remove(child)
+            elif local == "IdleSettings" and not child.attrib:
+                children = list(child)
+                values = {
+                    item.tag.removeprefix(prefix): (item.text or "").strip().casefold()
+                    for item in children
+                    if not item.attrib and not list(item)
+                }
+                if (
+                    len(children) == 2
+                    and len(values) == 2
+                    and values == {"RestartOnIdle": "false", "StopOnIdleEnd": "true"}
+                ):
+                    settings.remove(child)
+    if normalize_enabled:
+        enabled = root.find("./" + prefix + "Settings/" + prefix + "Enabled")
+        if enabled is not None:
+            enabled.text = "__VERIFIED_STATE__"
+    if drop_user_id:
+        principal = root.find("./" + prefix + "Principals/" + prefix + "Principal")
+        if principal is not None:
+            for user in principal.findall(prefix + "UserId"):
+                principal.remove(user)
+    serialized = ET.tostring(root, encoding="unicode")
+    return ET.canonicalize(xml_data=serialized, strip_text=True)
+
+
+def windows_task_missing(result):
+    if result.returncode == 0:
+        return False
+    detail = ((result.stdout or "") + " " + (result.stderr or "")).casefold()
+    return any(
+        marker in detail
+        for marker in (
+            "cannot find the file specified", "cannot find the task",
+            "does not exist", "not found", "system cannot find",
+        )
+    )
 
 
 def render_update_schedule_definition(worker, config):
@@ -9506,7 +9799,7 @@ def render_update_schedule_definition(worker, config):
 
 
 class NativeUpdateAdapter:
-    """Per-user native scheduler adapter. Tests inject a fake; no shell is used."""
+    """Per-user native scheduler adapter using argument-vector OS tools."""
 
     def __init__(self, worker, config):
         self.worker = Path(worker)
@@ -9539,7 +9832,26 @@ class NativeUpdateAdapter:
         return result.stdout.strip()
 
     def _macos_target(self):
-        return Path.home() / "Library/LaunchAgents" / (self.external_id + ".plist")
+        return path_without_symlinks(
+            Path.home(), Path("Library/LaunchAgents") / (self.external_id + ".plist"),
+            "macOS LaunchAgent target",
+        )
+
+    def _windows_current_sid(self):
+        result = subprocess.run(
+            ["whoami.exe", "/user", "/fo", "csv", "/nh"],
+            text=True, capture_output=True, check=False, timeout=15,
+        )
+        if result.returncode != 0:
+            raise ValueError("cannot verify the Windows task principal")
+        try:
+            rows = list(csv.reader(result.stdout.splitlines()))
+            sid = rows[0][1].strip() if len(rows) == 1 and len(rows[0]) == 2 else ""
+        except (csv.Error, IndexError):
+            sid = ""
+        if not re.fullmatch(r"S-\d+(?:-\d+)+", sid, flags=re.I):
+            raise ValueError("cannot verify the Windows task principal")
+        return sid.casefold()
 
     def install(self, definition_path):
         if self.observed_timezone_id() != self.config["native_timezone_id"]:
@@ -9547,6 +9859,13 @@ class NativeUpdateAdapter:
         if self.config["platform"] == "MACOS":
             target = self._macos_target()
             target.parent.mkdir(parents=True, exist_ok=True)
+            logs = update_schedule_target(
+                self.worker, UPDATE_SCHEDULE_ROOT / "logs",
+                "native update schedule logs",
+            )
+            if logs.exists() and not logs.is_dir():
+                raise ValueError("native update schedule logs target is not a directory")
+            logs.mkdir(parents=True, exist_ok=True)
             atomic_copy_file(definition_path, target)
             domain = "gui/" + str(os.getuid())
             subprocess.run(
@@ -9568,11 +9887,25 @@ class NativeUpdateAdapter:
 
     def pause(self):
         if self.config["platform"] == "MACOS":
+            target = self._macos_target()
             result = subprocess.run(
                 ["/bin/launchctl", "bootout", "gui/" + str(os.getuid()),
-                 str(self._macos_target())],
+                 str(target)],
                 text=True, capture_output=True, check=False, timeout=15,
             )
+            detail = ((result.stdout or "") + " " + (result.stderr or "")).casefold()
+            if result.returncode != 0 and not any(
+                marker in detail
+                for marker in (
+                    "could not find specified service", "no such process", "not found"
+                )
+            ):
+                raise ValueError("native update schedule pause failed")
+            # A booted-out LaunchAgent plist is loaded again at login.  Removing
+            # the managed copy makes PAUSED persistent; resume recreates it from
+            # the private, hash-verified definition.
+            target.unlink(missing_ok=True)
+            return
         else:
             result = subprocess.run(
                 ["schtasks.exe", "/Change", "/TN", self.external_id, "/Disable"],
@@ -9594,30 +9927,62 @@ class NativeUpdateAdapter:
     def remove(self):
         if self.config["platform"] == "MACOS":
             target = self._macos_target()
-            subprocess.run(
+            result = subprocess.run(
                 ["/bin/launchctl", "bootout", "gui/" + str(os.getuid()), str(target)],
-                capture_output=True, check=False, timeout=15,
+                text=True, capture_output=True, check=False, timeout=15,
             )
+            detail = ((result.stdout or "") + " " + (result.stderr or "")).casefold()
+            if result.returncode != 0 and not any(
+                marker in detail
+                for marker in ("could not find specified service", "no such process", "not found")
+            ):
+                raise ValueError("native update schedule removal failed")
             target.unlink(missing_ok=True)
             return
         result = subprocess.run(
             ["schtasks.exe", "/Delete", "/TN", self.external_id, "/F"],
             text=True, capture_output=True, check=False, timeout=15,
         )
-        if result.returncode != 0 and "cannot find" not in result.stderr.casefold():
+        if result.returncode != 0 and not windows_task_missing(result):
             raise ValueError("native update schedule removal failed")
 
     def query(self, definition_path):
-        expected = sha256(definition_path)
         if self.config["platform"] == "MACOS":
             target = self._macos_target()
-            if not target.is_file():
-                return {"status": "REMOVED", "definition_sha256": None}
-            definition_ok = sha256(target) == expected
             result = subprocess.run(
                 ["/bin/launchctl", "print", "gui/" + str(os.getuid()) + "/" + self.external_id],
-                capture_output=True, check=False, timeout=15,
+                text=True, capture_output=True, check=False, timeout=15,
             )
+            if not target.is_file():
+                if result.returncode == 0:
+                    raise ValueError("native update task remains loaded without its definition")
+                detail = ((result.stdout or "") + " " + (result.stderr or "")).casefold()
+                if not any(
+                    marker in detail
+                    for marker in ("could not find service", "could not find specified service", "not found")
+                ):
+                    raise ValueError("cannot verify native update schedule removal")
+                return {
+                    "status": (
+                        "PAUSED" if self.config.get("status") == "PAUSED" else "REMOVED"
+                    ),
+                    "definition_sha256": (
+                        sha256(definition_path)
+                        if self.config.get("status") == "PAUSED" else None
+                    ),
+                }
+            if result.returncode != 0:
+                detail = ((result.stdout or "") + " " + (result.stderr or "")).casefold()
+                if not any(
+                    marker in detail
+                    for marker in (
+                        "could not find service", "could not find specified service",
+                        "not found",
+                    )
+                ):
+                    raise ValueError("cannot verify the macOS update schedule")
+            expected = sha256(definition_path)
+            definition_ok = sha256(target) == expected
             return {
                 "status": "ACTIVE" if result.returncode == 0 else "PAUSED",
                 "definition_sha256": expected if definition_ok else None,
@@ -9627,14 +9992,54 @@ class NativeUpdateAdapter:
             text=True, capture_output=True, check=False, timeout=15,
         )
         if result.returncode != 0:
-            return {"status": "REMOVED", "definition_sha256": None}
-        config_hash = update_schedule_config_sha256(self.config)
-        definition_ok = self.config["schedule_id"] in result.stdout and config_hash in result.stdout
-        enabled = not re.search(r"<Enabled>\s*false\s*</Enabled>", result.stdout, flags=re.I)
+            if windows_task_missing(result):
+                return {"status": "REMOVED", "definition_sha256": None}
+            raise ValueError("cannot verify the Windows update schedule")
+        definition_path = Path(definition_path)
+        if not definition_path.is_file():
+            raise ValueError("local Windows task definition is missing")
+        expected = sha256(definition_path)
+        expected_content = definition_path.read_bytes()
+        expected_semantics = windows_task_semantics(expected_content)
+        actual_semantics = windows_task_semantics(result.stdout)
+        enabled = actual_semantics["enabled"]
+        actual_user = actual_semantics["user_id"]
+        expected_user = expected_semantics["user_id"]
+        principal_ok = actual_user == expected_user
+        drop_actual_user = False
+        if expected_user is None and actual_user is not None:
+            principal_ok = actual_user.casefold() == self._windows_current_sid()
+            drop_actual_user = principal_ok
+        definition_ok = principal_ok and canonical_windows_task(
+            result.stdout, normalize_enabled=True, drop_user_id=drop_actual_user
+        ) == canonical_windows_task(
+            expected_content, normalize_enabled=True, drop_user_id=False
+        )
         return {
             "status": "ACTIVE" if enabled else "PAUSED",
             "definition_sha256": expected if definition_ok else None,
         }
+
+    def query_removed(self, definition_path):
+        """Read raw absence without treating an intentionally absent paused plist as PAUSED."""
+        if self.config["platform"] != "MACOS":
+            return self.query(definition_path)
+        target = self._macos_target()
+        result = subprocess.run(
+            ["/bin/launchctl", "print", "gui/" + str(os.getuid()) + "/" + self.external_id],
+            text=True, capture_output=True, check=False, timeout=15,
+        )
+        if target.exists() or result.returncode == 0:
+            return {"status": "ACTIVE", "definition_sha256": None}
+        detail = ((result.stdout or "") + " " + (result.stderr or "")).casefold()
+        if not any(
+            marker in detail
+            for marker in (
+                "could not find service", "could not find specified service", "not found"
+            )
+        ):
+            raise ValueError("cannot verify native update schedule removal")
+        return {"status": "REMOVED", "definition_sha256": None}
 
 
 def native_update_adapter(worker, config):
@@ -9644,7 +10049,50 @@ def native_update_adapter(worker, config):
             config["platform"].title()
             + " native schedule rendering is simulated on this host; real registration refused"
         )
+    if actual == "MACOS":
+        raise ValueError(
+            "macOS LaunchAgent rendering is simulated; exact loaded command and calendar "
+            "readback is unavailable, so real registration is refused"
+        )
     return NativeUpdateAdapter(worker, config)
+
+
+def query_removed_native(adapter, definition_path):
+    query_removed = getattr(adapter, "query_removed", None)
+    return (
+        query_removed(definition_path)
+        if callable(query_removed) else adapter.query(definition_path)
+    )
+
+
+def verify_update_schedule_native_readback(worker, config=None):
+    config = config or update_schedule_config(worker, required=True)
+    if config["status"] == "DISABLED":
+        raise ValueError("disabled update schedule has no managed native task")
+    native = native_update_schedule(worker, required=True, config=config)
+    definition = update_schedule_target(
+        worker, native["definition_path"], "native update schedule definition"
+    )
+    if sha256(definition) != native["definition_sha256"]:
+        raise ValueError("native update definition differs from stored proof")
+    adapter = native_update_adapter(worker, config)
+    if adapter.observed_timezone_id() != config["native_timezone_id"]:
+        raise ValueError("native operating-system time zone differs from owner confirmation")
+    expected_status = {
+        "ENABLED": "ACTIVE", "PAUSED": "PAUSED", "REMOVED": "REMOVED",
+    }[config["status"]]
+    expected_digest = (
+        None if expected_status == "REMOVED" else native["definition_sha256"]
+    )
+    observed = (
+        query_removed_native(adapter, definition)
+        if expected_status == "REMOVED" else adapter.query(definition)
+    )
+    if observed != {
+        "status": expected_status, "definition_sha256": expected_digest,
+    }:
+        raise ValueError("native update schedule readback differs from stored proof")
+    return native, definition, adapter, expected_status
 
 
 def update_automation_row(worker, config, native=None, last_run=None):
@@ -9696,9 +10144,22 @@ def validate_update_schedule_state(worker, metadata, allow_transaction=False):
         config = update_schedule_config(worker)
     except Exception as exc:
         return ["invalid update schedule config: " + str(exc)]
+    legacy_path = worker / UPDATE_LEGACY_MIGRATION_PATH
+    if legacy_path.is_file():
+        try:
+            validate_update_legacy_migration(
+                read_json(legacy_path), metadata,
+                clean(parameter_value(worker, "Human owner"), "update schedule owner"),
+            )
+        except Exception as exc:
+            failures.append("invalid legacy update schedule migration: " + str(exc))
     if not config:
         # Backward compatibility: a legacy ACTIVE setting may have an external adapter
         # that this release did not create. Never create a duplicate automatically.
+        try:
+            read_update_version_report(worker, metadata=metadata)
+        except Exception as exc:
+            failures.append("invalid update version report: " + str(exc))
         return failures
     try:
         native = native_update_schedule(worker, config=config)
@@ -9724,7 +10185,17 @@ def validate_update_schedule_state(worker, metadata, allow_transaction=False):
         not native or native.get("status") != "VERIFIED_REMOVED"
     ):
         failures.append("removed update schedule lacks verified removed native state")
-    definition = worker / update_schedule_definition_path(config) if config["status"] != "DISABLED" else None
+    try:
+        definition = (
+            update_schedule_target(
+                worker, update_schedule_definition_path(config),
+                "native update schedule definition",
+            )
+            if config["status"] != "DISABLED" else None
+        )
+    except Exception as exc:
+        definition = None
+        failures.append("unsafe native update schedule definition: " + str(exc))
     if native and native["status"] != "UNAVAILABLE":
         if not definition or not definition.is_file() or sha256(definition) != native["definition_sha256"]:
             failures.append("native update schedule definition hash mismatch")
@@ -9740,6 +10211,14 @@ def validate_update_schedule_state(worker, metadata, allow_transaction=False):
             failures.append("visible update automation row differs from private schedule state")
     except Exception as exc:
         failures.append("invalid visible update automation row: " + str(exc))
+    try:
+        read_update_version_report(
+            worker,
+            config if config.get("status") != "DISABLED" else None,
+            metadata,
+        )
+    except Exception as exc:
+        failures.append("invalid update version report: " + str(exc))
     return failures
 
 
@@ -13869,6 +14348,9 @@ def prepare_downgrade(args):
         raise ValueError(
             "remove and visibly verify the native update schedule before downgrade preparation"
         )
+    update_config = update_schedule_config(worker)
+    if update_config and update_config.get("status") == "REMOVED":
+        verify_update_schedule_native_readback(worker, update_config)
     ok, failures = validate_worker(worker, quiet=True)
     if not ok:
         raise ValueError("pre-downgrade validation failed: " + "; ".join(failures))
@@ -14136,6 +14618,14 @@ def safe_worker_report(metadata, installed, latest, status, validator, moment, d
     }
 
 
+def require_legacy_update_path_unowned(worker):
+    config = update_schedule_config(worker)
+    if config and config.get("status") in {"ENABLED", "PAUSED", "REMOVED"}:
+        raise ValueError(
+            "native update schedule owns update timing; legacy automatic-update is refused"
+        )
+
+
 def run_automatic_update(worker, release, manifest, moment_local):
     try:
         metadata = install_metadata(worker)
@@ -14146,6 +14636,11 @@ def run_automatic_update(worker, release, manifest, moment_local):
             "scheduled_check": "NOT_DUE", "schema": "ai-human.version-report/v1",
             "status": "MISSING", "validator": "FAIL", "worker_id": None,
         }
+    # A configured native schedule is the sole owner of update timing and v2
+    # occurrence receipts.  The historical monthly entry point must not run an
+    # update or replace its report, including when the native schedule is paused
+    # or has been explicitly removed.
+    require_legacy_update_path_unowned(worker)
     installed = str(metadata.get("installed_version", ""))
     worker_id = metadata.get("worker_id")
     if not worker_id or not SAFE_ID.fullmatch(str(worker_id)):
@@ -14230,6 +14725,8 @@ def run_automatic_update(worker, release, manifest, moment_local):
 def automatic_update(args):
     worker = safe_worker(args.worker)
     moment = parse_local(args.now_local)
+    # Check before --latest can make a network request.
+    require_legacy_update_path_unowned(worker)
     temp = None
     if args.latest:
         repository = install_metadata(worker)["repository"]
@@ -14251,132 +14748,498 @@ def automatic_update(args):
     print("- reason: " + report["reason"])
 
 
+UPDATE_SCHEDULE_BACKUP_BASE_TARGETS = {
+    UPDATE_SCHEDULE_CONFIG_PATH, UPDATE_SCHEDULE_NATIVE_PATH,
+    UPDATE_LEGACY_MIGRATION_PATH, Path(".ai-human/install.json"),
+    Path(".ai-human/version-report.json"), Path("AUTOMATIONS.md"),
+}
+
+
+def update_schedule_worker_path_sha256(worker):
+    return hashlib.sha256(str(Path(worker).resolve()).encode("utf-8")).hexdigest()
+
+
+def expected_update_schedule_id(worker, metadata, existing=None):
+    if existing and existing.get("status") != "DISABLED":
+        return existing["schedule_id"]
+    seed = str(metadata.get("worker_id") or worker_identity_sha256(worker))
+    return "update-" + hashlib.sha256(
+        (seed + str(Path(worker).resolve())).encode("utf-8")
+    ).hexdigest()[:20]
+
+
+def update_schedule_snapshot_sha256(records, base_only=False):
+    selected = [
+        record for record in records
+        if not base_only
+        or safe_relative(record["path"], "update schedule snapshot path")
+        in UPDATE_SCHEDULE_BACKUP_BASE_TARGETS
+    ]
+    return canonical_json_sha256(selected)
+
+
+def current_update_schedule_base_records(worker):
+    records = []
+    for relative in sorted(
+        UPDATE_SCHEDULE_BACKUP_BASE_TARGETS, key=lambda item: item.as_posix()
+    ):
+        target = worker_target(worker, relative, "update schedule current state")
+        if target.exists() and not target.is_file():
+            raise ValueError("update schedule current state contains a non-file target")
+        records.append(
+            {
+                "existed": target.is_file(),
+                "path": relative.as_posix(),
+                "sha256": sha256(target) if target.is_file() else None,
+            }
+        )
+    return records
+
+
+def current_update_schedule_base_sha256(worker):
+    return update_schedule_snapshot_sha256(current_update_schedule_base_records(worker))
+
+
+def update_schedule_definition_inventory(worker, candidate_definition=None):
+    allowed = set()
+    current = update_schedule_config(worker)
+    if current and current.get("status") != "DISABLED":
+        allowed.add(update_schedule_definition_path(current))
+    if candidate_definition is not None:
+        candidate = safe_relative(
+            candidate_definition, "candidate update schedule definition"
+        )
+        if (
+            candidate.parent != UPDATE_SCHEDULE_DEFINITIONS_ROOT
+            or candidate.suffix not in {".plist", ".xml"}
+        ):
+            raise ValueError("candidate update schedule definition is outside its inventory")
+        safe_identity(candidate.stem, "candidate update schedule definition name")
+        allowed.add(candidate)
+    definitions = update_schedule_target(
+        worker, UPDATE_SCHEDULE_DEFINITIONS_ROOT,
+        "update schedule definitions directory",
+    )
+    if definitions.exists():
+        if not definitions.is_dir():
+            raise ValueError("update schedule definitions path is not a directory")
+        entries = list(definitions.iterdir())
+        if len(entries) > BATCH_CAP:
+            raise ValueError("update schedule definition inventory exceeds the cap of 25")
+        for entry in entries:
+            relative = entry.relative_to(worker)
+            checked = update_schedule_target(
+                worker, relative, "update schedule definition inventory"
+            )
+            if not checked.is_file() or relative not in allowed:
+                raise ValueError(
+                    "unexpected update schedule definition inventory: "
+                    + relative.as_posix()
+                )
+    if len(UPDATE_SCHEDULE_BACKUP_BASE_TARGETS | allowed) > BATCH_CAP:
+        raise ValueError("update schedule backup inventory exceeds the cap of 25")
+    return allowed
+
+
 def update_schedule_backup(worker, candidate_definition=None):
+    definitions = update_schedule_definition_inventory(worker, candidate_definition)
+    targets = UPDATE_SCHEDULE_BACKUP_BASE_TARGETS | definitions
     root = update_schedule_target(
         worker,
         UPDATE_SCHEDULE_BACKUPS_ROOT / ("before-" + now_utc() + "-" + secrets.token_hex(4)),
         "update schedule backup",
     )
-    targets = {
-        UPDATE_SCHEDULE_CONFIG_PATH, UPDATE_SCHEDULE_NATIVE_PATH,
-        Path(".ai-human/install.json"), Path("AUTOMATIONS.md"),
-    }
-    definitions = worker / UPDATE_SCHEDULE_DEFINITIONS_ROOT
-    if definitions.is_dir():
-        targets.update(path.relative_to(worker) for path in definitions.iterdir() if path.is_file())
-    if candidate_definition:
-        targets.add(Path(candidate_definition))
     records = []
-    for relative in sorted(targets, key=str):
-        source = worker / relative
-        existed = source.is_file() and not source.is_symlink()
+    for relative in sorted(targets, key=lambda item: item.as_posix()):
+        source = worker_target(worker, relative, "update schedule backup target")
+        if source.exists() and not source.is_file():
+            raise ValueError(
+                "update schedule backup target is not a regular file: "
+                + relative.as_posix()
+            )
+        existed = source.is_file()
         records.append(
-            {"existed": existed, "path": relative.as_posix(), "sha256": sha256(source) if existed else None}
+            {
+                "existed": existed,
+                "path": relative.as_posix(),
+                "sha256": sha256(source) if existed else None,
+            }
         )
         if existed:
             destination = root / "files" / relative
             destination.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(source, destination)
-    atomic_json(
-        root / "backup.json",
-        {"created_utc": now_utc(), "files": records, "schema": "ai-human.update-schedule-backup/v1"},
+    files_digest, files_count = tree_sha256(root / "files")
+    installed_manifest = worker_target(
+        worker, ".ai-human/release-manifest.json", "installed release manifest"
     )
+    metadata = install_metadata(worker)
+    manifest = {
+        "created_utc": now_utc(),
+        "definition_paths": sorted(path.as_posix() for path in definitions),
+        "file_count": files_count,
+        "files": records,
+        "files_tree_sha256": files_digest,
+        "installed_release_manifest_sha256": sha256(installed_manifest),
+        "installed_version": metadata["installed_version"],
+        "schema": "ai-human.update-schedule-backup/v1",
+        "snapshot_sha256": update_schedule_snapshot_sha256(records),
+        "worker_identity_sha256": worker_identity_sha256(worker),
+        "worker_path_sha256": update_schedule_worker_path_sha256(worker),
+    }
+    manifest["record_sha256"] = governed_record_sha256(manifest)
+    atomic_json(root / "backup.json", manifest)
     return root
 
 
-def restore_update_schedule_backup(worker, backup):
+def validate_update_schedule_backup(worker, backup):
     backup = update_schedule_target(
         worker, Path(backup).relative_to(worker), "update schedule restore source"
     )
-    manifest = read_json(backup / "backup.json")
+    manifest_path = release_file(
+        backup, "backup.json", "update schedule backup manifest"
+    )
+    manifest = read_json(manifest_path)
+    required = {
+        "created_utc", "definition_paths", "file_count", "files",
+        "files_tree_sha256", "installed_release_manifest_sha256",
+        "installed_version", "record_sha256", "schema", "snapshot_sha256",
+        "worker_identity_sha256", "worker_path_sha256",
+    }
+    require_exact_fields(manifest, required, "update schedule backup manifest")
     if manifest.get("schema") != "ai-human.update-schedule-backup/v1":
         raise ValueError("invalid update schedule backup schema")
+    if manifest["record_sha256"] != governed_record_sha256(manifest):
+        raise ValueError("update schedule backup manifest hash mismatch")
+    for field in (
+        "files_tree_sha256", "installed_release_manifest_sha256",
+        "record_sha256", "snapshot_sha256", "worker_identity_sha256",
+        "worker_path_sha256",
+    ):
+        if not SHA256_HEX.fullmatch(str(manifest[field])):
+            raise ValueError("update schedule backup has invalid " + field)
+    parse_recorded_utc(manifest["created_utc"], "update schedule backup created_utc")
+    if (
+        isinstance(manifest["file_count"], bool)
+        or not isinstance(manifest["file_count"], int)
+        or not 0 <= manifest["file_count"] <= BATCH_CAP
+    ):
+        raise ValueError("update schedule backup has invalid file count")
+    version_tuple(str(manifest["installed_version"]))
+    metadata = install_metadata(worker)
+    installed_manifest = worker_target(
+        worker, ".ai-human/release-manifest.json", "installed release manifest"
+    )
+    if (
+        manifest["worker_path_sha256"] != update_schedule_worker_path_sha256(worker)
+        or manifest["worker_identity_sha256"] != worker_identity_sha256(worker)
+        or manifest["installed_version"] != metadata["installed_version"]
+        or manifest["installed_release_manifest_sha256"] != sha256(installed_manifest)
+    ):
+        raise ValueError("update schedule backup belongs to a different worker or release")
+    definition_values = manifest["definition_paths"]
+    if not isinstance(definition_values, list) or len(definition_values) > 2:
+        raise ValueError("invalid update schedule backup definition inventory")
+    definitions = set()
+    for value in definition_values:
+        relative = safe_relative(value, "update schedule backup definition")
+        if (
+            relative.parent != UPDATE_SCHEDULE_DEFINITIONS_ROOT
+            or relative.suffix not in {".plist", ".xml"}
+        ):
+            raise ValueError("invalid update schedule backup definition inventory")
+        safe_identity(relative.stem, "update schedule backup definition name")
+        if relative in definitions:
+            raise ValueError("duplicate update schedule backup definition")
+        definitions.add(relative)
+    if definition_values != sorted(path.as_posix() for path in definitions):
+        raise ValueError("update schedule backup definitions are not canonical")
+    expected_targets = UPDATE_SCHEDULE_BACKUP_BASE_TARGETS | definitions
     records = manifest.get("files")
-    if not isinstance(records, list) or not records or len(records) > BATCH_CAP:
+    if (
+        not isinstance(records, list)
+        or not records
+        or len(records) > BATCH_CAP
+        or len(records) != len(expected_targets)
+    ):
         raise ValueError("invalid update schedule backup inventory")
     seen = set()
-    allowed = {
-        UPDATE_SCHEDULE_CONFIG_PATH, UPDATE_SCHEDULE_NATIVE_PATH,
-        Path(".ai-human/install.json"), Path("AUTOMATIONS.md"),
-    }
-    definition_prefix = portable_key(UPDATE_SCHEDULE_DEFINITIONS_ROOT) + "/"
+    expected_files = {"backup.json"}
     for record in records:
         if not isinstance(record, dict) or set(record) != {"existed", "path", "sha256"}:
             raise ValueError("invalid update schedule backup record")
         relative = safe_relative(record.get("path"), "update schedule backup target")
         key = portable_key(relative)
-        if relative not in allowed and not key.startswith(definition_prefix):
+        if relative not in expected_targets:
             raise ValueError("update schedule backup contains an unexpected target")
         if key in seen:
             raise ValueError("update schedule backup contains a duplicate target")
         seen.add(key)
         if not isinstance(record.get("existed"), bool):
             raise ValueError("update schedule backup has an invalid existed flag")
-        target = worker_target(worker, relative, "update schedule backup target")
-        if record.get("existed"):
+        worker_target(worker, relative, "update schedule backup target")
+        if record["existed"]:
             source = release_file(
                 backup / "files", relative, "update schedule backup source"
             )
             if (
                 not SHA256_HEX.fullmatch(str(record.get("sha256") or ""))
-                or sha256(source) != record.get("sha256")
+                or sha256(source) != record["sha256"]
             ):
                 raise ValueError("update schedule backup hash mismatch: " + relative.as_posix())
-            target.parent.mkdir(parents=True, exist_ok=True)
-            atomic_copy_file(source, target)
+            expected_files.add("files/" + relative.as_posix())
         elif record.get("sha256") is not None:
             raise ValueError("absent update schedule backup target may not have a hash")
+    canonical_paths = [path.as_posix() for path in sorted(expected_targets, key=lambda item: item.as_posix())]
+    if [record["path"] for record in records] != canonical_paths:
+        raise ValueError("update schedule backup inventory is not canonical")
+    if manifest["snapshot_sha256"] != update_schedule_snapshot_sha256(records):
+        raise ValueError("update schedule backup snapshot hash mismatch")
+    actual_files = set()
+    for path in backup.rglob("*"):
+        if path.is_symlink():
+            raise ValueError("update schedule backup may not contain symbolic links")
+        if path.is_file():
+            actual_files.add(path.relative_to(backup).as_posix())
+    if actual_files != expected_files:
+        raise ValueError("update schedule backup contains unexpected or missing files")
+    files_digest, files_count = tree_sha256(backup / "files")
+    if (
+        files_digest != manifest["files_tree_sha256"]
+        or files_count != manifest["file_count"]
+        or files_count != len(expected_files) - 1
+    ):
+        raise ValueError("update schedule backup tree digest mismatch")
+    return backup, manifest, records
+
+
+def restore_update_schedule_backup(worker, backup):
+    backup, _manifest, records = validate_update_schedule_backup(worker, backup)
+    ordered = sorted(
+        records,
+        key=lambda record: record["path"] == UPDATE_SCHEDULE_CONFIG_PATH.as_posix(),
+    )
+    for record in ordered:
+        relative = safe_relative(record["path"], "update schedule backup target")
+        target = worker_target(worker, relative, "update schedule backup target")
+        if record["existed"]:
+            source = release_file(
+                backup / "files", relative, "update schedule backup source"
+            )
+            target.parent.mkdir(parents=True, exist_ok=True)
+            atomic_copy_file(source, target)
         elif target.is_file() or target.is_symlink():
             target.unlink()
 
 
 def begin_update_schedule_transaction(worker, operation, candidate, definition_relative):
-    path = worker / UPDATE_SCHEDULE_TRANSACTION_PATH
+    path = worker_target(
+        worker, UPDATE_SCHEDULE_TRANSACTION_PATH, "update schedule transaction"
+    )
     if path.exists():
         raise ValueError("interrupted update-schedule transaction requires recovery")
     backup = update_schedule_backup(worker, definition_relative)
+    backup_manifest = backup / "backup.json"
+    backup_value = read_json(backup_manifest)
+    metadata = install_metadata(worker)
     value = {
         "backup": backup.relative_to(worker).as_posix(),
+        "backup_manifest_sha256": sha256(backup_manifest),
         "candidate": candidate,
-        "definition_path": Path(definition_relative).as_posix(),
+        "candidate_sha256": update_schedule_config_sha256(candidate),
+        "definition_path": (
+            Path(definition_relative).as_posix() if definition_relative is not None else None
+        ),
+        "installed_release_manifest_sha256": sha256(
+            worker_target(
+                worker, ".ai-human/release-manifest.json", "installed release manifest"
+            )
+        ),
+        "installed_version": metadata["installed_version"],
+        "local_plan": None,
+        "local_plan_sha256": None,
         "operation": operation,
         "phase": "PREPARED",
+        "pre_state_sha256": update_schedule_snapshot_sha256(
+            backup_value["files"], base_only=True
+        ),
         "schema": "ai-human.update-schedule-transaction/v1",
         "started_utc": now_utc(),
+        "worker_identity_sha256": worker_identity_sha256(worker),
+        "worker_path_sha256": update_schedule_worker_path_sha256(worker),
     }
+    value["record_sha256"] = governed_record_sha256(value)
     atomic_json(path, value)
     return value
 
 
-def mark_update_schedule_transaction(worker, value, phase):
+def mark_update_schedule_transaction(worker, value, phase, local_plan=None):
     updated = dict(value)
     updated["phase"] = phase
-    atomic_json(worker / UPDATE_SCHEDULE_TRANSACTION_PATH, updated)
+    updated["local_plan"] = local_plan
+    updated["local_plan_sha256"] = (
+        canonical_json_sha256(local_plan) if local_plan is not None else None
+    )
+    updated["record_sha256"] = governed_record_sha256(updated)
+    atomic_json(
+        worker_target(
+            worker, UPDATE_SCHEDULE_TRANSACTION_PATH, "update schedule transaction"
+        ),
+        updated,
+    )
     return updated
 
 
-def validate_update_schedule_transaction(value):
+def validate_update_schedule_transaction(worker, value):
     required = {
-        "backup", "candidate", "definition_path", "operation", "phase", "schema",
-        "started_utc",
+        "backup", "backup_manifest_sha256", "candidate", "candidate_sha256",
+        "definition_path", "installed_release_manifest_sha256", "installed_version",
+        "local_plan", "local_plan_sha256", "operation", "phase",
+        "pre_state_sha256", "record_sha256", "schema", "started_utc",
+        "worker_identity_sha256", "worker_path_sha256",
     }
     require_exact_fields(value, required, "update schedule transaction")
     if value.get("schema") != "ai-human.update-schedule-transaction/v1":
         raise ValueError("unsupported update schedule transaction schema")
-    if value["operation"] not in {"CONFIGURE", "PAUSE", "RESUME", "REMOVE"}:
+    if value["operation"] not in {
+        "CONFIGURE", "LEGACY_DISABLE", "PAUSE", "RESUME", "REMOVE",
+    }:
         raise ValueError("invalid update schedule transaction operation")
-    if value["phase"] not in {"PREPARED", "NATIVE_APPLIED"}:
+    if value["phase"] not in {
+        "PREPARED", "NATIVE_MUTATION_STARTED", "NATIVE_APPLIED",
+        "LOCAL_APPLY_STARTED",
+    }:
         raise ValueError("invalid update schedule transaction phase")
+    for field in (
+        "backup_manifest_sha256", "candidate_sha256",
+        "installed_release_manifest_sha256", "record_sha256",
+        "pre_state_sha256", "worker_identity_sha256", "worker_path_sha256",
+    ):
+        if not SHA256_HEX.fullmatch(str(value[field])):
+            raise ValueError("update schedule transaction has invalid " + field)
+    if value["record_sha256"] != governed_record_sha256(value):
+        raise ValueError("update schedule transaction record hash mismatch")
+    plan = value["local_plan"]
+    plan_phases = {"NATIVE_APPLIED", "LOCAL_APPLY_STARTED"}
+    if value["phase"] in plan_phases:
+        if (
+            not isinstance(plan, list)
+            or value["local_plan_sha256"] != canonical_json_sha256(plan)
+        ):
+            raise ValueError("update schedule transaction local plan is invalid")
+    elif plan is not None or value["local_plan_sha256"] is not None:
+        raise ValueError("update schedule transaction phase may not contain a local plan")
+    if (
+        value["operation"] == "LEGACY_DISABLE"
+        and value["phase"] not in {"PREPARED", "LOCAL_APPLY_STARTED"}
+    ) or (
+        value["operation"] != "LEGACY_DISABLE"
+        and value["phase"] == "LOCAL_APPLY_STARTED"
+    ):
+        raise ValueError("update schedule transaction phase contradicts operation")
     parse_recorded_utc(value["started_utc"], "update schedule transaction started_utc")
     candidate = validate_update_schedule_config(value["candidate"])
-    definition = safe_relative(value["definition_path"], "update schedule definition")
-    if definition != update_schedule_definition_path(candidate):
-        raise ValueError("update schedule transaction definition differs from candidate")
+    if value["candidate_sha256"] != update_schedule_config_sha256(candidate):
+        raise ValueError("update schedule transaction candidate hash mismatch")
+    metadata = install_metadata(worker)
+    current_config = update_schedule_config(worker)
+    installed_manifest = worker_target(
+        worker, ".ai-human/release-manifest.json", "installed release manifest"
+    )
+    if (
+        value["worker_path_sha256"] != update_schedule_worker_path_sha256(worker)
+        or value["worker_identity_sha256"] != worker_identity_sha256(worker)
+        or value["installed_version"] != metadata["installed_version"]
+        or value["installed_release_manifest_sha256"] != sha256(installed_manifest)
+        or candidate["owner"]
+        != clean(parameter_value(worker, "Human owner"), "update schedule owner")
+        or (
+            candidate.get("status") != "DISABLED"
+            and candidate["schedule_id"]
+            != expected_update_schedule_id(worker, metadata, current_config)
+        )
+    ):
+        raise ValueError("update schedule transaction belongs to a different worker or release")
+    if value["operation"] == "LEGACY_DISABLE":
+        if candidate["status"] != "DISABLED" or value["definition_path"] is not None:
+            raise ValueError("legacy disable transaction may not define a native task")
+    else:
+        required_status = {
+            "PAUSE": "PAUSED", "RESUME": "ENABLED", "REMOVE": "REMOVED",
+        }.get(value["operation"])
+        if required_status and candidate["status"] != required_status:
+            raise ValueError("update schedule transaction operation contradicts candidate")
+        definition = safe_relative(value["definition_path"], "update schedule definition")
+        if candidate["status"] == "DISABLED" or definition != update_schedule_definition_path(candidate):
+            raise ValueError("update schedule transaction definition differs from candidate")
     backup = safe_relative(value["backup"], "update schedule transaction backup")
     if not portable_key(backup).startswith(
         portable_key(UPDATE_SCHEDULE_BACKUPS_ROOT) + "/"
     ):
         raise ValueError("update schedule transaction backup is outside the private backup area")
+    backup_path = update_schedule_target(
+        worker, backup, "update schedule transaction backup"
+    )
+    backup_manifest = release_file(
+        backup_path, "backup.json", "update schedule transaction backup manifest"
+    )
+    if sha256(backup_manifest) != value["backup_manifest_sha256"]:
+        raise ValueError("update schedule transaction backup manifest hash mismatch")
+    _backup, _backup_value, backup_records = validate_update_schedule_backup(
+        worker, backup_path
+    )
+    if value["pre_state_sha256"] != update_schedule_snapshot_sha256(
+        backup_records, base_only=True
+    ):
+        raise ValueError("update schedule transaction pre-state hash mismatch")
+    current_records = current_update_schedule_base_records(worker)
+    if value["phase"] in {"PREPARED", "NATIVE_MUTATION_STARTED"}:
+        if update_schedule_snapshot_sha256(current_records) != value["pre_state_sha256"]:
+            raise ValueError("update schedule transaction pre-state has drifted")
+    else:
+        if len(plan) != len(UPDATE_SCHEDULE_BACKUP_BASE_TARGETS):
+            raise ValueError("update schedule transaction local plan inventory is invalid")
+        old_by_path = {record["path"]: record for record in backup_records}
+        plan_by_path = {}
+        for record in plan:
+            if (
+                not isinstance(record, dict)
+                or set(record) != {"existed", "path", "sha256"}
+                or not isinstance(record["existed"], bool)
+            ):
+                raise ValueError("update schedule transaction local plan record is invalid")
+            relative = safe_relative(record["path"], "update schedule local plan target")
+            if relative not in UPDATE_SCHEDULE_BACKUP_BASE_TARGETS:
+                raise ValueError("update schedule transaction local plan target is invalid")
+            if record["existed"] != (record["sha256"] is not None) or (
+                record["sha256"] is not None
+                and not SHA256_HEX.fullmatch(str(record["sha256"]))
+            ):
+                raise ValueError("update schedule transaction local plan hash is invalid")
+            if record["path"] in plan_by_path:
+                raise ValueError("update schedule transaction local plan has duplicates")
+            plan_by_path[record["path"]] = record
+        if set(plan_by_path) != {
+            path.as_posix() for path in UPDATE_SCHEDULE_BACKUP_BASE_TARGETS
+        }:
+            raise ValueError("update schedule transaction local plan inventory is invalid")
+        config_plan = plan_by_path[UPDATE_SCHEDULE_CONFIG_PATH.as_posix()]
+        expected_config_bytes = (
+            json.dumps(candidate, indent=2, sort_keys=True) + "\n"
+        ).encode("utf-8")
+        if (
+            not config_plan["existed"]
+            or config_plan["sha256"]
+            != hashlib.sha256(expected_config_bytes).hexdigest()
+        ):
+            raise ValueError("update schedule transaction local plan config is invalid")
+        for current_record in current_records:
+            path = current_record["path"]
+            if current_record != old_by_path[path] and current_record != plan_by_path[path]:
+                raise ValueError(
+                    "update schedule transaction current state contains unrelated drift: "
+                    + path
+                )
     return value, candidate
 
 
@@ -14393,6 +15256,9 @@ def native_schedule_proof(config, definition_relative, definition_sha256, status
         "external_id": native_update_external_id(config),
         "native_timezone_id": config["native_timezone_id"],
         "next_run_local": next_run,
+        "next_run_source": (
+            "INTERNAL_RULE_AFTER_NATIVE_DEFINITION_READBACK" if next_run else "NONE"
+        ),
         "platform": config["platform"],
         "reason": reason,
         "schedule_id": config["schedule_id"],
@@ -14402,50 +15268,159 @@ def native_schedule_proof(config, definition_relative, definition_sha256, status
     }
 
 
-def commit_update_schedule_local(worker, config, native, last_run=None):
-    metadata_path = worker / ".ai-human/install.json"
+def encoded_json(value):
+    return (json.dumps(value, indent=2, sort_keys=True) + "\n").encode("utf-8")
+
+
+def prepare_update_schedule_local(
+    worker, config, native, last_run=None, legacy_record=None
+):
+    metadata_path = worker_target(worker, ".ai-human/install.json", "install metadata")
     metadata = read_json(metadata_path)
     metadata["automatic_updates"] = "ACTIVE" if config["status"] == "ENABLED" else "DISABLED"
     metadata["timezone"] = config.get("timezone", metadata.get("timezone"))
-    atomic_json(worker / UPDATE_SCHEDULE_CONFIG_PATH, config)
-    atomic_json(worker / UPDATE_SCHEDULE_NATIVE_PATH, native)
-    atomic_json(metadata_path, metadata)
-    atomic_text(
-        worker / "AUTOMATIONS.md",
-        render_update_automation(worker, config, native, last_run=last_run),
+    report_path = worker_target(
+        worker, ".ai-human/version-report.json", "update version report"
     )
+    report_content = report_path.read_bytes() if report_path.is_file() else None
+    if report_path.is_file():
+        current_config = update_schedule_config(worker)
+        report = read_update_version_report(worker, current_config, metadata)
+        if report.get("schema") == "ai-human.version-report/v2" and (
+            report["schedule_id"] != config.get("schedule_id")
+            or report["config_sha256"] != update_schedule_config_sha256(config)
+        ):
+            report_content = None
+    legacy_path = worker_target(
+        worker, UPDATE_LEGACY_MIGRATION_PATH, "legacy update schedule migration"
+    )
+    migration_content = (
+        encoded_json(legacy_record)
+        if legacy_record is not None
+        else legacy_path.read_bytes() if legacy_path.is_file() else None
+    )
+    contents = {
+        UPDATE_SCHEDULE_CONFIG_PATH: encoded_json(config),
+        UPDATE_SCHEDULE_NATIVE_PATH: encoded_json(native) if native is not None else None,
+        UPDATE_LEGACY_MIGRATION_PATH: migration_content,
+        Path(".ai-human/install.json"): encoded_json(metadata),
+        Path(".ai-human/version-report.json"): report_content,
+        Path("AUTOMATIONS.md"): render_update_automation(
+            worker, config, native, last_run=last_run
+        ).encode("utf-8"),
+    }
+    records = []
+    for relative in sorted(contents, key=lambda item: item.as_posix()):
+        target = worker_target(worker, relative, "update schedule local target")
+        if target.exists() and not target.is_file():
+            raise ValueError("update schedule local target is not a regular file")
+        content = contents[relative]
+        records.append(
+            {
+                "existed": content is not None,
+                "path": relative.as_posix(),
+                "sha256": (
+                    hashlib.sha256(content).hexdigest() if content is not None else None
+                ),
+            }
+        )
+    return contents, records
+
+
+def apply_update_schedule_local_target(target, content):
+    """Single injectable local commit step used by crash-recovery tests."""
+    if content is None:
+        target.unlink(missing_ok=True)
+    else:
+        atomic_text(target, content.decode("utf-8"))
+
+
+def commit_update_schedule_local(
+    worker, config, native, transaction, last_run=None, legacy_record=None
+):
+    contents, local_plan = prepare_update_schedule_local(
+        worker, config, native, last_run=last_run, legacy_record=legacy_record
+    )
+    phase = (
+        "LOCAL_APPLY_STARTED"
+        if transaction["operation"] == "LEGACY_DISABLE" else "NATIVE_APPLIED"
+    )
+    mark_update_schedule_transaction(
+        worker, transaction, phase, local_plan=local_plan
+    )
+    order = (
+        UPDATE_SCHEDULE_CONFIG_PATH,
+        UPDATE_SCHEDULE_NATIVE_PATH,
+        Path(".ai-human/install.json"),
+        Path("AUTOMATIONS.md"),
+        Path(".ai-human/version-report.json"),
+        UPDATE_LEGACY_MIGRATION_PATH,
+    )
+    for relative in order:
+        target = worker_target(worker, relative, "update schedule local target")
+        content = contents[relative]
+        apply_update_schedule_local_target(target, content)
 
 
 def recover_update_schedule_internal(worker):
-    transaction_path = worker / UPDATE_SCHEDULE_TRANSACTION_PATH
-    value, candidate = validate_update_schedule_transaction(read_json(transaction_path))
+    transaction_path = worker_target(
+        worker, UPDATE_SCHEDULE_TRANSACTION_PATH, "update schedule transaction"
+    )
+    value, candidate = validate_update_schedule_transaction(
+        worker, read_json(transaction_path)
+    )
+    backup = update_schedule_target(
+        worker, value["backup"], "update schedule backup"
+    )
+    if value["operation"] == "LEGACY_DISABLE":
+        restore_update_schedule_backup(worker, backup)
+        ok, failures = validate_worker(worker, quiet=True, allow_transaction=True)
+        if not ok:
+            raise ValueError("recovered update schedule validation failed: " + "; ".join(failures))
+        transaction_path.unlink()
+        return backup
+    if value["phase"] == "PREPARED":
+        restore_update_schedule_backup(worker, backup)
+        ok, failures = validate_worker(worker, quiet=True, allow_transaction=True)
+        if not ok:
+            raise ValueError(
+                "recovered update schedule validation failed: " + "; ".join(failures)
+            )
+        transaction_path.unlink()
+        return backup
     adapter = native_update_adapter(worker, candidate)
-    try:
-        adapter.remove()
-    except Exception:
-        # A missing candidate is already the safe removed state; any other failure
-        # remains visible when old-state restoration below cannot verify.
-        pass
-    backup = worker / safe_relative(value.get("backup"), "update schedule backup")
+    adapter.remove()
+    candidate_definition = update_schedule_target(
+        worker, value["definition_path"], "candidate update schedule definition"
+    )
+    if query_removed_native(adapter, candidate_definition) != {
+        "status": "REMOVED", "definition_sha256": None,
+    }:
+        raise ValueError("candidate native update schedule removal did not verify")
     restore_update_schedule_backup(worker, backup)
     old_config = update_schedule_config(worker)
     if old_config and old_config.get("status") in {"ENABLED", "PAUSED"}:
         old_native = native_update_schedule(worker, config=old_config)
-        old_definition = worker / safe_relative(
-            old_native["definition_path"], "restored update schedule definition"
+        old_definition = update_schedule_target(
+            worker, old_native["definition_path"], "restored update schedule definition"
         )
         old_adapter = native_update_adapter(worker, old_config)
+        if sha256(old_definition) != old_native["definition_sha256"]:
+            raise ValueError("restored native update definition differs from stored proof")
         old_adapter.install(old_definition)
         if old_config["status"] == "PAUSED":
             old_adapter.pause()
         observed = old_adapter.query(old_definition)
         expected_status = "ACTIVE" if old_config["status"] == "ENABLED" else "PAUSED"
-        if observed != {"status": expected_status, "definition_sha256": sha256(old_definition)}:
+        if observed != {
+            "status": expected_status,
+            "definition_sha256": old_native["definition_sha256"],
+        }:
             raise ValueError("restored native update schedule did not verify")
-    transaction_path.unlink()
-    ok, failures = validate_worker(worker, quiet=True)
+    ok, failures = validate_worker(worker, quiet=True, allow_transaction=True)
     if not ok:
         raise ValueError("recovered update schedule validation failed: " + "; ".join(failures))
+    transaction_path.unlink()
     return backup
 
 
@@ -14456,22 +15431,100 @@ def require_update_schedule_idle(worker):
         raise ValueError("update schedule changes require no active writer lease")
 
 
+def update_schedule_legacy_disable(args):
+    worker = safe_worker(args.worker)
+    require_update_schedule_idle(worker)
+    metadata = install_metadata(worker)
+    existing = update_schedule_config(worker)
+    legacy_path = worker / UPDATE_LEGACY_MIGRATION_PATH
+    if (
+        metadata.get("automatic_updates") == "DISABLED"
+        and existing
+        and existing.get("status") == "DISABLED"
+        and legacy_path.is_file()
+    ):
+        validate_update_legacy_migration(
+            read_json(legacy_path), metadata,
+            clean(parameter_value(worker, "Human owner"), "update schedule owner"),
+        )
+        print("AI-HUMAN LEGACY UPDATE SCHEDULE: ALREADY VERIFIED REMOVED")
+        return
+    if metadata.get("automatic_updates") != "ACTIVE":
+        raise ValueError("no active legacy automatic-update setting requires migration")
+    if existing and existing.get("status") != "DISABLED":
+        raise ValueError("use native schedule control for a configured update schedule")
+    if (worker / UPDATE_SCHEDULE_NATIVE_PATH).exists():
+        raise ValueError("legacy disable refuses an unexpected managed native proof")
+    owner = clean(parameter_value(worker, "Human owner"), "update schedule owner")
+    candidate = disabled_update_schedule(owner)
+    if existing:
+        candidate["created_utc"] = existing["created_utc"]
+    record = {
+        "approval_reference": clean(args.approval_reference, "approval reference"),
+        "external_id": clean(args.external_id, "legacy external id"),
+        "owner": owner,
+        "recorded_utc": now_utc(),
+        "removal_evidence": bounded_clean(
+            args.removal_evidence, "legacy schedule removal evidence", 2000
+        ),
+        "schema": "ai-human.legacy-update-schedule-migration/v1",
+        "status": "VERIFIED_REMOVED_BY_OWNER_EVIDENCE",
+        "worker_id": safe_identity(
+            str(metadata.get("worker_id") or ""), "legacy update schedule worker id"
+        ),
+    }
+    record["record_sha256"] = update_legacy_migration_sha256(record)
+    validate_update_legacy_migration(record, metadata, owner)
+    transaction = begin_update_schedule_transaction(
+        worker, "LEGACY_DISABLE", candidate, None
+    )
+    try:
+        commit_update_schedule_local(
+            worker, candidate, None, transaction, legacy_record=record
+        )
+        ok, failures = validate_worker(worker, quiet=True, allow_transaction=True)
+        if not ok:
+            raise ValueError("legacy schedule migration validation failed: " + "; ".join(failures))
+        (worker / UPDATE_SCHEDULE_TRANSACTION_PATH).unlink()
+    except Exception:
+        try:
+            recover_update_schedule_internal(worker)
+        except Exception:
+            pass
+        raise
+    print("AI-HUMAN LEGACY UPDATE SCHEDULE: VERIFIED REMOVED")
+    print("- native task created: NO")
+    print("- automatic updates: DISABLED")
+
+
 def update_schedule_configure(args):
     worker = safe_worker(args.worker)
     require_update_schedule_idle(worker)
     existing = update_schedule_config(worker)
     if args.command == "update-schedule-edit" and (
-        not existing or existing.get("status") == "DISABLED"
+        not existing or existing.get("status") in {"DISABLED", "REMOVED"}
     ):
         raise ValueError("configure an update schedule before editing it")
+    if (
+        args.command == "update-schedule-configure"
+        and existing
+        and existing.get("status") in {"ENABLED", "PAUSED"}
+    ):
+        raise ValueError("use update-schedule-edit for an existing schedule")
     metadata = install_metadata(worker)
     if (
         metadata.get("automatic_updates") == "ACTIVE"
         and (not existing or existing.get("status") == "DISABLED")
-        and not args.legacy_schedule_removed
     ):
         raise ValueError(
-            "legacy ACTIVE configuration may have an external schedule; verify its removal first"
+            "legacy ACTIVE configuration may have an external schedule; use "
+            "update-schedule-legacy-disable with owner removal evidence first"
+        )
+    legacy_path = worker / UPDATE_LEGACY_MIGRATION_PATH
+    if legacy_path.is_file():
+        validate_update_legacy_migration(
+            read_json(legacy_path), metadata,
+            clean(parameter_value(worker, "Human owner"), "update schedule owner"),
         )
     timezone = validate_timezone(args.timezone)
     if not args.confirm_native_timezone_matches_iana:
@@ -14490,11 +15543,7 @@ def update_schedule_configure(args):
         raise ValueError("update schedule Python executable is unavailable")
     timestamp = now_utc()
     prior_version = existing.get("config_version", 0) if existing else 0
-    seed = str(metadata.get("worker_id") or worker_identity_sha256(worker))
-    schedule_id = (
-        existing.get("schedule_id") if existing and existing.get("schedule_id")
-        else "update-" + hashlib.sha256((seed + str(worker)).encode("utf-8")).hexdigest()[:20]
-    )
+    schedule_id = expected_update_schedule_id(worker, metadata, existing)
     draft = {
         "approval_reference": clean(args.approval_reference, "approval reference"),
         "cadence": args.cadence,
@@ -14503,6 +15552,7 @@ def update_schedule_configure(args):
         "created_utc": existing.get("created_utc", timestamp) if existing else timestamp,
         "day_of_month": args.day_of_month,
         "local_time": args.local_time,
+        "max_retry_attempts": args.max_retry_attempts,
         "native_timezone_id": clean(args.native_timezone_id, "native time-zone id"),
         "native_timezone_confirmed": True,
         "not_before_local": "",
@@ -14525,13 +15575,15 @@ def update_schedule_configure(args):
     now_local = datetime.datetime.now(ZoneInfo(timezone))
     # validate fields that do not yet depend on not_before, then bind first future run.
     draft["not_before_local"] = now_local.isoformat()
-    first_run = next_update_occurrence(draft, now_local)
+    first_run = calculate_next_update_occurrence(draft, now_local)
     draft["not_before_local"] = first_run.isoformat()
     config = validate_update_schedule_config(draft)
     definition_relative = update_schedule_definition_path(config)
     definition_path = update_schedule_target(
         worker, definition_relative, "native update schedule definition"
     )
+    if existing and existing.get("status") in {"ENABLED", "PAUSED", "REMOVED"}:
+        verify_update_schedule_native_readback(worker, existing)
     transaction = begin_update_schedule_transaction(
         worker, "CONFIGURE", config, definition_relative
     )
@@ -14541,6 +15593,15 @@ def update_schedule_configure(args):
         adapter = native_update_adapter(worker, config)
         if adapter.observed_timezone_id() != config["native_timezone_id"]:
             raise ValueError("native operating-system time zone differs from owner confirmation")
+        if not existing or existing.get("status") == "DISABLED":
+            collision = query_removed_native(adapter, definition_path)
+            if collision != {"status": "REMOVED", "definition_sha256": None}:
+                raise ValueError(
+                    "native update schedule id already exists without managed ownership proof"
+                )
+        transaction = mark_update_schedule_transaction(
+            worker, transaction, "NATIVE_MUTATION_STARTED"
+        )
         if config["status"] == "REMOVED":
             adapter.remove()
             observed_status = "REMOVED"
@@ -14554,7 +15615,10 @@ def update_schedule_configure(args):
             else:
                 observed_status = "ACTIVE"
                 proof_status = "VERIFIED_ACTIVE"
-        observed = adapter.query(definition_path)
+        observed = (
+            query_removed_native(adapter, definition_path)
+            if observed_status == "REMOVED" else adapter.query(definition_path)
+        )
         expected_observed = {
             "status": observed_status,
             "definition_sha256": (
@@ -14563,11 +15627,10 @@ def update_schedule_configure(args):
         }
         if observed != expected_observed:
             raise ValueError("native update schedule registration did not verify")
-        transaction = mark_update_schedule_transaction(worker, transaction, "NATIVE_APPLIED")
         native = native_schedule_proof(
             config, definition_relative, sha256(definition_path), proof_status
         )
-        commit_update_schedule_local(worker, config, native)
+        commit_update_schedule_local(worker, config, native, transaction)
         ok, failures = validate_worker(worker, quiet=True, allow_transaction=True)
         if not ok:
             raise ValueError("configured update schedule validation failed: " + "; ".join(failures))
@@ -14580,7 +15643,7 @@ def update_schedule_configure(args):
         raise
     print("AI-HUMAN UPDATE SCHEDULE: " + proof_status)
     print("- cadence: " + config["cadence"])
-    print("- next run: " + native["next_run_local"])
+    print("- next due (computed after native definition readback): " + native["next_run_local"])
     print("- time zone: " + config["timezone"])
     print("- native adapter: " + native["adapter"])
 
@@ -14595,8 +15658,47 @@ def update_schedule_control(args):
         raise ValueError("resume the AI-human system before resuming its update schedule")
     native = native_update_schedule(worker, required=True, config=config)
     definition_relative = safe_relative(native["definition_path"], "native definition")
-    definition_path = worker / definition_relative
+    definition_path = update_schedule_target(
+        worker, definition_relative, "native update schedule definition"
+    )
     next_status = {"PAUSE": "PAUSED", "RESUME": "ENABLED", "REMOVE": "REMOVED"}[args.action]
+    adapter = native_update_adapter(worker, config)
+    if adapter.observed_timezone_id() != config["native_timezone_id"]:
+        raise ValueError("native operating-system time zone differs from owner confirmation")
+    if config["status"] == next_status:
+        observed_status = {
+            "ENABLED": "ACTIVE", "PAUSED": "PAUSED", "REMOVED": "REMOVED",
+        }[config["status"]]
+        expected_digest = None if observed_status == "REMOVED" else native["definition_sha256"]
+        if sha256(definition_path) != native["definition_sha256"]:
+            raise ValueError("native update definition differs from stored proof")
+        observed = (
+            query_removed_native(adapter, definition_path)
+            if observed_status == "REMOVED" else adapter.query(definition_path)
+        )
+        if observed != {
+            "status": observed_status, "definition_sha256": expected_digest,
+        }:
+            raise ValueError("idempotent update schedule control could not verify native state")
+        print("AI-HUMAN UPDATE SCHEDULE: ALREADY VERIFIED " + observed_status)
+        return
+    allowed = {
+        "PAUSE": {"ENABLED"}, "RESUME": {"PAUSED"},
+        "REMOVE": {"ENABLED", "PAUSED"},
+    }
+    if config["status"] not in allowed[args.action]:
+        raise ValueError(
+            "invalid update schedule transition: " + config["status"] + " -> " + args.action
+        )
+    current_observed = {"ENABLED": "ACTIVE", "PAUSED": "PAUSED"}[config["status"]]
+    if (
+        sha256(definition_path) != native["definition_sha256"]
+        or adapter.query(definition_path) != {
+            "status": current_observed,
+            "definition_sha256": native["definition_sha256"],
+        }
+    ):
+        raise ValueError("native update schedule drifted before control transition")
     updated = dict(config)
     updated.update(
         {
@@ -14617,6 +15719,9 @@ def update_schedule_control(args):
         adapter = native_update_adapter(worker, updated)
         if adapter.observed_timezone_id() != updated["native_timezone_id"]:
             raise ValueError("native operating-system time zone differs from owner confirmation")
+        transaction = mark_update_schedule_transaction(
+            worker, transaction, "NATIVE_MUTATION_STARTED"
+        )
         if args.action == "PAUSE":
             adapter.pause()
             observed_status = "PAUSED"
@@ -14631,15 +15736,17 @@ def update_schedule_control(args):
             adapter.resume(definition_path)
             observed_status = "ACTIVE"
             proof_status = "VERIFIED_ACTIVE"
-        observed = adapter.query(definition_path)
+        observed = (
+            query_removed_native(adapter, definition_path)
+            if observed_status == "REMOVED" else adapter.query(definition_path)
+        )
         expected_digest = None if observed_status == "REMOVED" else sha256(definition_path)
         if observed != {"status": observed_status, "definition_sha256": expected_digest}:
             raise ValueError("native update schedule " + args.action.casefold() + " did not verify")
-        transaction = mark_update_schedule_transaction(worker, transaction, "NATIVE_APPLIED")
         proof = native_schedule_proof(
             updated, definition_relative, sha256(definition_path), proof_status
         )
-        commit_update_schedule_local(worker, updated, proof)
+        commit_update_schedule_local(worker, updated, proof, transaction)
         ok, failures = validate_worker(worker, quiet=True, allow_transaction=True)
         if not ok:
             raise ValueError("update schedule control validation failed: " + "; ".join(failures))
@@ -14673,13 +15780,20 @@ def update_schedule_show(args):
     print("- status: " + config["status"])
     if config["status"] == "DISABLED":
         print("- cadence: NOT CHOSEN")
+        if getattr(args, "verify_native", False):
+            print("- managed native task: NONE CONFIGURED")
         return
     native = native_update_schedule(worker, required=True, config=config)
     print("- cadence: " + config["cadence"])
     print("- local time: " + config["local_time"])
     print("- time zone: " + config["timezone"])
-    print("- native status: " + native["status"])
-    print("- next run: " + str(native["next_run_local"] or "NONE"))
+    print("- stored native proof: " + native["status"])
+    print("- next due (computed): " + str(native["next_run_local"] or "NONE"))
+    if getattr(args, "verify_native", False):
+        _native, _definition, _adapter, expected_status = (
+            verify_update_schedule_native_readback(worker, config)
+        )
+        print("- current native readback: VERIFIED " + expected_status)
 
 
 def validate_update_pilot_approval(value, manifest=None):
@@ -14711,8 +15825,13 @@ def validate_passing_update_pilot_fleet_state(fleet, manifest):
     pilot_results = fleet.get("pilot_results")
     if not isinstance(pilot_results, list) or not pilot_results:
         raise ValueError("pilot approval requires non-empty pilot results")
+    worker_ids = set()
     for item in pilot_results:
         report = item.get("report") if isinstance(item, dict) else None
+        if not isinstance(item, dict) or set(item) != {
+            "lane", "phase", "report", "worker_id",
+        }:
+            raise ValueError("pilot approval has an invalid worker result envelope")
         if (
             not isinstance(report, dict)
             or item.get("phase") != "pilot"
@@ -14721,6 +15840,21 @@ def validate_passing_update_pilot_fleet_state(fleet, manifest):
             or report.get("validator") != "PASS"
         ):
             raise ValueError("pilot approval requires a passing Daily Email Triage pilot")
+        validate_legacy_version_report(report)
+        worker_id = safe_identity(str(item["worker_id"]), "pilot worker id")
+        if worker_id in worker_ids or report.get("worker_id") != worker_id:
+            raise ValueError("pilot approval worker evidence is duplicated or mismatched")
+        worker_ids.add(worker_id)
+        if (
+            report.get("scheduled_check") != "DUE"
+            or report.get("reason") != "CHECK_COMPLETE"
+            or report.get("installed_version") != manifest["version"]
+            or report.get("latest_version") != manifest["version"]
+            or not re.fullmatch(r"\d{4}-\d{2}", str(report.get("checked_month") or ""))
+            or report.get("last_check_utc") is None
+        ):
+            raise ValueError("pilot approval report does not prove the exact release run")
+        parse_recorded_utc(report["last_check_utc"], "pilot report last_check_utc")
     pilot_digest = canonical_json_sha256(pilot_results)
     if fleet.get("pilot_proof_sha256") != pilot_digest:
         raise ValueError("fleet pilot proof digest does not match its results")
@@ -14759,16 +15893,119 @@ def update_pilot_approve(args):
     print("- release: " + manifest["version"])
 
 
+def validate_legacy_version_report(value):
+    required = {
+        "checked_month", "installed_version", "last_check_utc", "latest_version",
+        "reason", "scheduled_check", "schema", "status", "validator", "worker_id",
+    }
+    require_exact_fields(value, required, "legacy version report")
+    if value.get("schema") != "ai-human.version-report/v1":
+        raise ValueError("unsupported legacy version report schema")
+    if value["scheduled_check"] not in {"DUE", "NOT_DUE"}:
+        raise ValueError("legacy version report has invalid schedule state")
+    if value["validator"] not in {"PASS", "FAIL", "NOT_RUN"}:
+        raise ValueError("legacy version report has invalid validator state")
+    bounded_clean(str(value["status"]), "legacy version report status", 100)
+    bounded_clean(str(value["reason"]), "legacy version report reason", 1000)
+    return value
+
+
+def valid_update_occurrence(config, occurrence):
+    validate_moment_in_timezone(occurrence, config["timezone"], "update occurrence")
+    not_before = parse_offset_datetime(config["not_before_local"], "update schedule not-before")
+    if occurrence < not_before:
+        return False
+    if config["cadence"] == "WEEKLY":
+        if occurrence.weekday() != UPDATE_WEEKDAYS[config["weekday"]]:
+            return False
+    elif occurrence.day != config["day_of_month"]:
+        return False
+    expected = local_schedule_candidate(config, occurrence.date())
+    return expected.isoformat() == occurrence.isoformat()
+
+
+def validate_native_version_report(value, config=None, metadata=None):
+    required = {
+        "attempt_number", "attempted_utc", "config_sha256", "installed_version",
+        "latest_version", "nominal_run_local", "occurrence_key", "reason",
+        "retry_pending", "schedule_id", "schema", "status", "validator", "worker_id",
+    }
+    require_exact_fields(value, required, "native version report")
+    if value.get("schema") != "ai-human.version-report/v2":
+        raise ValueError("unsupported native version report schema")
+    if (
+        isinstance(value["attempt_number"], bool)
+        or not isinstance(value["attempt_number"], int)
+        or value["attempt_number"] < 1
+    ):
+        raise ValueError("native version report attempt number is invalid")
+    parse_recorded_utc(value["attempted_utc"], "native version report attempted_utc")
+    if not SHA256_HEX.fullmatch(str(value["config_sha256"])):
+        raise ValueError("native version report config hash is invalid")
+    safe_identity(str(value["schedule_id"]), "native version report schedule id")
+    safe_identity(str(value["worker_id"]), "native version report worker id")
+    version_tuple(str(value["installed_version"]))
+    if value["latest_version"] is not None:
+        version_tuple(str(value["latest_version"]))
+    if value["status"] not in {"CURRENT", "UPDATED", "DEFERRED", "FAILED"}:
+        raise ValueError("native version report status is invalid")
+    if value["validator"] != ("FAIL" if value["status"] == "FAILED" else "PASS"):
+        raise ValueError("native version report validator contradicts its status")
+    if (
+        not isinstance(value["retry_pending"], bool)
+        or value["retry_pending"] != (value["status"] in {"DEFERRED", "FAILED"})
+    ):
+        raise ValueError("native version report retry state contradicts its status")
+    reason = bounded_clean(str(value["reason"]), "native version report reason", 200)
+    if not re.fullmatch(r"[A-Z][A-Z0-9_]*", reason):
+        raise ValueError("native version report reason must be a stable code")
+    occurrence = parse_offset_datetime(
+        value["occurrence_key"], "native version report occurrence"
+    )
+    nominal = parse_offset_datetime(
+        value["nominal_run_local"], "native version report nominal run"
+    )
+    if nominal.isoformat() != occurrence.isoformat():
+        raise ValueError("native version report occurrence fields differ")
+    if config:
+        if (
+            value["schedule_id"] != config["schedule_id"]
+            or value["config_sha256"] != update_schedule_config_sha256(config)
+        ):
+            raise ValueError("native version report does not bind the current schedule")
+        if value["attempt_number"] > config["max_retry_attempts"] + 1:
+            raise ValueError("native version report exceeds the configured retry bound")
+        if not valid_update_occurrence(config, occurrence):
+            raise ValueError("native version report occurrence is not on the current schedule")
+    if metadata and value["worker_id"] != metadata.get("worker_id"):
+        raise ValueError("native version report belongs to a different worker")
+    return value
+
+
+def read_update_version_report(worker, config=None, metadata=None):
+    path = worker / ".ai-human/version-report.json"
+    if not path.is_file():
+        return None
+    value = read_json(path)
+    if value.get("schema") == "ai-human.version-report/v1":
+        return validate_legacy_version_report(value)
+    if value.get("schema") == "ai-human.version-report/v2":
+        if not config or config.get("status") == "DISABLED":
+            raise ValueError("native version report requires a configured native schedule")
+        return validate_native_version_report(value, config, metadata)
+    raise ValueError("unsupported update version report schema")
+
+
 def write_native_version_report(worker, config, occurrence, status, reason, installed, latest=None):
     prior_path = worker / ".ai-human/version-report.json"
     attempt = 1
     if prior_path.is_file():
-        try:
-            prior = read_json(prior_path)
-            if prior.get("schema") == "ai-human.version-report/v2" and prior.get("occurrence_key") == occurrence.isoformat():
-                attempt = int(prior.get("attempt_number", 0)) + 1
-        except Exception:
-            pass
+        prior = read_update_version_report(worker, config, install_metadata(worker))
+        if (
+            prior.get("schema") == "ai-human.version-report/v2"
+            and prior["occurrence_key"] == occurrence.isoformat()
+        ):
+            attempt = prior["attempt_number"] + 1
     value = {
         "attempt_number": attempt,
         "attempted_utc": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
@@ -14785,21 +16022,17 @@ def write_native_version_report(worker, config, occurrence, status, reason, inst
         "validator": "FAIL" if status == "FAILED" else "PASS",
         "worker_id": install_metadata(worker).get("worker_id"),
     }
+    validate_native_version_report(value, config, install_metadata(worker))
     write_version_report(worker, value)
     return value
 
 
 def scheduled_occurrence_already_closed(worker, config, occurrence):
-    path = worker / ".ai-human/version-report.json"
-    if not path.is_file():
-        return False
-    try:
-        prior = read_json(path)
-    except Exception:
+    prior = read_update_version_report(worker, config, install_metadata(worker))
+    if not prior or prior.get("schema") != "ai-human.version-report/v2":
         return False
     return (
-        prior.get("schema") == "ai-human.version-report/v2"
-        and prior.get("schedule_id") == config["schedule_id"]
+        prior.get("schedule_id") == config["schedule_id"]
         and prior.get("config_sha256") == update_schedule_config_sha256(config)
         and prior.get("occurrence_key") == occurrence.isoformat()
         and prior.get("status") in {"CURRENT", "UPDATED"}
@@ -14824,29 +16057,50 @@ def update_schedule_tick_internal(worker, schedule_id, expected_config_hash, for
     if config["schedule_id"] != schedule_id or update_schedule_config_sha256(config) != expected_config_hash:
         raise ValueError("native runner is stale or targets the wrong schedule")
     native = native_update_schedule(worker, required=True, config=config)
-    definition = worker / safe_relative(native["definition_path"], "native update definition")
+    definition = update_schedule_target(
+        worker, native["definition_path"], "native update schedule definition"
+    )
     adapter = native_update_adapter(worker, config)
     if adapter.observed_timezone_id() != config["native_timezone_id"]:
         raise ValueError("native operating-system time zone differs from owner confirmation")
     observed = adapter.query(definition)
-    if observed != {"status": "ACTIVE", "definition_sha256": sha256(definition)}:
+    if (
+        sha256(definition) != native["definition_sha256"]
+        or observed != {
+            "status": "ACTIVE", "definition_sha256": native["definition_sha256"],
+        }
+    ):
         raise ValueError("native update schedule is not the verified active definition")
     now_local = now_local or datetime.datetime.now(ZoneInfo(config["timezone"]))
     validate_moment_in_timezone(now_local, config["timezone"], "native update tick time")
     occurrence = latest_due_update_occurrence(config, now_local)
-    prior = None
-    report_path = worker / ".ai-human/version-report.json"
-    if report_path.is_file():
-        try:
-            prior = read_json(report_path)
-        except Exception:
-            prior = None
+    prior = read_update_version_report(worker, config, install_metadata(worker))
     if force_retry:
-        if not prior or prior.get("schema") != "ai-human.version-report/v2" or prior.get("retry_pending") is not True:
+        if (
+            not prior
+            or prior.get("schema") != "ai-human.version-report/v2"
+            or prior.get("retry_pending") is not True
+        ):
             raise ValueError("no failed or deferred scheduled update is awaiting retry")
-        occurrence = parse_offset_datetime(prior["occurrence_key"], "retry occurrence")
+        prior_occurrence = parse_offset_datetime(prior["occurrence_key"], "retry occurrence")
+        if occurrence is None or occurrence.isoformat() != prior_occurrence.isoformat():
+            raise ValueError("scheduled update retry is not for the current due occurrence")
+        if prior["attempt_number"] - 1 >= config["max_retry_attempts"]:
+            raise ValueError("scheduled update retry limit reached for this occurrence")
+        occurrence = prior_occurrence
     if occurrence is None or scheduled_occurrence_already_closed(worker, config, occurrence):
         return {"status": "NOT_DUE", "reason": "NO_OPEN_OCCURRENCE"}
+    if (
+        not force_retry
+        and prior
+        and prior.get("schema") == "ai-human.version-report/v2"
+        and prior["occurrence_key"] == occurrence.isoformat()
+        and prior["retry_pending"] is True
+    ):
+        return {
+            "status": "NOT_DUE",
+            "reason": "RETRY_REQUIRES_OWNER_OR_NEXT_OCCURRENCE",
+        }
     metadata = install_metadata(worker)
     installed = metadata["installed_version"]
     if worker_mode(worker) == MODE_SUSPENDED:
@@ -14974,6 +16228,10 @@ def fleet_update(args):
     batch_id, timezone, records = load_fleet(args.fleet)
     moment = parse_local(args.now_local)
     validate_moment_in_timezone(moment, timezone, "fleet update local time")
+    # Refuse the legacy fleet timer before --latest can touch the network.  A
+    # mixed fleet is not split implicitly because cadence is an owner choice.
+    for record in records:
+        require_legacy_update_path_unowned(safe_worker(record["path"]))
     temporary = None
     if args.latest:
         temporary, release, manifest = download_release(args.repository)
@@ -15139,6 +16397,9 @@ def suspend(args):
         raise ValueError(
             "pause or remove and verify the native update schedule before suspension"
         )
+    update_config = update_schedule_config(worker)
+    if update_config and update_config.get("status") in {"PAUSED", "REMOVED"}:
+        verify_update_schedule_native_readback(worker, update_config)
     if current == MODE_SUSPENDED:
         print("AI-HUMAN SUSPEND: PASS")
         print("- mode: SUSPENDED")
@@ -15321,6 +16582,9 @@ def uninstall(args):
         raise ValueError(
             "remove and verify the native update schedule before uninstalling"
         )
+    update_config = update_schedule_config(worker)
+    if update_config and update_config.get("status") == "REMOVED":
+        verify_update_schedule_native_readback(worker, update_config)
     if live_task(worker) and not args.at_checkpoint:
         raise ValueError("live task exists; reach a checkpoint before uninstalling")
     metadata = install_metadata(worker)
@@ -15996,6 +17260,7 @@ def parser():
         command.add_argument("worker")
         command.add_argument("--cadence", choices=sorted(UPDATE_SCHEDULE_CADENCES), required=True)
         command.add_argument("--local-time", required=True)
+        command.add_argument("--max-retry-attempts", type=int, required=True)
         command.add_argument("--timezone", required=True)
         command.add_argument("--native-timezone-id", required=True)
         command.add_argument("--confirm-native-timezone-matches-iana", action="store_true")
@@ -16005,13 +17270,19 @@ def parser():
         command.add_argument("--rollout-lane", choices=("PILOT", "GENERAL"), required=True)
         command.add_argument("--approval-reference", required=True)
         command.add_argument("--python-executable")
-        command.add_argument("--legacy-schedule-removed", action="store_true")
         command.set_defaults(handler=update_schedule_configure)
 
     update_schedule_configure_p = sub.add_parser("update-schedule-configure")
     add_update_schedule_arguments(update_schedule_configure_p)
     update_schedule_edit_p = sub.add_parser("update-schedule-edit")
     add_update_schedule_arguments(update_schedule_edit_p)
+
+    update_schedule_legacy_p = sub.add_parser("update-schedule-legacy-disable")
+    update_schedule_legacy_p.add_argument("worker")
+    update_schedule_legacy_p.add_argument("--approval-reference", required=True)
+    update_schedule_legacy_p.add_argument("--external-id", required=True)
+    update_schedule_legacy_p.add_argument("--removal-evidence", required=True)
+    update_schedule_legacy_p.set_defaults(handler=update_schedule_legacy_disable)
 
     update_schedule_control_p = sub.add_parser("update-schedule-control")
     update_schedule_control_p.add_argument("worker")
@@ -16021,6 +17292,7 @@ def parser():
 
     update_schedule_show_p = sub.add_parser("update-schedule-show")
     update_schedule_show_p.add_argument("worker")
+    update_schedule_show_p.add_argument("--verify-native", action="store_true")
     update_schedule_show_p.set_defaults(handler=update_schedule_show)
 
     update_schedule_tick_p = sub.add_parser("update-schedule-tick")

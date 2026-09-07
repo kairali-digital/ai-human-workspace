@@ -63,7 +63,7 @@
       "target": ".ai-human/system/WORKER-EXCHANGE.md"
     },
     {
-      "sha256": "3ca70e5d211663748a2d644eee4fa2fad3d02b4234b8374cf66b11a05c2679a2",
+      "sha256": "d66c29404594a580cce8933b669ab3c32e4bf30cfa4b7a38f7b1fa4a596e36f4",
       "source": "core/UPDATE-SCHEDULER.md",
       "target": ".ai-human/system/UPDATE-SCHEDULER.md"
     },
@@ -93,7 +93,7 @@
       "target": ".ai-human/VERSION"
     },
     {
-      "sha256": "4f0a78d03a0ec3be664349aef6b92028019edcf3e30ba4604cb8e0761ddb0f0f",
+      "sha256": "dcf3806a546695b69ef20298bbcac571b77be4f55d6c0b81da466f85448f79fd",
       "source": "scripts/ai_human.py",
       "target": ".ai-human/bin/ai_human.py"
     }

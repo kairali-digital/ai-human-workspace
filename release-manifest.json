@@ -13,7 +13,7 @@
       "target": ".ai-human/system/PERSONAL-CONTEXT-RADAR.md"
     },
     {
-      "sha256": "1ced47f07df02125b744c6066694227af6bf666956314486f7a0d20e9979f3c3",
+      "sha256": "3a3eb717b198d6e2357b8380982e8507842ad172073e28efd4a5401817fb7e52",
       "source": "core/AI-HUMAN.md",
       "target": ".ai-human/system/AI-HUMAN.md"
     },
@@ -88,7 +88,7 @@
       "target": ".ai-human/VERSION"
     },
     {
-      "sha256": "928e50f8b4e82e0a20fed8c7ed53348ee15f588c37a4b752fc3d75e8de9d3380",
+      "sha256": "9f062aa1312ae42631ade9b2aa865d41b40c88991860d63b27453a675ba98331",
       "source": "scripts/ai_human.py",
       "target": ".ai-human/bin/ai_human.py"
     }

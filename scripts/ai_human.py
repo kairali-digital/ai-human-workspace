@@ -139,6 +139,7 @@ CONTEXT_NEW_WORK_COMMANDS = {
     "task-start", "governor-plan", "action-execute", "improvement-run",
     "autonomy-skill-install", "resource-snapshot", "resource-plan",
     "work-map-discover", "work-map-record", "radar-run",
+    "exchange-send", "exchange-mission-create",
 }
 HANDOFF_REQUEST_FIELDS = {
     "active_gates", "approval_boundaries", "done_condition", "expires_utc",
@@ -178,6 +179,75 @@ RESOURCE_OUTCOME_REQUEST_FIELDS = {
 RESOURCE_OUTCOME_STATUSES = {
     "NOT_EXECUTED", "USER_REFUSED", "ADAPTER_UNAVAILABLE",
     "EXECUTED_NO_IMPROVEMENT", "EXECUTED_IMPROVED",
+}
+EXCHANGE_LOCAL_ROOT = Path(".ai-human/exchange")
+EXCHANGE_JOIN_PATH = EXCHANGE_LOCAL_ROOT / "join.json"
+EXCHANGE_PROTOCOL = "ai-human.worker-exchange/v1"
+EXCHANGE_CONFIG_FIELDS = {
+    "access_classes", "approval_reference", "directory_max_age_minutes", "exchange_id", "max_attachment_bytes",
+    "max_attachments", "max_conversation_messages", "max_fanout", "max_hops",
+    "max_message_bytes", "owner", "schema", "status_repeat_window_seconds",
+}
+EXCHANGE_DIRECTORY_FIELDS = {
+    "accepted_message_types", "access_class", "address", "company", "human_owner",
+    "identity_sha256", "joined_utc", "legal_entity", "name", "operating_unit",
+    "protocols", "purpose", "schema", "status", "supervisor", "verified_utc",
+    "worker_id",
+}
+EXCHANGE_ROUTE_POLICY_FIELDS = {
+    "access_classes", "allowed_message_types", "allowed_modes", "expires_utc",
+    "policy_id", "recipient_worker_id", "schema", "sender_worker_id", "status",
+}
+EXCHANGE_MISSION_FIELDS = {
+    "dependencies", "done_condition", "expires_utc", "integration_owner_worker_id",
+    "max_messages", "members", "mission_id", "name", "purpose", "schema",
+    "source_owner_worker_id", "status",
+}
+EXCHANGE_REQUEST_FIELDS = {
+    "active_gates", "approval_boundaries", "attachments", "confidentiality",
+    "conversation_id", "created_utc", "done_condition", "expires_utc", "fanout_count",
+    "hop_count", "idempotency_key", "message_id", "message_type", "mission_id",
+    "priority", "priority_source", "purpose", "read_boundaries", "recipients",
+    "reply_expectation", "reply_to_id", "requested_result", "route", "schema",
+    "source_references", "tool_boundaries", "write_boundaries",
+}
+EXCHANGE_ENVELOPE_FIELDS = {
+    "attachments", "authority", "delivery_locations", "envelope_sha256",
+    "material_fingerprint", "message_id", "mission_sha256", "protocol", "request",
+    "request_sha256", "route_policies", "schema", "sender_identity_sha256",
+    "sender_state_sha256", "sender_task_id", "sender_worker_id",
+    "transport_receipt_location", "trusted_transport_receipt",
+}
+EXCHANGE_ATTACHMENT_FIELDS = {"media_type", "path", "sha256"}
+EXCHANGE_EVENT_FIELDS = {
+    "actor_worker_id", "created_utc", "event_id", "event_sha256", "evidence",
+    "message_id", "recipient_worker_id", "schema", "state",
+}
+EXCHANGE_RESULT_FIELDS = {
+    "artifacts", "evidence", "fact_claims", "message_id", "result_id",
+    "result_version", "schema", "source_owner_worker_id",
+}
+EXCHANGE_FACT_FIELDS = {"fact_id", "owner_worker_id", "value_sha256"}
+EXCHANGE_INTEGRATION_FIELDS = {"expected", "mission_id", "schema"}
+EXCHANGE_EXPECTED_RESULT_FIELDS = {
+    "message_id", "result_id", "result_sha256", "result_version", "worker_id",
+}
+EXCHANGE_MESSAGE_TYPES = {
+    "NOTE", "REQUEST", "RESPONSE", "STATUS", "BLOCKER", "HANDOFF",
+    "FACT_PROPOSAL", "DECISION_REQUEST", "RESULT", "ACK", "REJECT", "CANCEL",
+}
+EXCHANGE_ROUTES = {"DIRECT", "CHIEF_MEDIATED", "MISSION_ROOM"}
+EXCHANGE_TERMINAL_STATES = {"REJECTED", "EXPIRED", "COMPLETED", "FAILED", "CANCELLED"}
+EXCHANGE_LIFECYCLE_STATES = {
+    "QUEUED", "DELIVERED", "ACKNOWLEDGED", "ACCEPTED", "REJECTED", "EXPIRED",
+    "COMPLETED", "FAILED", "CANCELLED",
+}
+EXCHANGE_TRANSITIONS = {
+    None: {"QUEUED"},
+    "QUEUED": {"DELIVERED", "FAILED", "CANCELLED", "EXPIRED"},
+    "DELIVERED": {"ACKNOWLEDGED", "FAILED", "CANCELLED", "EXPIRED"},
+    "ACKNOWLEDGED": {"ACCEPTED", "REJECTED", "CANCELLED", "EXPIRED"},
+    "ACCEPTED": {"COMPLETED", "FAILED", "CANCELLED"},
 }
 LEASE_PATH = Path(".ai-human/control/session-lease.json")
 CONTROL_RECEIPTS = Path(".ai-human/control/receipts")
@@ -228,6 +298,8 @@ MODE_GUARDED_COMMANDS = {
     "resource-configure", "resource-snapshot", "resource-plan", "resource-record",
     "work-map-consent", "work-map-discover", "work-map-record", "radar-configure",
     "radar-verify", "radar-run", "radar-decide",
+    "exchange-join", "exchange-send", "exchange-ack", "exchange-decide",
+    "exchange-result", "exchange-mission-create", "exchange-integrate",
 }
 COORDINATION_STATE_FILES = (
     "MASTER_CURSOR.md", "OPEN_REGISTER.md", "TODAY.md",
@@ -257,6 +329,7 @@ INTRINSIC_NEVER_MANAGED = set(STATE_FILES) | {
     ".ai-human/governor/",
     ".ai-human/continuity/",
     ".ai-human/resources/",
+    ".ai-human/exchange/",
     ".ai-human/backups/",
     ".ai-human/downgrade-exports/",
     ".ai-human/install.json",
@@ -1591,6 +1664,599 @@ def validate_resource_outcome_request(data):
     return data
 
 
+def exchange_digest(value):
+    return canonical_json_sha256(value)
+
+
+def exchange_record_sha256(record, field):
+    payload = dict(record)
+    payload.pop(field, None)
+    return canonical_json_sha256(payload)
+
+
+def exchange_text_list(values, label, allow_empty=False, maximum=25):
+    if not isinstance(values, list) or len(values) > maximum:
+        raise ValueError(label + " must be a list with at most " + str(maximum) + " entries")
+    if not values and not allow_empty:
+        raise ValueError(label + " cannot be empty")
+    result = []
+    seen = set()
+    for index, value in enumerate(values):
+        if not isinstance(value, str):
+            raise ValueError(label + " entry " + str(index) + " must be text")
+        cleaned = bounded_clean(value, label + " entry " + str(index), 1000)
+        key = cleaned.casefold()
+        if key in seen:
+            raise ValueError(label + " contains a duplicate entry")
+        seen.add(key)
+        result.append(cleaned)
+    return result
+
+
+def validate_exchange_config(data):
+    if not isinstance(data, dict):
+        raise ValueError("exchange config must be a JSON object")
+    require_exact_fields(data, EXCHANGE_CONFIG_FIELDS, "exchange config")
+    if data.get("schema") != "ai-human.exchange-config/v1":
+        raise ValueError("unsupported exchange config schema")
+    governor_safe_id(data.get("exchange_id", ""), "exchange id")
+    for field in ("owner", "approval_reference"):
+        bounded_clean(data.get(field, ""), "exchange " + field.replace("_", " "), 1000)
+    exchange_text_list(data.get("access_classes"), "exchange access classes")
+    for field, maximum in (
+        ("directory_max_age_minutes", 525_600),
+        ("max_attachment_bytes", 100 * 1024 * 1024),
+        ("max_attachments", BATCH_CAP),
+        ("max_conversation_messages", 10_000),
+        ("max_fanout", BATCH_CAP),
+        ("max_hops", BATCH_CAP),
+        ("max_message_bytes", 10 * 1024 * 1024),
+        ("status_repeat_window_seconds", 86_400),
+    ):
+        positive_integer(data.get(field), "exchange " + field.replace("_", " "), maximum)
+    if data["max_attachment_bytes"] > data["max_message_bytes"]:
+        raise ValueError("exchange attachment limit cannot exceed the message limit")
+    return data
+
+
+def validate_exchange_directory_entry(data):
+    if not isinstance(data, dict):
+        raise ValueError("exchange directory entry must be a JSON object")
+    require_exact_fields(data, EXCHANGE_DIRECTORY_FIELDS, "exchange directory entry")
+    if data.get("schema") != "ai-human.exchange-directory-entry/v1":
+        raise ValueError("unsupported exchange directory entry schema")
+    governor_safe_id(data.get("worker_id", ""), "directory worker id")
+    for field in (
+        "name", "purpose", "company", "legal_entity", "operating_unit", "human_owner",
+        "supervisor", "address", "access_class",
+    ):
+        bounded_clean(data.get(field, ""), "directory " + field.replace("_", " "), 1000)
+    if data.get("status") not in {"ACTIVE", "PAUSED", "RETIRED"}:
+        raise ValueError("directory worker status is invalid")
+    if not SHA256_HEX.fullmatch(str(data.get("identity_sha256", ""))):
+        raise ValueError("directory worker identity hash is invalid")
+    accepted = exchange_text_list(
+        data.get("accepted_message_types"), "directory accepted message types"
+    )
+    if any(value not in EXCHANGE_MESSAGE_TYPES for value in accepted):
+        raise ValueError("directory accepted message type is invalid")
+    protocols = exchange_text_list(data.get("protocols"), "directory protocols")
+    if EXCHANGE_PROTOCOL not in protocols:
+        raise ValueError("directory entry does not support this exchange protocol")
+    joined = parse_recorded_utc(data.get("joined_utc"), "directory joined_utc")
+    verified = parse_recorded_utc(data.get("verified_utc"), "directory verified_utc")
+    if verified < joined:
+        raise ValueError("directory verification predates join")
+    return data
+
+
+def validate_exchange_route_policy(data):
+    if not isinstance(data, dict):
+        raise ValueError("exchange route policy must be a JSON object")
+    require_exact_fields(data, EXCHANGE_ROUTE_POLICY_FIELDS, "exchange route policy")
+    if data.get("schema") != "ai-human.exchange-route-policy/v1":
+        raise ValueError("unsupported exchange route policy schema")
+    for field in ("policy_id", "sender_worker_id", "recipient_worker_id"):
+        governor_safe_id(data.get(field, ""), "route " + field.replace("_", " "))
+    if data.get("status") not in {"ACTIVE", "REVOKED"}:
+        raise ValueError("route policy status is invalid")
+    if any(value not in EXCHANGE_ROUTES for value in exchange_text_list(
+        data.get("allowed_modes"), "route allowed modes"
+    )):
+        raise ValueError("route policy mode is invalid")
+    if any(value not in EXCHANGE_MESSAGE_TYPES for value in exchange_text_list(
+        data.get("allowed_message_types"), "route allowed message types"
+    )):
+        raise ValueError("route policy message type is invalid")
+    exchange_text_list(data.get("access_classes"), "route access classes")
+    parse_recorded_utc(data.get("expires_utc"), "route policy expires_utc")
+    return data
+
+
+def validate_exchange_mission(data):
+    if not isinstance(data, dict):
+        raise ValueError("exchange mission must be a JSON object")
+    require_exact_fields(data, EXCHANGE_MISSION_FIELDS, "exchange mission")
+    if data.get("schema") != "ai-human.exchange-mission/v1":
+        raise ValueError("unsupported exchange mission schema")
+    governor_safe_id(data.get("mission_id", ""), "mission id")
+    for field in ("name", "purpose", "done_condition"):
+        bounded_clean(data.get(field, ""), "mission " + field.replace("_", " "), 2000)
+    members = exchange_text_list(data.get("members"), "mission members")
+    for member in members:
+        governor_safe_id(member, "mission member")
+    for field in ("source_owner_worker_id", "integration_owner_worker_id"):
+        governor_safe_id(data.get(field, ""), "mission " + field.replace("_", " "))
+        if data[field] not in members:
+            raise ValueError("mission " + field.replace("_", " ") + " is not a member")
+    if data.get("status") not in {"ACTIVE", "PAUSED", "CLOSED"}:
+        raise ValueError("mission status is invalid")
+    positive_integer(data.get("max_messages"), "mission message budget", 10_000)
+    parse_recorded_utc(data.get("expires_utc"), "mission expires_utc")
+    dependencies = data.get("dependencies")
+    if not isinstance(dependencies, list) or len(dependencies) > BATCH_CAP:
+        raise ValueError("mission dependencies must be a bounded list")
+    graph = {member: [] for member in members}
+    seen = set()
+    for index, dependency in enumerate(dependencies):
+        if not isinstance(dependency, dict) or set(dependency) != {"from_worker_id", "to_worker_id"}:
+            raise ValueError("mission dependency " + str(index) + " is invalid")
+        source = governor_safe_id(dependency["from_worker_id"], "dependency source")
+        target = governor_safe_id(dependency["to_worker_id"], "dependency target")
+        if source not in graph or target not in graph or source == target:
+            raise ValueError("mission dependency has an invalid member")
+        edge = (source, target)
+        if edge in seen:
+            raise ValueError("mission dependency is duplicated")
+        seen.add(edge)
+        graph[source].append(target)
+    visiting = set()
+    visited = set()
+
+    def visit(node):
+        if node in visiting:
+            raise ValueError("mission dependencies contain a cycle")
+        if node in visited:
+            return
+        visiting.add(node)
+        for target in graph[node]:
+            visit(target)
+        visiting.remove(node)
+        visited.add(node)
+
+    for member in members:
+        visit(member)
+    return data
+
+
+def validate_exchange_attachment(record, label="exchange attachment"):
+    if not isinstance(record, dict):
+        raise ValueError(label + " must be a JSON object")
+    require_exact_fields(record, EXCHANGE_ATTACHMENT_FIELDS, label)
+    safe_relative(record.get("path"), label + " path")
+    bounded_clean(record.get("media_type", ""), label + " media type", 200)
+    if not SHA256_HEX.fullmatch(str(record.get("sha256", ""))):
+        raise ValueError(label + " hash is invalid")
+    return record
+
+
+def validate_exchange_request(data, config, allow_expired=False):
+    if not isinstance(data, dict):
+        raise ValueError("exchange request must be a JSON object")
+    require_exact_fields(data, EXCHANGE_REQUEST_FIELDS, "exchange request")
+    if data.get("schema") != "ai-human.exchange-request/v1":
+        raise ValueError("unsupported exchange request schema")
+    for field in ("message_id", "idempotency_key", "conversation_id"):
+        governor_safe_id(data.get(field, ""), "exchange " + field.replace("_", " "))
+    if data.get("message_type") not in EXCHANGE_MESSAGE_TYPES:
+        raise ValueError("exchange message type is invalid")
+    if data.get("route") not in EXCHANGE_ROUTES:
+        raise ValueError("exchange route is invalid")
+    mission_id = data.get("mission_id")
+    if data["route"] == "MISSION_ROOM":
+        governor_safe_id(mission_id, "exchange mission id")
+    elif mission_id != "NONE":
+        raise ValueError("non-mission messages must use mission_id NONE")
+    reply = data.get("reply_to_id")
+    if reply != "NONE":
+        governor_safe_id(reply, "exchange reply message id")
+        if reply == data["message_id"]:
+            raise ValueError("a message cannot reply to itself")
+    if data.get("reply_expectation") not in {"NONE", "OPTIONAL", "REQUIRED"}:
+        raise ValueError("exchange reply expectation is invalid")
+    recipients = exchange_text_list(
+        data.get("recipients"), "exchange recipients", maximum=config["max_fanout"]
+    )
+    for recipient in recipients:
+        governor_safe_id(recipient, "exchange recipient")
+    fanout = positive_integer(data.get("fanout_count"), "exchange fanout", config["max_fanout"])
+    if fanout != len(recipients):
+        raise ValueError("exchange fanout count differs from the recipient list")
+    hop = positive_integer(data.get("hop_count"), "exchange hop count", config["max_hops"], allow_zero=True)
+    if reply == "NONE" and hop != 0:
+        raise ValueError("a root exchange message must have hop_count zero")
+    if reply != "NONE" and hop == 0:
+        raise ValueError("an exchange reply must increment hop_count")
+    for field in (
+        "purpose", "requested_result", "done_condition", "confidentiality",
+        "priority_source",
+    ):
+        bounded_clean(data.get(field, ""), "exchange " + field.replace("_", " "), 2000)
+    priority = positive_integer(data.get("priority"), "exchange priority", 5)
+    if priority < 1:
+        raise ValueError("exchange priority is invalid")
+    for field in (
+        "active_gates", "approval_boundaries", "read_boundaries", "source_references",
+        "tool_boundaries", "write_boundaries",
+    ):
+        exchange_text_list(data.get(field), "exchange " + field.replace("_", " "))
+    attachments = data.get("attachments")
+    if not isinstance(attachments, list) or len(attachments) > config["max_attachments"]:
+        raise ValueError("exchange attachments exceed the configured count")
+    seen = set()
+    for index, record in enumerate(attachments):
+        validate_exchange_attachment(record, "exchange attachment " + str(index))
+        key = portable_key(record["path"])
+        if key in seen:
+            raise ValueError("exchange attachment path is duplicated")
+        seen.add(key)
+    created = parse_recorded_utc(data.get("created_utc"), "exchange created_utc")
+    expires = parse_recorded_utc(data.get("expires_utc"), "exchange expires_utc")
+    now = datetime.datetime.now(datetime.timezone.utc)
+    if created > now + MAX_MANUAL_RUN_CLOCK_SKEW:
+        raise ValueError("exchange message creation time is in the future")
+    if expires <= created:
+        raise ValueError("exchange message expiry must be after creation")
+    if expires <= now and not allow_expired:
+        raise ValueError("exchange message is expired")
+    return data
+
+
+def safe_exchange_root(raw, must_exist=True):
+    candidate = Path(raw).expanduser()
+    if candidate.exists() and candidate.is_symlink():
+        raise ValueError("exchange root may not be a symbolic link")
+    return safe_worker(raw, must_exist=must_exist)
+
+
+def exchange_config(exchange):
+    path = exchange / "config.json"
+    if not path.is_file() or path.is_symlink():
+        raise ValueError("exchange is not configured")
+    return validate_exchange_config(read_json(path))
+
+
+def exchange_control(exchange):
+    path = exchange / "control.json"
+    if not path.is_file() or path.is_symlink():
+        raise ValueError("exchange control state is missing")
+    value = read_json(path)
+    if not isinstance(value, dict) or set(value) != {"schema", "status", "updated_utc"}:
+        raise ValueError("exchange control state is invalid")
+    if value.get("schema") != "ai-human.exchange-control/v1" or value.get("status") not in {
+        "ACTIVE", "PAUSED", "ARCHIVED",
+    }:
+        raise ValueError("exchange control state is invalid")
+    parse_recorded_utc(value.get("updated_utc"), "exchange control updated_utc")
+    return value
+
+
+def exchange_require_status(exchange, allowed):
+    status = exchange_control(exchange)["status"]
+    if status not in set(allowed):
+        raise ValueError("exchange status " + status + " does not allow this operation")
+    return status
+
+
+def exchange_directory(exchange):
+    root = exchange / "directory"
+    if not root.is_dir() or root.is_symlink():
+        raise ValueError("exchange directory is missing")
+    entries = {}
+    names = {}
+    for path in sorted(root.iterdir(), key=lambda item: item.name.casefold()):
+        if path.is_symlink() or not path.is_file() or path.suffix.casefold() != ".json":
+            raise ValueError("exchange directory contains a forbidden entry")
+        entry = validate_exchange_directory_entry(read_json(path))
+        if path.name != entry["worker_id"] + ".json":
+            raise ValueError("exchange directory filename differs from worker id")
+        if entry["worker_id"] in entries:
+            raise ValueError("exchange directory contains a duplicate worker id")
+        names.setdefault(entry["name"].casefold(), []).append(entry["worker_id"])
+        entries[entry["worker_id"]] = entry
+    return entries
+
+
+def exchange_route_policies(exchange):
+    root = exchange / "policies"
+    if not root.is_dir() or root.is_symlink():
+        raise ValueError("exchange policy directory is missing")
+    policies = {}
+    for path in sorted(root.iterdir(), key=lambda item: item.name.casefold()):
+        if path.is_symlink() or not path.is_file() or path.suffix.casefold() != ".json":
+            raise ValueError("exchange policy directory contains a forbidden entry")
+        policy = validate_exchange_route_policy(read_json(path))
+        if path.name != policy["policy_id"] + ".json" or policy["policy_id"] in policies:
+            raise ValueError("exchange route policy identity is duplicated")
+        policies[policy["policy_id"]] = policy
+    return policies
+
+
+def exchange_missions(exchange):
+    root = exchange / "missions"
+    if not root.is_dir() or root.is_symlink():
+        raise ValueError("exchange mission directory is missing")
+    missions = {}
+    for path in sorted(root.iterdir(), key=lambda item: item.name.casefold()):
+        if path.is_symlink() or not path.is_file() or path.suffix.casefold() != ".json":
+            raise ValueError("exchange mission directory contains a forbidden entry")
+        mission = validate_exchange_mission(read_json(path))
+        if path.name != mission["mission_id"] + ".json" or mission["mission_id"] in missions:
+            raise ValueError("exchange mission identity is duplicated")
+        missions[mission["mission_id"]] = mission
+    return missions
+
+
+def exchange_worker_join(worker, required=True):
+    path = worker / EXCHANGE_JOIN_PATH
+    if not path.is_file():
+        if required:
+            raise ValueError("worker has not joined a Worker Exchange")
+        return None
+    if path.is_symlink():
+        raise ValueError("worker exchange join proof may not be a symbolic link")
+    proof = validate_exchange_join_proof(read_json(path))
+    return proof
+
+
+def validate_exchange_join_proof(proof):
+    fields = {"config_sha256", "directory_entry", "exchange_id", "joined_utc", "proof_sha256", "schema"}
+    require_exact_fields(proof, fields, "worker exchange join proof")
+    if proof.get("schema") != "ai-human.exchange-join-proof/v1":
+        raise ValueError("unsupported worker exchange join proof schema")
+    governor_safe_id(proof.get("exchange_id", ""), "joined exchange id")
+    if not SHA256_HEX.fullmatch(str(proof.get("config_sha256", ""))):
+        raise ValueError("worker exchange config hash is invalid")
+    validate_exchange_directory_entry(proof.get("directory_entry"))
+    parse_recorded_utc(proof.get("joined_utc"), "worker exchange joined_utc")
+    if proof.get("proof_sha256") != exchange_record_sha256(proof, "proof_sha256"):
+        raise ValueError("worker exchange join proof hash mismatch")
+    return proof
+
+
+def exchange_active_entry(exchange, worker_id):
+    entries = exchange_directory(exchange)
+    if worker_id not in entries:
+        raise ValueError("exchange recipient is missing from the stable directory: " + worker_id)
+    entry = entries[worker_id]
+    if entry["status"] != "ACTIVE":
+        raise ValueError("exchange directory worker is not active: " + worker_id)
+    maximum_age = datetime.timedelta(
+        minutes=exchange_config(exchange)["directory_max_age_minutes"]
+    )
+    verified = parse_recorded_utc(entry["verified_utc"], "directory verified_utc")
+    if datetime.datetime.now(datetime.timezone.utc) - verified > maximum_age:
+        raise ValueError("exchange directory entry is stale: " + worker_id)
+    return entry
+
+
+def verify_joined_worker(worker, exchange):
+    config = exchange_config(exchange)
+    proof = exchange_worker_join(worker)
+    entry = proof["directory_entry"]
+    if proof["exchange_id"] != config["exchange_id"]:
+        raise ValueError("worker joined a different exchange")
+    if proof["config_sha256"] != canonical_json_sha256(config):
+        raise ValueError("worker join proof references a different exchange configuration")
+    if entry["worker_id"] != installed_worker_id(worker):
+        raise ValueError("worker join proof belongs to another worker")
+    if entry["identity_sha256"] != worker_identity_sha256(worker):
+        raise ValueError("worker identity differs from its exchange join proof")
+    current = exchange_active_entry(exchange, entry["worker_id"])
+    if current != entry:
+        raise ValueError("exchange directory differs from the worker join proof")
+    return config, entry
+
+
+def exchange_policy_for(exchange, sender, recipient, mode, message_type, access_class):
+    now = datetime.datetime.now(datetime.timezone.utc)
+    candidates = []
+    for policy in exchange_route_policies(exchange).values():
+        if (
+            policy["sender_worker_id"] == sender
+            and policy["recipient_worker_id"] == recipient
+            and policy["status"] == "ACTIVE"
+            and mode in policy["allowed_modes"]
+            and message_type in policy["allowed_message_types"]
+            and access_class in policy["access_classes"]
+            and parse_recorded_utc(policy["expires_utc"], "route policy expires_utc") > now
+        ):
+            candidates.append(policy)
+    if len(candidates) != 1:
+        raise ValueError("delivery requires exactly one active exact route policy")
+    return candidates[0]
+
+
+def exchange_message_root(exchange, message_id):
+    governor_safe_id(message_id, "exchange message id")
+    return path_without_symlinks(exchange / "messages", Path(message_id), "exchange message")
+
+
+def exchange_envelope_sha256(envelope):
+    return exchange_record_sha256(envelope, "envelope_sha256")
+
+
+def exchange_load_envelope(exchange, message_id):
+    root = exchange_message_root(exchange, message_id)
+    path = root / "envelope.json"
+    if not path.is_file() or path.is_symlink():
+        raise ValueError("exchange message is missing: " + message_id)
+    envelope = read_json(path)
+    if not isinstance(envelope, dict) or envelope.get("schema") != "ai-human.exchange-envelope/v1":
+        raise ValueError("exchange envelope schema is invalid")
+    require_exact_fields(envelope, EXCHANGE_ENVELOPE_FIELDS, "exchange envelope")
+    if envelope.get("message_id") != message_id:
+        raise ValueError("exchange message directory differs from its envelope")
+    if envelope.get("envelope_sha256") != exchange_envelope_sha256(envelope):
+        raise ValueError("exchange envelope hash mismatch")
+    config = exchange_config(exchange)
+    validate_exchange_request(envelope.get("request"), config, allow_expired=True)
+    if envelope["request"]["message_id"] != message_id:
+        raise ValueError("exchange request message id differs from its envelope")
+    if envelope.get("request_sha256") != canonical_json_sha256(envelope["request"]):
+        raise ValueError("exchange request hash mismatch")
+    if not SHA256_HEX.fullmatch(str(envelope.get("sender_identity_sha256", ""))):
+        raise ValueError("exchange sender identity hash is invalid")
+    if not SHA256_HEX.fullmatch(str(envelope.get("sender_state_sha256", ""))):
+        raise ValueError("exchange sender state hash is invalid")
+    governor_safe_id(envelope.get("sender_worker_id", ""), "exchange sender worker id")
+    governor_safe_id(envelope.get("sender_task_id", ""), "exchange sender task id")
+    bundled = envelope.get("attachments")
+    if not isinstance(bundled, list) or len(bundled) != len(envelope["request"]["attachments"]):
+        raise ValueError("exchange bundled attachments differ from the request")
+    expected_files = {"envelope.json"}
+    total = len(json.dumps(
+        envelope, ensure_ascii=False, separators=(",", ":"), sort_keys=True
+    ).encode("utf-8"))
+    for index, record in enumerate(bundled):
+        fields = set(EXCHANGE_ATTACHMENT_FIELDS) | {"bundle_path", "size_bytes"}
+        require_exact_fields(record, fields, "exchange bundled attachment " + str(index))
+        validate_exchange_attachment(
+            {key: record[key] for key in EXCHANGE_ATTACHMENT_FIELDS},
+            "exchange bundled attachment " + str(index),
+        )
+        bundle = safe_relative(record["bundle_path"], "exchange bundle path")
+        if bundle.parts[:1] != ("attachments",):
+            raise ValueError("exchange bundle path must stay under attachments")
+        attachment = path_without_symlinks(root, bundle, "exchange bundled attachment")
+        if not attachment.is_file():
+            raise ValueError("exchange bundled attachment is missing")
+        size = positive_integer(record["size_bytes"], "exchange attachment size", allow_zero=True)
+        if attachment.stat().st_size != size or sha256(attachment) != record["sha256"]:
+            raise ValueError("exchange bundled attachment integrity mismatch")
+        total += size
+        expected_files.add(bundle.as_posix())
+    if total > config["max_message_bytes"]:
+        raise ValueError("exchange message exceeds the configured byte limit")
+    for path in root.rglob("*"):
+        if path.is_symlink():
+            raise ValueError("exchange message may not contain symbolic links")
+        if path.is_file() and path.relative_to(root).as_posix() not in expected_files and "events" not in path.relative_to(root).parts and "results" not in path.relative_to(root).parts:
+            raise ValueError("exchange message package contains an unsigned file")
+    return envelope
+
+
+def exchange_events(exchange, message_id, recipient_id=None):
+    root = exchange_message_root(exchange, message_id) / "events"
+    if not root.exists():
+        return []
+    if root.is_symlink() or not root.is_dir():
+        raise ValueError("exchange message event root is invalid")
+    events = []
+    for path in sorted(root.iterdir(), key=lambda item: item.name.casefold()):
+        if path.is_symlink() or not path.is_file() or path.suffix.casefold() != ".json":
+            raise ValueError("exchange message events contain a forbidden entry")
+        event = read_json(path)
+        require_exact_fields(event, EXCHANGE_EVENT_FIELDS, "exchange message event")
+        if event.get("schema") != "ai-human.exchange-event/v1":
+            raise ValueError("unsupported exchange event schema")
+        for field in ("event_id", "message_id", "recipient_worker_id", "actor_worker_id"):
+            governor_safe_id(event.get(field, ""), "exchange event " + field.replace("_", " "))
+        if event["message_id"] != message_id or path.name != event["event_id"] + ".json":
+            raise ValueError("exchange event identity mismatch")
+        if event.get("state") not in EXCHANGE_LIFECYCLE_STATES:
+            raise ValueError("exchange event state is invalid")
+        bounded_clean(event.get("evidence", ""), "exchange event evidence", 2000)
+        parse_recorded_utc(event.get("created_utc"), "exchange event created_utc")
+        if event.get("event_sha256") != exchange_record_sha256(event, "event_sha256"):
+            raise ValueError("exchange event hash mismatch")
+        events.append(event)
+    filtered = [event for event in events if recipient_id is None or event["recipient_worker_id"] == recipient_id]
+    if recipient_id is not None:
+        state = None
+        for event in filtered:
+            allowed = EXCHANGE_TRANSITIONS.get(state, set())
+            if event["state"] not in allowed:
+                raise ValueError("invalid exchange lifecycle transition from " + str(state) + " to " + event["state"])
+            state = event["state"]
+    return filtered
+
+
+def exchange_current_state(exchange, message_id, recipient_id):
+    events = exchange_events(exchange, message_id, recipient_id)
+    return events[-1]["state"] if events else None
+
+
+def exchange_journal_records(exchange):
+    root = exchange / "journal"
+    if not root.is_dir() or root.is_symlink():
+        raise ValueError("exchange journal is missing")
+    records = []
+    previous = "GENESIS"
+    for path in sorted(root.iterdir(), key=lambda item: item.name):
+        if path.is_symlink() or not path.is_file() or path.suffix.casefold() != ".json":
+            raise ValueError("exchange journal contains a forbidden entry")
+        record = read_json(path)
+        fields = {"created_utc", "event_sha256", "journal_sha256", "kind", "message_id", "previous_sha256", "recipient_worker_id", "schema", "sequence"}
+        require_exact_fields(record, fields, "exchange journal record")
+        if record.get("schema") != "ai-human.exchange-journal/v1":
+            raise ValueError("unsupported exchange journal schema")
+        sequence = positive_integer(record.get("sequence"), "exchange journal sequence")
+        if sequence != len(records) + 1 or path.name != f"{sequence:012d}.json":
+            raise ValueError("exchange journal sequence is not contiguous")
+        if record.get("previous_sha256") != previous:
+            raise ValueError("exchange journal chain is broken")
+        if record.get("journal_sha256") != exchange_record_sha256(record, "journal_sha256"):
+            raise ValueError("exchange journal record hash mismatch")
+        parse_recorded_utc(record.get("created_utc"), "exchange journal created_utc")
+        previous = record["journal_sha256"]
+        records.append(record)
+    return records
+
+
+def exchange_append_journal(exchange, kind, message_id, recipient_id, event_sha256):
+    records = exchange_journal_records(exchange)
+    sequence = len(records) + 1
+    record = {
+        "created_utc": now_utc(),
+        "event_sha256": event_sha256,
+        "journal_sha256": "",
+        "kind": governor_safe_id(kind, "exchange journal kind"),
+        "message_id": governor_safe_id(message_id, "exchange journal message id"),
+        "previous_sha256": records[-1]["journal_sha256"] if records else "GENESIS",
+        "recipient_worker_id": governor_safe_id(recipient_id, "exchange journal recipient"),
+        "schema": "ai-human.exchange-journal/v1",
+        "sequence": sequence,
+    }
+    record["journal_sha256"] = exchange_record_sha256(record, "journal_sha256")
+    atomic_json(exchange / "journal" / f"{sequence:012d}.json", record)
+    return record
+
+
+def exchange_append_event(exchange, message_id, recipient_id, actor_id, state, evidence):
+    current = exchange_current_state(exchange, message_id, recipient_id)
+    if state not in EXCHANGE_TRANSITIONS.get(current, set()):
+        raise ValueError("invalid exchange lifecycle transition from " + str(current) + " to " + state)
+    event_id = f"{len(exchange_events(exchange, message_id)) + 1:06d}-{recipient_id}-{state.casefold()}"
+    event = {
+        "actor_worker_id": governor_safe_id(actor_id, "exchange event actor"),
+        "created_utc": now_utc(),
+        "event_id": event_id,
+        "event_sha256": "",
+        "evidence": bounded_clean(evidence, "exchange event evidence", 2000),
+        "message_id": message_id,
+        "recipient_worker_id": recipient_id,
+        "schema": "ai-human.exchange-event/v1",
+        "state": state,
+    }
+    event["event_sha256"] = exchange_record_sha256(event, "event_sha256")
+    path = exchange_message_root(exchange, message_id) / "events" / (event_id + ".json")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    atomic_json(path, event)
+    exchange_append_journal(exchange, "MESSAGE_EVENT", message_id, recipient_id, event["event_sha256"])
+    return event
+
+
 def handoff_packet_sha256(packet):
     payload = dict(packet)
     payload.pop("packet_sha256", None)
@@ -2338,6 +3004,45 @@ def validate_resource_state(worker):
         resource_outcome_records(worker, plans, snapshots)
     except Exception as exc:
         failures.append("invalid resource state: " + str(exc))
+    return failures
+
+
+def validate_exchange_local_state(worker):
+    failures = []
+    root = worker / EXCHANGE_LOCAL_ROOT
+    if not root.exists():
+        return failures
+    if root.is_symlink() or not root.is_dir():
+        return ["worker exchange state root must be a real directory"]
+    allowed = {"join.json", "received", "accepted", "results", "integration"}
+    for path in root.iterdir():
+        if path.name not in allowed:
+            failures.append("worker exchange state contains a forbidden entry: " + path.name)
+        elif path.is_symlink():
+            failures.append("worker exchange state may not contain symbolic links: " + path.name)
+    try:
+        exchange_worker_join(worker)
+        for directory in allowed - {"join.json"}:
+            child = root / directory
+            if not child.exists():
+                continue
+            if child.is_symlink() or not child.is_dir():
+                raise ValueError("worker exchange " + directory + " must be a real directory")
+            for path in child.iterdir():
+                if path.is_symlink() or not path.is_file() or path.suffix.casefold() != ".json":
+                    raise ValueError("worker exchange " + directory + " contains a forbidden entry")
+                record = read_json(path)
+                if not isinstance(record, dict) or record.get("schema") not in {
+                    "ai-human.exchange-local-receipt/v1",
+                    "ai-human.exchange-local-decision/v1",
+                    "ai-human.exchange-local-result/v1",
+                    "ai-human.exchange-integration-proof/v1",
+                }:
+                    raise ValueError("worker exchange local receipt schema is invalid")
+                if record.get("record_sha256") != exchange_record_sha256(record, "record_sha256"):
+                    raise ValueError("worker exchange local receipt hash mismatch")
+    except Exception as exc:
+        failures.append("invalid worker exchange state: " + str(exc))
     return failures
 
 
@@ -4093,6 +4798,9 @@ def controlled_state_paths(worker):
     resource_root = worker / RESOURCE_ROOT
     if resource_root.is_dir():
         paths.extend(path for path in resource_root.rglob("*.json") if path.is_file())
+    exchange_root = worker / EXCHANGE_LOCAL_ROOT
+    if exchange_root.is_dir():
+        paths.extend(path for path in exchange_root.rglob("*.json") if path.is_file())
     return sorted(paths, key=lambda path: path.relative_to(worker).as_posix())
 
 
@@ -5618,6 +6326,1221 @@ def resource_show(args):
     print("- recorded outcomes: " + str(len(outcomes)))
 
 
+def exchange_init(args):
+    exchange = safe_exchange_root(args.exchange, must_exist=False)
+    config = validate_exchange_config(
+        read_governor_input(args.config, "exchange config source")
+    )
+    if args.owner != config["owner"]:
+        raise ValueError("exchange initializer must be the configured owner")
+    if exchange.exists() and any(exchange.iterdir()):
+        raise ValueError("exchange target is not empty")
+    exchange.mkdir(parents=True, exist_ok=True)
+    for name in ("directory", "join-receipts", "policies", "missions", "messages", "inboxes", "journal", "indexes", "control-events", ".staging"):
+        (exchange / name).mkdir()
+    atomic_json(exchange / "config.json", config)
+    atomic_json(
+        exchange / "control.json",
+        {"schema": "ai-human.exchange-control/v1", "status": "ACTIVE", "updated_utc": now_utc()},
+    )
+    print("AI-HUMAN WORKER EXCHANGE INIT: PASS")
+    print("- exchange id: " + config["exchange_id"])
+    print("- status: ACTIVE")
+    print("- messages sent: 0")
+
+
+def exchange_join(args):
+    worker = safe_worker(args.worker)
+    lease, _state_hash = require_lease(worker, args.session_id, args.expected_state_hash)
+    exchange = safe_exchange_root(args.exchange)
+    config = exchange_config(exchange)
+    exchange_require_status(exchange, {"ACTIVE"})
+    entry = validate_exchange_directory_entry(
+        read_governor_input(args.entry, "exchange directory entry source")
+    )
+    metadata = install_metadata(worker)
+    expected = {
+        "worker_id": installed_worker_id(worker),
+        "identity_sha256": worker_identity_sha256(worker),
+        "company": metadata["company"],
+        "legal_entity": metadata["legal_entity"],
+        "purpose": metadata["purpose_scope"],
+    }
+    for field, value in expected.items():
+        if entry[field] != value:
+            raise ValueError("directory entry " + field.replace("_", " ") + " differs from the worker")
+    if entry["operating_unit"] not in metadata["operating_units"]:
+        raise ValueError("directory entry operating unit is outside the worker identity")
+    if entry["human_owner"] != clean(parameter_value(worker, "Human owner"), "human owner"):
+        raise ValueError("directory entry human owner differs from the worker")
+    if entry["supervisor"] != str(metadata.get("supervisor_id", "")):
+        raise ValueError("directory entry supervisor differs from the worker")
+    if entry["access_class"] not in config["access_classes"]:
+        raise ValueError("directory entry access class is not configured")
+    if entry["status"] != "ACTIVE":
+        raise ValueError("a joining worker directory entry must be ACTIVE")
+    if entry["address"] != "inboxes/" + entry["worker_id"]:
+        raise ValueError("directory entry address is not the stable transport inbox")
+    now = datetime.datetime.now(datetime.timezone.utc)
+    verified = parse_recorded_utc(entry["verified_utc"], "directory verified_utc")
+    if abs(now - verified) > datetime.timedelta(minutes=5):
+        raise ValueError("directory entry verification must be current")
+    if exchange_worker_join(worker, required=False):
+        raise ValueError("worker already has an exchange join proof")
+    proof = {
+        "config_sha256": canonical_json_sha256(config),
+        "directory_entry": entry,
+        "exchange_id": config["exchange_id"],
+        "joined_utc": now_utc(),
+        "proof_sha256": "",
+        "schema": "ai-human.exchange-join-proof/v1",
+    }
+    proof["proof_sha256"] = exchange_record_sha256(proof, "proof_sha256")
+    target = exchange / "directory" / (entry["worker_id"] + ".json")
+    relay_proof = exchange / "join-receipts" / (entry["worker_id"] + ".json")
+    with worker_operation_mutex(exchange):
+        if target.exists() or relay_proof.exists():
+            raise ValueError("exchange directory already contains that worker id")
+        atomic_json(target, entry)
+        try:
+            local = worker_target(worker, EXCHANGE_JOIN_PATH, "worker exchange join target")
+            local.parent.mkdir(parents=True, exist_ok=True)
+            atomic_json(local, proof)
+            atomic_json(relay_proof, proof)
+        except Exception:
+            target.unlink(missing_ok=True)
+            relay_proof.unlink(missing_ok=True)
+            raise
+    updated = refresh_lease_state(worker, lease)
+    print("AI-HUMAN WORKER EXCHANGE JOIN: PASS")
+    print("- worker id: " + entry["worker_id"])
+    print("- exchange id: " + config["exchange_id"])
+    print("- join proof: " + proof["proof_sha256"])
+    print("- new expected-state hash: " + updated["state_hash"])
+
+
+def exchange_policy_add(args):
+    exchange = safe_exchange_root(args.exchange)
+    config = exchange_config(exchange)
+    if args.owner != config["owner"]:
+        raise ValueError("only the configured exchange owner may add a route policy")
+    exchange_require_status(exchange, {"ACTIVE"})
+    policy = validate_exchange_route_policy(
+        read_governor_input(args.policy, "exchange route policy source")
+    )
+    if policy["status"] != "ACTIVE":
+        raise ValueError("new exchange route policy must be ACTIVE")
+    if parse_recorded_utc(policy["expires_utc"], "route policy expires_utc") <= datetime.datetime.now(datetime.timezone.utc):
+        raise ValueError("exchange route policy is expired")
+    entries = exchange_directory(exchange)
+    for worker_id in (policy["sender_worker_id"], policy["recipient_worker_id"]):
+        if worker_id not in entries:
+            raise ValueError("route policy references a missing worker: " + worker_id)
+    if any(access not in config["access_classes"] for access in policy["access_classes"]):
+        raise ValueError("route policy uses an unconfigured access class")
+    target = exchange / "policies" / (policy["policy_id"] + ".json")
+    with worker_operation_mutex(exchange):
+        if target.exists():
+            raise ValueError("exchange route policy id already exists")
+        atomic_json(target, policy)
+    print("AI-HUMAN WORKER EXCHANGE POLICY: PASS")
+    print("- policy id: " + policy["policy_id"])
+    print("- exact route: " + policy["sender_worker_id"] + " -> " + policy["recipient_worker_id"])
+
+
+def exchange_mission_create(args):
+    worker = safe_worker(args.worker)
+    require_lease(worker, args.session_id, args.expected_state_hash)
+    exchange = safe_exchange_root(args.exchange)
+    config, entry = verify_joined_worker(worker, exchange)
+    exchange_require_status(exchange, {"ACTIVE"})
+    mission = validate_exchange_mission(
+        read_governor_input(args.mission, "exchange mission source")
+    )
+    if mission["source_owner_worker_id"] != entry["worker_id"]:
+        raise ValueError("only the declared source owner may create the mission")
+    if mission["status"] != "ACTIVE":
+        raise ValueError("a new mission room must be ACTIVE")
+    if mission["max_messages"] > config["max_conversation_messages"]:
+        raise ValueError("mission message budget exceeds the exchange limit")
+    if parse_recorded_utc(mission["expires_utc"], "mission expires_utc") <= datetime.datetime.now(datetime.timezone.utc):
+        raise ValueError("mission is expired")
+    directory = exchange_directory(exchange)
+    for member in mission["members"]:
+        if member not in directory or directory[member]["status"] != "ACTIVE":
+            raise ValueError("mission member is not active in the stable directory: " + member)
+    target = exchange / "missions" / (mission["mission_id"] + ".json")
+    with worker_operation_mutex(exchange):
+        if target.exists():
+            raise ValueError("exchange mission id already exists")
+        atomic_json(target, mission)
+    print("AI-HUMAN WORKER EXCHANGE MISSION: PASS")
+    print("- mission id: " + mission["mission_id"])
+    print("- integration owner: " + mission["integration_owner_worker_id"])
+    print("- member count: " + str(len(mission["members"])))
+
+
+def exchange_conversation_envelopes(exchange, conversation_id):
+    messages = exchange / "messages"
+    values = []
+    for package in sorted(messages.iterdir(), key=lambda item: item.name.casefold()):
+        if package.is_symlink() or not package.is_dir():
+            raise ValueError("exchange messages contain a forbidden entry")
+        envelope = exchange_load_envelope(exchange, package.name)
+        if envelope["request"]["conversation_id"] == conversation_id:
+            values.append(envelope)
+    return values
+
+
+def exchange_complete_delivery(exchange, envelope):
+    message_id = envelope["message_id"]
+    sender = envelope["sender_worker_id"]
+    for recipient in envelope["request"]["recipients"]:
+        state = exchange_current_state(exchange, message_id, recipient)
+        if state is None:
+            exchange_append_event(exchange, message_id, recipient, sender, "QUEUED", "Relay accepted exact immutable envelope")
+            state = "QUEUED"
+        inbox = exchange / "inboxes" / recipient
+        inbox.mkdir(parents=True, exist_ok=True)
+        receipt_path = inbox / (message_id + ".json")
+        receipt = {
+            "delivered_utc": now_utc(),
+            "envelope_sha256": envelope["envelope_sha256"],
+            "message_id": message_id,
+            "recipient_worker_id": recipient,
+            "schema": "ai-human.exchange-delivery/v1",
+        }
+        receipt["receipt_sha256"] = exchange_record_sha256(receipt, "receipt_sha256")
+        if not receipt_path.exists():
+            atomic_json(receipt_path, receipt)
+        else:
+            existing = read_json(receipt_path)
+            if existing.get("envelope_sha256") != envelope["envelope_sha256"]:
+                raise ValueError("exchange inbox contains a conflicting delivery")
+        if state == "QUEUED":
+            exchange_append_event(exchange, message_id, recipient, "relay", "DELIVERED", "Exact envelope bytes appended to the transport-owned inbox")
+    journal_hashes = {record["event_sha256"] for record in exchange_journal_records(exchange)}
+    for event in exchange_events(exchange, message_id):
+        if event["event_sha256"] not in journal_hashes:
+            exchange_append_journal(
+                exchange, "RECOVERED_EVENT", message_id,
+                event["recipient_worker_id"], event["event_sha256"],
+            )
+            journal_hashes.add(event["event_sha256"])
+
+
+def exchange_send(args):
+    worker = safe_worker(args.worker)
+    lease, _state_hash = require_lease(worker, args.session_id, args.expected_state_hash)
+    exchange = safe_exchange_root(args.exchange)
+    config, sender_entry = verify_joined_worker(worker, exchange)
+    join_proof = exchange_worker_join(worker)
+    exchange_require_status(exchange, {"ACTIVE"})
+    request = validate_exchange_request(
+        read_governor_input(args.request, "exchange message request source"), config
+    )
+    if request["fanout_count"] > installed_worker_batch_cap(worker):
+        raise ValueError("exchange fanout exceeds the installed worker batch cap")
+    if request["active_gates"] != active_gate_ids(worker):
+        raise ValueError("exchange message gate references differ from the sender's active gates")
+    sender_id = sender_entry["worker_id"]
+    if sender_id in request["recipients"]:
+        raise ValueError("exchange message cannot target its sender")
+    task_id = live_task_id(worker)
+    if not task_id:
+        raise ValueError("exchange send requires one live sender task")
+    entries = exchange_directory(exchange)
+    policy_records = {}
+    for recipient in request["recipients"]:
+        recipient_entry = exchange_active_entry(exchange, recipient)
+        if request["message_type"] not in recipient_entry["accepted_message_types"]:
+            raise ValueError("recipient does not accept this message type: " + recipient)
+        if request["confidentiality"] != recipient_entry["access_class"]:
+            raise ValueError("message confidentiality does not match recipient access class")
+        policy = exchange_policy_for(
+            exchange, sender_id, recipient, request["route"], request["message_type"],
+            request["confidentiality"],
+        )
+        policy_records[recipient] = {
+            "policy_id": policy["policy_id"],
+            "policy_sha256": canonical_json_sha256(policy),
+        }
+    if request["route"] in {"DIRECT", "CHIEF_MEDIATED"} and len(request["recipients"]) != 1:
+        raise ValueError("direct and Chief-mediated routes require one exact recipient")
+    if request["route"] == "CHIEF_MEDIATED":
+        chief = entries[request["recipients"][0]]
+        if chief["access_class"] != "CHIEF":
+            raise ValueError("Chief-mediated routing must target a declared CHIEF worker")
+    mission_hash = "NONE"
+    if request["route"] == "MISSION_ROOM":
+        mission = exchange_missions(exchange).get(request["mission_id"])
+        if not mission or mission["status"] != "ACTIVE":
+            raise ValueError("mission room is missing or inactive")
+        if parse_recorded_utc(mission["expires_utc"], "mission expires_utc") <= datetime.datetime.now(datetime.timezone.utc):
+            raise ValueError("mission room is expired")
+        if sender_id not in mission["members"] or any(
+            recipient not in mission["members"] for recipient in request["recipients"]
+        ):
+            raise ValueError("mission-room delivery is outside exact membership")
+        mission_hash = canonical_json_sha256(mission)
+    conversation = exchange_conversation_envelopes(exchange, request["conversation_id"])
+    if len(conversation) >= config["max_conversation_messages"]:
+        raise ValueError("exchange conversation message budget is exhausted")
+    if request["route"] == "MISSION_ROOM":
+        mission_count = sum(
+            1 for envelope in conversation
+            if envelope["request"]["mission_id"] == request["mission_id"]
+        )
+        if mission_count >= mission["max_messages"]:
+            raise ValueError("mission-room message budget is exhausted")
+    if request["reply_to_id"] != "NONE":
+        parent = exchange_load_envelope(exchange, request["reply_to_id"])
+        if parent["request"]["conversation_id"] != request["conversation_id"]:
+            raise ValueError("exchange reply crosses conversation identity")
+        if request["hop_count"] != parent["request"]["hop_count"] + 1:
+            raise ValueError("exchange reply hop count is not the exact next hop")
+        if parent["request"]["message_type"] == "ACK" or request["message_type"] == "ACK":
+            raise ValueError("acknowledgements use lifecycle receipts, not reply messages")
+    if request["message_type"] == "STATUS":
+        fingerprint = canonical_json_sha256({
+            "done_condition": request["done_condition"],
+            "purpose": request["purpose"],
+            "recipients": request["recipients"],
+            "requested_result": request["requested_result"],
+            "sender": sender_id,
+        })
+        window = datetime.timedelta(seconds=config["status_repeat_window_seconds"])
+        for prior in reversed(conversation):
+            if prior.get("material_fingerprint") == fingerprint:
+                created = parse_recorded_utc(prior["request"]["created_utc"], "prior status created_utc")
+                if datetime.datetime.now(datetime.timezone.utc) - created < window:
+                    raise ValueError("no-material-change STATUS is silent inside the noise window")
+                break
+    request_hash = canonical_json_sha256(request)
+    message_root = exchange_message_root(exchange, request["message_id"])
+    index_path = exchange / "indexes" / (hashlib.sha256(request["idempotency_key"].encode("utf-8")).hexdigest() + ".json")
+    with worker_operation_mutex(exchange):
+        for abandoned in (exchange / ".staging").glob(request["message_id"] + "-*"):
+            if abandoned.is_symlink() or not abandoned.is_dir():
+                raise ValueError("exchange found an unsafe abandoned staging item")
+            shutil.rmtree(abandoned)
+        if message_root.exists():
+            existing = exchange_load_envelope(exchange, request["message_id"])
+            if existing["request_sha256"] != request_hash or existing["sender_worker_id"] != sender_id:
+                raise ValueError("exchange message id was reused with different bytes")
+            if not index_path.exists():
+                atomic_json(index_path, {
+                    "idempotency_key_sha256": hashlib.sha256(request["idempotency_key"].encode("utf-8")).hexdigest(),
+                    "message_id": request["message_id"], "request_sha256": request_hash,
+                    "schema": "ai-human.exchange-idempotency/v1",
+                })
+            exchange_complete_delivery(exchange, existing)
+            print("AI-HUMAN WORKER EXCHANGE SEND: IDEMPOTENT")
+            print("- message id: " + request["message_id"])
+            print("- envelope sha256: " + existing["envelope_sha256"])
+            return
+        if index_path.exists():
+            indexed = read_json(index_path)
+            if indexed.get("message_id") != request["message_id"] or indexed.get("request_sha256") != request_hash:
+                raise ValueError("exchange idempotency key was reused for another message")
+        bundled = []
+        total = 0
+        staging = exchange / ".staging" / (request["message_id"] + "-" + secrets.token_hex(12))
+        staging.mkdir()
+        try:
+            for index, attachment_record in enumerate(request["attachments"]):
+                relative = safe_relative(attachment_record["path"], "exchange attachment path")
+                if is_protected_managed_path(relative.as_posix()):
+                    raise ValueError("exchange cannot copy controlled or private worker state")
+                source = path_without_symlinks(worker, relative, "exchange attachment source")
+                if not source.is_file():
+                    raise ValueError("exchange attachment is missing: " + relative.as_posix())
+                if source.suffix.casefold() in {".zip", ".tar", ".tgz", ".gz", ".7z", ".rar"}:
+                    raise ValueError("archive attachments are not accepted by the v1 exchange")
+                size = source.stat().st_size
+                if size > config["max_attachment_bytes"]:
+                    raise ValueError("exchange attachment exceeds the configured limit")
+                if sha256(source) != attachment_record["sha256"]:
+                    raise ValueError("exchange attachment hash differs from the request")
+                bundle = Path("attachments") / (f"{index:03d}-" + source.name)
+                target = staging / bundle
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(source, target)
+                if target.stat().st_size != size or sha256(target) != attachment_record["sha256"]:
+                    raise ValueError("exchange attachment changed during copy")
+                total += size
+                bundled.append({**attachment_record, "bundle_path": bundle.as_posix(), "size_bytes": size})
+            envelope = {
+                "attachments": bundled,
+                "authority": "DATA_ONLY_NO_PERMISSION_TRANSFER",
+                "delivery_locations": {
+                    recipient: "inboxes/" + recipient + "/" + request["message_id"] + ".json"
+                    for recipient in request["recipients"]
+                },
+                "envelope_sha256": "",
+                "material_fingerprint": canonical_json_sha256({
+                    "done_condition": request["done_condition"], "purpose": request["purpose"],
+                    "recipients": request["recipients"], "requested_result": request["requested_result"],
+                    "sender": sender_id,
+                }),
+                "mission_sha256": mission_hash,
+                "protocol": EXCHANGE_PROTOCOL,
+                "request": request,
+                "request_sha256": request_hash,
+                "route_policies": policy_records,
+                "schema": "ai-human.exchange-envelope/v1",
+                "sender_identity_sha256": sender_entry["identity_sha256"],
+                "sender_state_sha256": controlled_state_hash(worker),
+                "sender_task_id": task_id,
+                "sender_worker_id": sender_id,
+                "trusted_transport_receipt": {
+                    "config_sha256": canonical_json_sha256(config),
+                    "join_proof_sha256": join_proof["proof_sha256"],
+                    "lease_proof_sha256": canonical_json_sha256({
+                        "actor": lease["actor"], "session_id": lease["session_id"],
+                        "state_hash": lease["state_hash"],
+                    }),
+                    "trust_mode": "LOCAL_RELAY_VERIFIED_CURRENT_JOIN_AND_WRITER_LEASE",
+                    "verified_utc": now_utc(),
+                },
+                "transport_receipt_location": "journal/",
+                "message_id": request["message_id"],
+            }
+            encoded_size = len(json.dumps(envelope, ensure_ascii=False, sort_keys=True).encode("utf-8"))
+            if total + encoded_size > config["max_message_bytes"]:
+                raise ValueError("exchange message exceeds the configured byte limit")
+            envelope["envelope_sha256"] = exchange_envelope_sha256(envelope)
+            atomic_json(staging / "envelope.json", envelope)
+            os.replace(staging, message_root)
+        except Exception:
+            if staging.exists():
+                shutil.rmtree(staging)
+            raise
+        atomic_json(index_path, {
+            "idempotency_key_sha256": hashlib.sha256(request["idempotency_key"].encode("utf-8")).hexdigest(),
+            "message_id": request["message_id"], "request_sha256": request_hash,
+            "schema": "ai-human.exchange-idempotency/v1",
+        })
+        exchange_complete_delivery(exchange, envelope)
+    print("AI-HUMAN WORKER EXCHANGE SEND: PASS")
+    print("- message id: " + request["message_id"])
+    print("- route: " + request["route"])
+    print("- recipient count: " + str(len(request["recipients"])))
+    print("- envelope sha256: " + envelope["envelope_sha256"])
+
+
+def exchange_local_receipt(worker, directory, message_id, payload):
+    governor_safe_id(message_id, "exchange local receipt message id")
+    target = worker_target(
+        worker, EXCHANGE_LOCAL_ROOT / directory / (message_id + ".json"),
+        "worker exchange local receipt target",
+    )
+    payload = dict(payload)
+    payload["record_sha256"] = exchange_record_sha256(payload, "record_sha256")
+    if target.exists():
+        existing = read_json(target)
+        if existing != payload and any(
+            existing.get(field) != payload.get(field)
+            for field in ("message_id", "envelope_sha256", "decision", "result_sha256")
+        ):
+            raise ValueError("worker exchange local receipt conflicts with prior state")
+        return existing, False
+    target.parent.mkdir(parents=True, exist_ok=True)
+    atomic_json(target, payload)
+    return payload, True
+
+
+def exchange_authorized_envelope(worker, exchange, message_id):
+    _config, entry = verify_joined_worker(worker, exchange)
+    envelope = exchange_load_envelope(exchange, message_id)
+    sender = exchange_directory(exchange).get(envelope["sender_worker_id"])
+    authentication = envelope.get("trusted_transport_receipt")
+    join_path = exchange / "join-receipts" / (envelope["sender_worker_id"] + ".json")
+    join = read_json(join_path) if join_path.is_file() and not join_path.is_symlink() else None
+    if (
+        not sender
+        or sender["identity_sha256"] != envelope["sender_identity_sha256"]
+        or not isinstance(authentication, dict)
+        or set(authentication) != {
+            "config_sha256", "join_proof_sha256", "lease_proof_sha256", "trust_mode", "verified_utc"
+        }
+        or not isinstance(join, dict)
+        or authentication["join_proof_sha256"] != join.get("proof_sha256")
+        or authentication["config_sha256"] != canonical_json_sha256(exchange_config(exchange))
+        or authentication["trust_mode"] != "LOCAL_RELAY_VERIFIED_CURRENT_JOIN_AND_WRITER_LEASE"
+        or not SHA256_HEX.fullmatch(str(authentication["lease_proof_sha256"]))
+    ):
+        raise ValueError("exchange sender authentication or trusted transport receipt is invalid")
+    parse_recorded_utc(authentication["verified_utc"], "transport receipt verified_utc")
+    recipient = entry["worker_id"]
+    if recipient not in envelope["request"]["recipients"]:
+        raise ValueError("exchange message is addressed to another worker")
+    request = envelope["request"]
+    exchange_policy_for(
+        exchange, envelope["sender_worker_id"], recipient, request["route"],
+        request["message_type"], request["confidentiality"],
+    )
+    if request["route"] == "MISSION_ROOM":
+        mission = exchange_missions(exchange).get(request["mission_id"])
+        if not mission or mission["status"] != "ACTIVE" or recipient not in mission["members"]:
+            raise ValueError("current mission membership does not authorize retrieval")
+    return envelope, recipient
+
+
+def exchange_ack(args):
+    worker = safe_worker(args.worker)
+    lease, _state_hash = require_lease(worker, args.session_id, args.expected_state_hash)
+    exchange = safe_exchange_root(args.exchange)
+    exchange_require_status(exchange, {"ACTIVE", "PAUSED"})
+    with worker_operation_mutex(exchange):
+        envelope, recipient = exchange_authorized_envelope(worker, exchange, args.message_id)
+        if parse_recorded_utc(envelope["request"]["expires_utc"], "exchange expires_utc") <= datetime.datetime.now(datetime.timezone.utc):
+            state = exchange_current_state(exchange, args.message_id, recipient)
+            if state not in EXCHANGE_TERMINAL_STATES:
+                exchange_append_event(exchange, args.message_id, recipient, "relay", "EXPIRED", "Message expired before acknowledgement")
+            raise ValueError("exchange message expired before acknowledgement")
+        state = exchange_current_state(exchange, args.message_id, recipient)
+        if state == "DELIVERED":
+            exchange_append_event(
+                exchange, args.message_id, recipient, recipient, "ACKNOWLEDGED",
+                "Recipient verified sender, exact target, envelope and attachment hashes",
+            )
+        elif state not in {"ACKNOWLEDGED", "ACCEPTED", "COMPLETED"}:
+            raise ValueError("exchange message cannot be acknowledged from state " + str(state))
+        payload = {
+            "acknowledged_utc": now_utc(),
+            "envelope_sha256": envelope["envelope_sha256"],
+            "message_id": args.message_id,
+            "recipient_worker_id": recipient,
+            "record_sha256": "",
+            "schema": "ai-human.exchange-local-receipt/v1",
+            "transport_state": "ACKNOWLEDGED",
+        }
+        _receipt, created = exchange_local_receipt(worker, "received", args.message_id, payload)
+    updated = refresh_lease_state(worker, lease) if created else lease
+    print("AI-HUMAN WORKER EXCHANGE ACK: " + ("PASS" if created else "IDEMPOTENT"))
+    print("- message id: " + args.message_id)
+    print("- recipient: " + recipient)
+    print("- new expected-state hash: " + updated["state_hash"])
+
+
+def exchange_decide(args):
+    worker = safe_worker(args.worker)
+    lease, _state_hash = require_lease(worker, args.session_id, args.expected_state_hash)
+    exchange = safe_exchange_root(args.exchange)
+    exchange_require_status(exchange, {"ACTIVE", "PAUSED"})
+    state_name = "ACCEPTED" if args.decision == "ACCEPT" else "REJECTED"
+    with worker_operation_mutex(exchange):
+        envelope, recipient = exchange_authorized_envelope(worker, exchange, args.message_id)
+        current = exchange_current_state(exchange, args.message_id, recipient)
+        if current == "ACKNOWLEDGED":
+            exchange_append_event(
+                exchange, args.message_id, recipient, recipient, state_name,
+                bounded_clean(args.reason, "exchange decision reason", 2000),
+            )
+        elif current != state_name:
+            raise ValueError("exchange message cannot be decided from state " + str(current))
+        payload = {
+            "decision": args.decision,
+            "decided_utc": now_utc(),
+            "envelope_sha256": envelope["envelope_sha256"],
+            "message_id": args.message_id,
+            "reason": bounded_clean(args.reason, "exchange decision reason", 2000),
+            "recipient_worker_id": recipient,
+            "record_sha256": "",
+            "schema": "ai-human.exchange-local-decision/v1",
+            "work_queue_effect": "QUEUED_NOT_LIVE_TASK" if args.decision == "ACCEPT" else "NONE",
+        }
+        directory = "accepted" if args.decision == "ACCEPT" else "received"
+        _receipt, created = exchange_local_receipt(worker, directory, args.message_id, payload)
+    updated = refresh_lease_state(worker, lease) if created else lease
+    print("AI-HUMAN WORKER EXCHANGE DECISION: " + ("PASS" if created else "IDEMPOTENT"))
+    print("- message id: " + args.message_id)
+    print("- decision: " + args.decision)
+    print("- live task interrupted: NO")
+    print("- new expected-state hash: " + updated["state_hash"])
+
+
+def validate_exchange_result_request(data, config):
+    if not isinstance(data, dict):
+        raise ValueError("exchange result must be a JSON object")
+    require_exact_fields(data, EXCHANGE_RESULT_FIELDS, "exchange result")
+    if data.get("schema") != "ai-human.exchange-result-request/v1":
+        raise ValueError("unsupported exchange result request schema")
+    for field in ("message_id", "result_id", "source_owner_worker_id"):
+        governor_safe_id(data.get(field, ""), "exchange result " + field.replace("_", " "))
+    bounded_clean(data.get("evidence", ""), "exchange result evidence", 2000)
+    bounded_clean(data.get("result_version", ""), "exchange result version", 200)
+    attachments = data.get("artifacts")
+    if not isinstance(attachments, list) or not attachments or len(attachments) > config["max_attachments"]:
+        raise ValueError("exchange result attachments must be a non-empty bounded list")
+    for index, record in enumerate(attachments):
+        validate_exchange_attachment(record, "exchange result attachment " + str(index))
+    facts = data.get("fact_claims")
+    if not isinstance(facts, list) or len(facts) > BATCH_CAP:
+        raise ValueError("exchange result fact claims must be a bounded list")
+    seen = set()
+    for index, fact in enumerate(facts):
+        if not isinstance(fact, dict):
+            raise ValueError("exchange result fact claim must be a JSON object")
+        require_exact_fields(fact, EXCHANGE_FACT_FIELDS, "exchange result fact claim " + str(index))
+        governor_safe_id(fact.get("fact_id", ""), "exchange fact id")
+        governor_safe_id(fact.get("owner_worker_id", ""), "exchange fact owner")
+        if not SHA256_HEX.fullmatch(str(fact.get("value_sha256", ""))):
+            raise ValueError("exchange fact value hash is invalid")
+        if fact["fact_id"] in seen:
+            raise ValueError("exchange result contains a duplicate fact id")
+        seen.add(fact["fact_id"])
+    return data
+
+
+def exchange_result_sha256(record):
+    return exchange_record_sha256(record, "result_sha256")
+
+
+def exchange_load_result(exchange, message_id, recipient_id, result_id):
+    governor_safe_id(result_id, "exchange result id")
+    root = exchange_message_root(exchange, message_id) / "results" / (recipient_id + "-" + result_id)
+    path = root / "result.json"
+    if not path.is_file() or path.is_symlink():
+        raise ValueError("exchange result is missing")
+    record = read_json(path)
+    fields = {
+        "artifacts", "created_utc", "recipient_identity_sha256", "recipient_worker_id",
+        "request", "request_sha256", "result_sha256", "schema",
+    }
+    require_exact_fields(record, fields, "exchange immutable result")
+    if record.get("schema") != "ai-human.exchange-result/v1":
+        raise ValueError("unsupported exchange result schema")
+    config = exchange_config(exchange)
+    request = validate_exchange_result_request(record.get("request"), config)
+    if request["message_id"] != message_id or request["result_id"] != result_id:
+        raise ValueError("exchange result identity differs from its path")
+    if record.get("recipient_worker_id") != recipient_id:
+        raise ValueError("exchange result recipient differs from its path")
+    if record.get("request_sha256") != canonical_json_sha256(request):
+        raise ValueError("exchange result request hash mismatch")
+    if record.get("result_sha256") != exchange_result_sha256(record):
+        raise ValueError("exchange result hash mismatch")
+    if not SHA256_HEX.fullmatch(str(record.get("recipient_identity_sha256", ""))):
+        raise ValueError("exchange result recipient identity hash is invalid")
+    parse_recorded_utc(record.get("created_utc"), "exchange result created_utc")
+    bundled = record.get("artifacts")
+    if not isinstance(bundled, list) or len(bundled) != len(request["artifacts"]):
+        raise ValueError("exchange result artifact list differs from its request")
+    expected = {"result.json"}
+    for index, artifact in enumerate(bundled):
+        fields = set(EXCHANGE_ATTACHMENT_FIELDS) | {"bundle_path", "size_bytes"}
+        require_exact_fields(artifact, fields, "exchange result artifact " + str(index))
+        validate_exchange_attachment(
+            {field: artifact[field] for field in EXCHANGE_ATTACHMENT_FIELDS},
+            "exchange result artifact " + str(index),
+        )
+        bundle = safe_relative(artifact["bundle_path"], "exchange result bundle path")
+        if bundle.parts[:1] != ("artifacts",):
+            raise ValueError("exchange result bundle must stay under artifacts")
+        target = path_without_symlinks(root, bundle, "exchange result artifact")
+        size = positive_integer(artifact["size_bytes"], "exchange result artifact size", allow_zero=True)
+        if not target.is_file() or target.stat().st_size != size or sha256(target) != artifact["sha256"]:
+            raise ValueError("exchange result artifact integrity mismatch")
+        expected.add(bundle.as_posix())
+    for item in root.rglob("*"):
+        if item.is_symlink():
+            raise ValueError("exchange result may not contain symbolic links")
+        if item.is_file() and item.relative_to(root).as_posix() not in expected:
+            raise ValueError("exchange result contains an unsigned file")
+    return record
+
+
+def exchange_result(args):
+    worker = safe_worker(args.worker)
+    lease, _state_hash = require_lease(worker, args.session_id, args.expected_state_hash)
+    exchange = safe_exchange_root(args.exchange)
+    exchange_require_status(exchange, {"ACTIVE", "PAUSED"})
+    config, worker_entry = verify_joined_worker(worker, exchange)
+    request = validate_exchange_result_request(
+        read_governor_input(args.result, "exchange result source"), config
+    )
+    if request["source_owner_worker_id"] != worker_entry["worker_id"]:
+        raise ValueError("exchange result source owner differs from the producing worker")
+    if any(fact["owner_worker_id"] != worker_entry["worker_id"] for fact in request["fact_claims"]):
+        raise ValueError("a worker may claim ownership only for facts it owns")
+    with worker_operation_mutex(exchange):
+        envelope, recipient = exchange_authorized_envelope(worker, exchange, request["message_id"])
+        state = exchange_current_state(exchange, request["message_id"], recipient)
+        if state not in {"ACCEPTED", "COMPLETED"}:
+            raise ValueError("exchange result requires an ACCEPTED message")
+        result_root = exchange_message_root(exchange, request["message_id"]) / "results" / (
+            recipient + "-" + request["result_id"]
+        )
+        if result_root.exists():
+            existing = exchange_load_result(exchange, request["message_id"], recipient, request["result_id"])
+            if existing["request_sha256"] != canonical_json_sha256(request):
+                raise ValueError("exchange result id was reused with different bytes")
+            record = existing
+            created = False
+            if state == "ACCEPTED":
+                exchange_append_event(
+                    exchange, request["message_id"], recipient, recipient, "COMPLETED",
+                    "Recovered immutable result " + record["result_sha256"],
+                )
+        else:
+            if state == "COMPLETED":
+                raise ValueError("exchange message already has an immutable completed result")
+            staging = exchange / ".staging" / (
+                request["message_id"] + "-result-" + request["result_id"] + "-" + secrets.token_hex(12)
+            )
+            staging.mkdir()
+            bundled = []
+            try:
+                for index, artifact in enumerate(request["artifacts"]):
+                    relative = safe_relative(artifact["path"], "exchange result artifact path")
+                    if is_protected_managed_path(relative.as_posix()):
+                        raise ValueError("exchange result cannot copy controlled or private worker state")
+                    source = path_without_symlinks(worker, relative, "exchange result artifact source")
+                    if not source.is_file():
+                        raise ValueError("exchange result artifact is missing")
+                    if source.suffix.casefold() in {".zip", ".tar", ".tgz", ".gz", ".7z", ".rar"}:
+                        raise ValueError("archive result artifacts are not accepted by the v1 exchange")
+                    size = source.stat().st_size
+                    if size > config["max_attachment_bytes"] or sha256(source) != artifact["sha256"]:
+                        raise ValueError("exchange result artifact size or hash is invalid")
+                    bundle = Path("artifacts") / (f"{index:03d}-" + source.name)
+                    target = staging / bundle
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copyfile(source, target)
+                    if target.stat().st_size != size or sha256(target) != artifact["sha256"]:
+                        raise ValueError("exchange result artifact changed during copy")
+                    bundled.append({**artifact, "bundle_path": bundle.as_posix(), "size_bytes": size})
+                record = {
+                    "artifacts": bundled,
+                    "created_utc": now_utc(),
+                    "recipient_identity_sha256": worker_entry["identity_sha256"],
+                    "recipient_worker_id": recipient,
+                    "request": request,
+                    "request_sha256": canonical_json_sha256(request),
+                    "result_sha256": "",
+                    "schema": "ai-human.exchange-result/v1",
+                }
+                record["result_sha256"] = exchange_result_sha256(record)
+                atomic_json(staging / "result.json", record)
+                result_root.parent.mkdir(parents=True, exist_ok=True)
+                os.replace(staging, result_root)
+            except Exception:
+                if staging.exists():
+                    shutil.rmtree(staging)
+                raise
+            if state == "ACCEPTED":
+                exchange_append_event(
+                    exchange, request["message_id"], recipient, recipient, "COMPLETED",
+                    "Immutable result " + record["result_sha256"],
+                )
+            created = True
+        payload = {
+            "envelope_sha256": envelope["envelope_sha256"],
+            "message_id": request["message_id"],
+            "record_sha256": "",
+            "result_id": request["result_id"],
+            "result_sha256": record["result_sha256"],
+            "schema": "ai-human.exchange-local-result/v1",
+        }
+        _receipt, local_created = exchange_local_receipt(
+            worker, "results", request["message_id"], payload
+        )
+    updated = refresh_lease_state(worker, lease) if local_created else lease
+    print("AI-HUMAN WORKER EXCHANGE RESULT: " + ("PASS" if created else "IDEMPOTENT"))
+    print("- message id: " + request["message_id"])
+    print("- result sha256: " + record["result_sha256"])
+    print("- new expected-state hash: " + updated["state_hash"])
+
+
+def validate_exchange_integration_request(data):
+    if not isinstance(data, dict):
+        raise ValueError("exchange integration request must be a JSON object")
+    require_exact_fields(data, EXCHANGE_INTEGRATION_FIELDS, "exchange integration request")
+    if data.get("schema") != "ai-human.exchange-integration-request/v1":
+        raise ValueError("unsupported exchange integration request schema")
+    governor_safe_id(data.get("mission_id", ""), "exchange integration mission id")
+    expected = data.get("expected")
+    if not isinstance(expected, list) or not expected or len(expected) > BATCH_CAP:
+        raise ValueError("exchange integration expected inputs must be a non-empty bounded list")
+    seen = set()
+    for index, item in enumerate(expected):
+        if not isinstance(item, dict):
+            raise ValueError("exchange integration input must be a JSON object")
+        require_exact_fields(item, EXCHANGE_EXPECTED_RESULT_FIELDS, "exchange integration input " + str(index))
+        for field in ("message_id", "result_id", "worker_id"):
+            governor_safe_id(item.get(field, ""), "exchange integration " + field.replace("_", " "))
+        bounded_clean(item.get("result_version", ""), "exchange integration result version", 200)
+        if not SHA256_HEX.fullmatch(str(item.get("result_sha256", ""))):
+            raise ValueError("exchange integration result hash is invalid")
+        key = (item["worker_id"], item["message_id"])
+        if key in seen:
+            raise ValueError("exchange integration input is duplicated")
+        seen.add(key)
+    return data
+
+
+def exchange_integrate(args):
+    worker = safe_worker(args.worker)
+    lease, _state_hash = require_lease(worker, args.session_id, args.expected_state_hash)
+    exchange = safe_exchange_root(args.exchange)
+    exchange_require_status(exchange, {"ACTIVE", "PAUSED"})
+    _config, entry = verify_joined_worker(worker, exchange)
+    request = validate_exchange_integration_request(
+        read_governor_input(args.integration, "exchange integration source")
+    )
+    mission = exchange_missions(exchange).get(request["mission_id"])
+    if not mission:
+        raise ValueError("exchange integration mission is missing")
+    if mission["integration_owner_worker_id"] != entry["worker_id"]:
+        raise ValueError("only the declared integration owner may join mission results")
+    records = []
+    fact_owners = {}
+    fact_values = {}
+    for expected in request["expected"]:
+        if expected["worker_id"] not in mission["members"]:
+            raise ValueError("exchange integration input is outside mission membership")
+        envelope = exchange_load_envelope(exchange, expected["message_id"])
+        if envelope["request"]["mission_id"] != mission["mission_id"]:
+            raise ValueError("exchange integration input belongs to another mission")
+        result = exchange_load_result(
+            exchange, expected["message_id"], expected["worker_id"], expected["result_id"]
+        )
+        if result["result_sha256"] != expected["result_sha256"]:
+            raise ValueError("exchange integration result hash differs from the expected input")
+        if result["request"]["result_version"] != expected["result_version"]:
+            raise ValueError("exchange integration result version differs from the expected input")
+        if result["request"]["source_owner_worker_id"] != expected["worker_id"]:
+            raise ValueError("exchange integration result has the wrong source owner")
+        for fact in result["request"]["fact_claims"]:
+            owner = fact_owners.setdefault(fact["fact_id"], fact["owner_worker_id"])
+            value = fact_values.setdefault(fact["fact_id"], fact["value_sha256"])
+            if owner != fact["owner_worker_id"]:
+                raise ValueError("two workers claim ownership of the same fact")
+            if value != fact["value_sha256"]:
+                raise ValueError("mission results contain a visible fact conflict")
+        records.append({
+            "message_id": expected["message_id"], "result_id": expected["result_id"],
+            "result_sha256": result["result_sha256"], "result_version": expected["result_version"],
+            "worker_id": expected["worker_id"],
+        })
+    proof_body = {
+        "inputs": records,
+        "integration_owner_worker_id": entry["worker_id"],
+        "mission_id": mission["mission_id"],
+        "mission_sha256": canonical_json_sha256(mission),
+        "schema": "ai-human.exchange-integration-proof/v1",
+        "status": "INPUTS_VERIFIED_CONFLICT_FREE",
+    }
+    target = worker_target(
+        worker, EXCHANGE_LOCAL_ROOT / "integration" / (mission["mission_id"] + ".json"),
+        "worker exchange integration proof target",
+    )
+    if target.exists():
+        proof = read_json(target)
+        if (
+            not isinstance(proof, dict)
+            or proof.get("record_sha256") != exchange_record_sha256(proof, "record_sha256")
+            or {key: proof.get(key) for key in proof_body} != proof_body
+        ):
+            raise ValueError("exchange mission already has a different integration proof")
+        created = False
+    else:
+        proof = {**proof_body, "created_utc": now_utc(), "record_sha256": ""}
+        proof["record_sha256"] = exchange_record_sha256(proof, "record_sha256")
+        target.parent.mkdir(parents=True, exist_ok=True)
+        atomic_json(target, proof)
+        created = True
+    updated = refresh_lease_state(worker, lease) if created else lease
+    print("AI-HUMAN WORKER EXCHANGE INTEGRATION: " + ("PASS" if created else "IDEMPOTENT"))
+    print("- mission id: " + mission["mission_id"])
+    print("- verified inputs: " + str(len(records)))
+    print("- conflicts: NONE")
+    print("- new expected-state hash: " + updated["state_hash"])
+
+
+def validate_exchange_transport(exchange):
+    failures = []
+    try:
+        config = exchange_config(exchange)
+        exchange_control(exchange)
+        allowed_top = {
+            "config.json", "control.json", "directory", "join-receipts", "policies", "missions",
+            "messages", "inboxes", "journal", "indexes", "control-events", ".staging",
+            ".ai-human-operation.mutex",
+        }
+        for path in exchange.iterdir():
+            if path.name not in allowed_top:
+                raise ValueError("exchange contains a forbidden top-level entry: " + path.name)
+            if path.is_symlink():
+                raise ValueError("exchange may not contain symbolic links")
+        for path in exchange.rglob("*"):
+            if path.is_symlink():
+                raise ValueError("exchange may not contain symbolic links: " + str(path.relative_to(exchange)))
+        staging = exchange / ".staging"
+        if not staging.is_dir() or any(staging.iterdir()):
+            raise ValueError("exchange has crash-left staging state; run exchange-recover")
+        entries = exchange_directory(exchange)
+        join_root = exchange / "join-receipts"
+        if not join_root.is_dir() or join_root.is_symlink():
+            raise ValueError("exchange join-receipt directory is missing")
+        join_receipts = {}
+        for path in join_root.iterdir():
+            if path.is_symlink() or not path.is_file() or path.suffix.casefold() != ".json":
+                raise ValueError("exchange join receipts contain a forbidden entry")
+            proof = validate_exchange_join_proof(read_json(path))
+            if path.name != proof.get("directory_entry", {}).get("worker_id", "") + ".json":
+                raise ValueError("exchange join receipt filename differs from worker id")
+            if proof.get("config_sha256") != canonical_json_sha256(config):
+                raise ValueError("exchange join receipt references another configuration")
+            if proof.get("exchange_id") != config["exchange_id"]:
+                raise ValueError("exchange join receipt references another exchange id")
+            join_receipts[proof["directory_entry"]["worker_id"]] = proof
+        policies = exchange_route_policies(exchange)
+        missions = exchange_missions(exchange)
+        for mission in missions.values():
+            for member in mission["members"]:
+                if member not in entries:
+                    raise ValueError("mission references a missing directory member")
+        journal = exchange_journal_records(exchange)
+        journal_event_hashes = [record["event_sha256"] for record in journal]
+        event_hashes = []
+        message_ids = set()
+        idempotency_hashes = set()
+        messages_root = exchange / "messages"
+        if not messages_root.is_dir() or messages_root.is_symlink():
+            raise ValueError("exchange messages directory is missing")
+        for package in sorted(messages_root.iterdir(), key=lambda item: item.name.casefold()):
+            if package.is_symlink() or not package.is_dir():
+                raise ValueError("exchange messages contain a forbidden entry")
+            envelope = exchange_load_envelope(exchange, package.name)
+            message_ids.add(envelope["message_id"])
+            sender = entries.get(envelope["sender_worker_id"])
+            if not sender or sender["identity_sha256"] != envelope["sender_identity_sha256"]:
+                raise ValueError("exchange envelope sender is forged or missing")
+            authentication = envelope.get("trusted_transport_receipt")
+            if not isinstance(authentication, dict) or set(authentication) != {
+                "config_sha256", "join_proof_sha256", "lease_proof_sha256", "trust_mode", "verified_utc"
+            }:
+                raise ValueError("exchange trusted transport receipt is missing")
+            join = join_receipts.get(envelope["sender_worker_id"])
+            if (
+                not join
+                or authentication["join_proof_sha256"] != join["proof_sha256"]
+                or authentication["config_sha256"] != canonical_json_sha256(config)
+                or authentication["trust_mode"] != "LOCAL_RELAY_VERIFIED_CURRENT_JOIN_AND_WRITER_LEASE"
+                or not SHA256_HEX.fullmatch(str(authentication["lease_proof_sha256"]))
+            ):
+                raise ValueError("exchange trusted transport receipt is invalid")
+            parse_recorded_utc(authentication["verified_utc"], "transport receipt verified_utc")
+            request = envelope["request"]
+            for recipient in request["recipients"]:
+                if recipient not in entries:
+                    raise ValueError("exchange envelope recipient is missing")
+                snapshot = envelope["route_policies"].get(recipient)
+                if not isinstance(snapshot, dict) or set(snapshot) != {"policy_id", "policy_sha256"}:
+                    raise ValueError("exchange envelope route policy snapshot is invalid")
+                policy = policies.get(snapshot["policy_id"])
+                if not policy or canonical_json_sha256(policy) != snapshot["policy_sha256"]:
+                    raise ValueError("exchange envelope route policy proof is missing or changed")
+                if (
+                    policy["sender_worker_id"] != envelope["sender_worker_id"]
+                    or policy["recipient_worker_id"] != recipient
+                    or request["route"] not in policy["allowed_modes"]
+                    or request["message_type"] not in policy["allowed_message_types"]
+                    or request["confidentiality"] not in policy["access_classes"]
+                ):
+                    raise ValueError("exchange envelope was delivered outside its exact policy")
+                events = exchange_events(exchange, envelope["message_id"], recipient)
+                if not events or events[-1]["state"] == "QUEUED":
+                    raise ValueError("exchange message delivery is incomplete")
+                event_hashes.extend(event["event_sha256"] for event in events)
+                receipt_path = exchange / "inboxes" / recipient / (envelope["message_id"] + ".json")
+                if not receipt_path.is_file() or receipt_path.is_symlink():
+                    raise ValueError("exchange delivery receipt is missing")
+                receipt = read_json(receipt_path)
+                fields = {"delivered_utc", "envelope_sha256", "message_id", "receipt_sha256", "recipient_worker_id", "schema"}
+                require_exact_fields(receipt, fields, "exchange delivery receipt")
+                if (
+                    receipt.get("schema") != "ai-human.exchange-delivery/v1"
+                    or receipt.get("message_id") != envelope["message_id"]
+                    or receipt.get("recipient_worker_id") != recipient
+                    or receipt.get("envelope_sha256") != envelope["envelope_sha256"]
+                    or receipt.get("receipt_sha256") != exchange_record_sha256(receipt, "receipt_sha256")
+                ):
+                    raise ValueError("exchange delivery receipt integrity mismatch")
+            if request["route"] == "MISSION_ROOM":
+                mission = missions.get(request["mission_id"])
+                if not mission or canonical_json_sha256(mission) != envelope["mission_sha256"]:
+                    raise ValueError("exchange mission proof is missing or changed")
+            elif envelope["mission_sha256"] != "NONE":
+                raise ValueError("non-mission envelope contains a mission proof")
+            result_root = package / "results"
+            if result_root.exists():
+                if result_root.is_symlink() or not result_root.is_dir():
+                    raise ValueError("exchange result root is invalid")
+                for result_dir in result_root.iterdir():
+                    if result_dir.is_symlink() or not result_dir.is_dir():
+                        raise ValueError("exchange result root contains a forbidden entry")
+                    prefix = next(
+                        (recipient + "-" for recipient in request["recipients"] if result_dir.name.startswith(recipient + "-")),
+                        None,
+                    )
+                    if not prefix:
+                        raise ValueError("exchange result path has an unauthorized recipient")
+                    exchange_load_result(
+                        exchange, envelope["message_id"], prefix[:-1], result_dir.name[len(prefix):]
+                    )
+            key_hash = hashlib.sha256(request["idempotency_key"].encode("utf-8")).hexdigest()
+            if key_hash in idempotency_hashes:
+                raise ValueError("exchange idempotency key is duplicated")
+            idempotency_hashes.add(key_hash)
+            index_path = exchange / "indexes" / (key_hash + ".json")
+            if not index_path.is_file():
+                raise ValueError("exchange idempotency index is missing")
+            index = read_json(index_path)
+            if index.get("message_id") != envelope["message_id"] or index.get("request_sha256") != envelope["request_sha256"]:
+                raise ValueError("exchange idempotency index differs from its envelope")
+        if sorted(event_hashes) != sorted(journal_event_hashes):
+            raise ValueError("exchange journal does not cover every lifecycle event exactly once")
+        inboxes = exchange / "inboxes"
+        if not inboxes.is_dir() or inboxes.is_symlink():
+            raise ValueError("exchange inbox directory is missing")
+        for inbox in inboxes.iterdir():
+            if inbox.is_symlink() or not inbox.is_dir() or inbox.name not in entries:
+                raise ValueError("exchange contains an unauthorized inbox")
+            for receipt_path in inbox.iterdir():
+                if receipt_path.is_symlink() or not receipt_path.is_file() or receipt_path.suffix.casefold() != ".json":
+                    raise ValueError("exchange inbox contains a forbidden entry")
+                if receipt_path.stem not in message_ids:
+                    raise ValueError("exchange inbox contains an orphan delivery")
+        controls = exchange / "control-events"
+        if not controls.is_dir() or controls.is_symlink():
+            raise ValueError("exchange control-event directory is missing")
+        for path in controls.iterdir():
+            if path.is_symlink() or not path.is_file() or path.suffix.casefold() != ".json":
+                raise ValueError("exchange control events contain a forbidden entry")
+            record = read_json(path)
+            if record.get("schema") != "ai-human.exchange-control-event/v1" or record.get("record_sha256") != exchange_record_sha256(record, "record_sha256"):
+                raise ValueError("exchange control event is invalid")
+        _ = config
+    except Exception as exc:
+        failures.append(str(exc))
+    return failures
+
+
+def exchange_audit(args):
+    exchange = safe_exchange_root(args.exchange)
+    failures = validate_exchange_transport(exchange)
+    if failures:
+        print("AI-HUMAN WORKER EXCHANGE AUDIT: FAIL")
+        for failure in failures:
+            print("- " + failure)
+        raise ValueError("exchange audit failed")
+    directory = exchange_directory(exchange)
+    messages = [path for path in (exchange / "messages").iterdir() if path.is_dir()]
+    print("AI-HUMAN WORKER EXCHANGE AUDIT: PASS")
+    print("- exchange id: " + exchange_config(exchange)["exchange_id"])
+    print("- directory workers: " + str(len(directory)))
+    print("- immutable messages: " + str(len(messages)))
+    print("- journal records: " + str(len(exchange_journal_records(exchange))))
+
+
+def exchange_recover(args):
+    exchange = safe_exchange_root(args.exchange)
+    config = exchange_config(exchange)
+    if args.owner != config["owner"]:
+        raise ValueError("only the configured exchange owner may recover the relay")
+    exchange_require_status(exchange, {"ACTIVE", "PAUSED"})
+    recovered = 0
+    with worker_operation_mutex(exchange):
+        staging = exchange / ".staging"
+        for path in list(staging.iterdir()):
+            if path.is_symlink():
+                raise ValueError("exchange recovery refuses a symbolic-link staging item")
+            if path.is_dir():
+                shutil.rmtree(path)
+            elif path.is_file():
+                path.unlink()
+            else:
+                raise ValueError("exchange recovery found an unsafe staging item")
+            recovered += 1
+        journal_hashes = {record["event_sha256"] for record in exchange_journal_records(exchange)}
+        for package in sorted((exchange / "messages").iterdir(), key=lambda item: item.name.casefold()):
+            envelope = exchange_load_envelope(exchange, package.name)
+            request = envelope["request"]
+            key_hash = hashlib.sha256(request["idempotency_key"].encode("utf-8")).hexdigest()
+            index_path = exchange / "indexes" / (key_hash + ".json")
+            if not index_path.exists():
+                atomic_json(index_path, {
+                    "idempotency_key_sha256": key_hash,
+                    "message_id": envelope["message_id"],
+                    "request_sha256": envelope["request_sha256"],
+                    "schema": "ai-human.exchange-idempotency/v1",
+                })
+                recovered += 1
+            for recipient in request["recipients"]:
+                before = exchange_current_state(exchange, envelope["message_id"], recipient)
+                exchange_complete_delivery(exchange, envelope)
+                journal_hashes = {
+                    record["event_sha256"] for record in exchange_journal_records(exchange)
+                }
+                if before in {None, "QUEUED"}:
+                    recovered += 1
+                state = exchange_current_state(exchange, envelope["message_id"], recipient)
+                if (
+                    parse_recorded_utc(request["expires_utc"], "exchange expires_utc") <= datetime.datetime.now(datetime.timezone.utc)
+                    and state not in EXCHANGE_TERMINAL_STATES
+                ):
+                    exchange_append_event(
+                        exchange, envelope["message_id"], recipient, "relay", "EXPIRED",
+                        "Recovery closed an expired delivery",
+                    )
+                    recovered += 1
+            for event in exchange_events(exchange, envelope["message_id"]):
+                if event["event_sha256"] not in journal_hashes:
+                    exchange_append_journal(
+                        exchange, "RECOVERED_EVENT", envelope["message_id"],
+                        event["recipient_worker_id"], event["event_sha256"],
+                    )
+                    journal_hashes.add(event["event_sha256"])
+                    recovered += 1
+        failures = validate_exchange_transport(exchange)
+        if failures:
+            raise ValueError("exchange recovery did not restore validity: " + "; ".join(failures))
+    print("AI-HUMAN WORKER EXCHANGE RECOVERY: PASS")
+    print("- recovered items: " + str(recovered))
+
+
+def exchange_control_command(args):
+    exchange = safe_exchange_root(args.exchange)
+    config = exchange_config(exchange)
+    if args.owner != config["owner"]:
+        raise ValueError("only the configured exchange owner may change relay status")
+    transitions = {
+        "PAUSE": ("ACTIVE", "PAUSED"),
+        "RESUME": ("PAUSED", "ACTIVE"),
+        "ARCHIVE": ("PAUSED", "ARCHIVED"),
+    }
+    expected, target = transitions[args.action]
+    with worker_operation_mutex(exchange):
+        current = exchange_control(exchange)["status"]
+        if current != expected:
+            raise ValueError("exchange " + args.action.casefold() + " requires status " + expected)
+        event = {
+            "action": args.action,
+            "actor": args.owner,
+            "created_utc": now_utc(),
+            "from_status": current,
+            "reason": bounded_clean(args.reason, "exchange control reason", 2000),
+            "record_sha256": "",
+            "schema": "ai-human.exchange-control-event/v1",
+            "to_status": target,
+        }
+        event["record_sha256"] = exchange_record_sha256(event, "record_sha256")
+        event_path = exchange / "control-events" / (
+            now_utc() + "-" + args.action.casefold() + "-" + secrets.token_hex(6) + ".json"
+        )
+        atomic_json(event_path, event)
+        atomic_json(exchange / "control.json", {
+            "schema": "ai-human.exchange-control/v1", "status": target, "updated_utc": now_utc()
+        })
+    print("AI-HUMAN WORKER EXCHANGE CONTROL: PASS")
+    print("- status: " + target)
+
+
+def exchange_directory_status(args):
+    exchange = safe_exchange_root(args.exchange)
+    config = exchange_config(exchange)
+    if args.owner != config["owner"]:
+        raise ValueError("only the configured exchange owner may change directory access")
+    exchange_require_status(exchange, {"ACTIVE", "PAUSED"})
+    worker_id = governor_safe_id(args.worker_id, "exchange directory worker id")
+    with worker_operation_mutex(exchange):
+        entries = exchange_directory(exchange)
+        if worker_id not in entries:
+            raise ValueError("exchange directory worker is missing")
+        entry = dict(entries[worker_id])
+        before = entry["status"]
+        if before == "RETIRED":
+            raise ValueError("a retired exchange directory identity cannot be reactivated")
+        if before == args.status:
+            raise ValueError("exchange directory worker already has that status")
+        entry["status"] = args.status
+        event = {
+            "action": "DIRECTORY_" + args.status,
+            "actor": args.owner,
+            "created_utc": now_utc(),
+            "from_status": before,
+            "reason": bounded_clean(args.reason, "exchange directory status reason", 2000),
+            "record_sha256": "",
+            "schema": "ai-human.exchange-control-event/v1",
+            "to_status": args.status,
+            "worker_id": worker_id,
+        }
+        event["record_sha256"] = exchange_record_sha256(event, "record_sha256")
+        atomic_json(exchange / "control-events" / (
+            now_utc() + "-directory-" + worker_id + "-" + secrets.token_hex(6) + ".json"
+        ), event)
+        atomic_json(exchange / "directory" / (worker_id + ".json"), entry)
+    print("AI-HUMAN WORKER EXCHANGE DIRECTORY STATUS: PASS")
+    print("- worker id: " + worker_id)
+    print("- status: " + args.status)
+
+
+def exchange_show(args):
+    worker = safe_worker(args.worker)
+    exchange = safe_exchange_root(args.exchange)
+    _config, entry = verify_joined_worker(worker, exchange)
+    inbox = exchange / "inboxes" / entry["worker_id"]
+    visible = []
+    if inbox.is_dir():
+        for receipt in sorted(inbox.iterdir(), key=lambda item: item.name.casefold()):
+            try:
+                envelope, recipient = exchange_authorized_envelope(worker, exchange, receipt.stem)
+            except ValueError:
+                continue
+            visible.append((envelope, exchange_current_state(exchange, receipt.stem, recipient)))
+    print("AI-HUMAN PROJECT MESSAGES")
+    print("- worker id: " + entry["worker_id"])
+    print("- visible messages: " + str(len(visible)))
+    for envelope, state in visible:
+        print("- " + envelope["message_id"] + " | from " + envelope["sender_worker_id"] + " | " + envelope["request"]["purpose"] + " | " + state)
+
+
+def exchange_export(args):
+    exchange = safe_exchange_root(args.exchange)
+    config = exchange_config(exchange)
+    if args.owner != config["owner"]:
+        raise ValueError("only the configured exchange owner may export relay proof")
+    output = Path(args.output).expanduser().resolve()
+    if output.exists() or output == Path(output.anchor) or output == Path.home().resolve():
+        raise ValueError("exchange export target must be a new file")
+    files = []
+    for path in sorted(exchange.rglob("*"), key=lambda item: item.relative_to(exchange).as_posix()):
+        if path.is_symlink():
+            raise ValueError("exchange export refuses symbolic links")
+        if path.is_file() and path.name != ".ai-human-operation.mutex":
+            files.append({
+                "path": path.relative_to(exchange).as_posix(),
+                "sha256": sha256(path),
+                "size_bytes": path.stat().st_size,
+            })
+    record = {
+        "created_utc": now_utc(),
+        "exchange_id": config["exchange_id"],
+        "files": files,
+        "schema": "ai-human.exchange-export/v1",
+    }
+    record["export_sha256"] = exchange_record_sha256(record, "export_sha256")
+    output.parent.mkdir(parents=True, exist_ok=True)
+    atomic_json(output, record)
+    print("AI-HUMAN WORKER EXCHANGE EXPORT: PASS")
+    print("- files: " + str(len(files)))
+    print("- export sha256: " + record["export_sha256"])
+
+
 def state_hashes(worker):
     return {name: sha256(worker / name) for name in STATE_FILES if (worker / name).is_file()}
 
@@ -6237,6 +8160,7 @@ def validate_worker(worker, quiet=False, allow_transaction=False):
     failures.extend(validate_continuity_state(worker))
     failures.extend(validate_resource_state(worker))
     failures.extend(validate_work_map_state(worker))
+    failures.extend(validate_exchange_local_state(worker))
     failures.extend(validate_completion_records(worker))
     lease = None
     try:
@@ -11266,6 +13190,111 @@ def parser():
     radar_decide_p.add_argument("--choice", choices=("PROPOSE", "LATER", "REJECT"), required=True)
     radar_decide_p.add_argument("--until-utc")
     radar_decide_p.set_defaults(handler=radar_decide)
+
+    exchange_init_p = sub.add_parser("exchange-init")
+    exchange_init_p.add_argument("--exchange", required=True)
+    exchange_init_p.add_argument("--config", required=True)
+    exchange_init_p.add_argument("--owner", required=True)
+    exchange_init_p.set_defaults(handler=exchange_init)
+
+    exchange_join_p = sub.add_parser("exchange-join")
+    exchange_join_p.add_argument("worker")
+    exchange_join_p.add_argument("--exchange", required=True)
+    exchange_join_p.add_argument("--session-id", required=True)
+    exchange_join_p.add_argument("--expected-state-hash", required=True)
+    exchange_join_p.add_argument("--entry", required=True)
+    exchange_join_p.set_defaults(handler=exchange_join)
+
+    exchange_policy_p = sub.add_parser("exchange-policy-add")
+    exchange_policy_p.add_argument("--exchange", required=True)
+    exchange_policy_p.add_argument("--owner", required=True)
+    exchange_policy_p.add_argument("--policy", required=True)
+    exchange_policy_p.set_defaults(handler=exchange_policy_add)
+
+    exchange_mission_p = sub.add_parser("exchange-mission-create")
+    exchange_mission_p.add_argument("worker")
+    exchange_mission_p.add_argument("--exchange", required=True)
+    exchange_mission_p.add_argument("--session-id", required=True)
+    exchange_mission_p.add_argument("--expected-state-hash", required=True)
+    exchange_mission_p.add_argument("--mission", required=True)
+    exchange_mission_p.set_defaults(handler=exchange_mission_create)
+
+    exchange_send_p = sub.add_parser("exchange-send")
+    exchange_send_p.add_argument("worker")
+    exchange_send_p.add_argument("--exchange", required=True)
+    exchange_send_p.add_argument("--session-id", required=True)
+    exchange_send_p.add_argument("--expected-state-hash", required=True)
+    exchange_send_p.add_argument("--request", required=True)
+    exchange_send_p.set_defaults(handler=exchange_send)
+
+    exchange_ack_p = sub.add_parser("exchange-ack")
+    exchange_ack_p.add_argument("worker")
+    exchange_ack_p.add_argument("message_id")
+    exchange_ack_p.add_argument("--exchange", required=True)
+    exchange_ack_p.add_argument("--session-id", required=True)
+    exchange_ack_p.add_argument("--expected-state-hash", required=True)
+    exchange_ack_p.set_defaults(handler=exchange_ack)
+
+    exchange_decide_p = sub.add_parser("exchange-decide")
+    exchange_decide_p.add_argument("worker")
+    exchange_decide_p.add_argument("message_id")
+    exchange_decide_p.add_argument("decision", choices=("ACCEPT", "REJECT"))
+    exchange_decide_p.add_argument("--exchange", required=True)
+    exchange_decide_p.add_argument("--session-id", required=True)
+    exchange_decide_p.add_argument("--expected-state-hash", required=True)
+    exchange_decide_p.add_argument("--reason", required=True)
+    exchange_decide_p.set_defaults(handler=exchange_decide)
+
+    exchange_result_p = sub.add_parser("exchange-result")
+    exchange_result_p.add_argument("worker")
+    exchange_result_p.add_argument("--exchange", required=True)
+    exchange_result_p.add_argument("--session-id", required=True)
+    exchange_result_p.add_argument("--expected-state-hash", required=True)
+    exchange_result_p.add_argument("--result", required=True)
+    exchange_result_p.set_defaults(handler=exchange_result)
+
+    exchange_integrate_p = sub.add_parser("exchange-integrate")
+    exchange_integrate_p.add_argument("worker")
+    exchange_integrate_p.add_argument("--exchange", required=True)
+    exchange_integrate_p.add_argument("--session-id", required=True)
+    exchange_integrate_p.add_argument("--expected-state-hash", required=True)
+    exchange_integrate_p.add_argument("--integration", required=True)
+    exchange_integrate_p.set_defaults(handler=exchange_integrate)
+
+    exchange_show_p = sub.add_parser("exchange-show")
+    exchange_show_p.add_argument("worker")
+    exchange_show_p.add_argument("--exchange", required=True)
+    exchange_show_p.set_defaults(handler=exchange_show)
+
+    exchange_audit_p = sub.add_parser("exchange-audit")
+    exchange_audit_p.add_argument("--exchange", required=True)
+    exchange_audit_p.set_defaults(handler=exchange_audit)
+
+    exchange_recover_p = sub.add_parser("exchange-recover")
+    exchange_recover_p.add_argument("--exchange", required=True)
+    exchange_recover_p.add_argument("--owner", required=True)
+    exchange_recover_p.set_defaults(handler=exchange_recover)
+
+    exchange_control_p = sub.add_parser("exchange-control")
+    exchange_control_p.add_argument("action", choices=("PAUSE", "RESUME", "ARCHIVE"))
+    exchange_control_p.add_argument("--exchange", required=True)
+    exchange_control_p.add_argument("--owner", required=True)
+    exchange_control_p.add_argument("--reason", required=True)
+    exchange_control_p.set_defaults(handler=exchange_control_command)
+
+    exchange_directory_p = sub.add_parser("exchange-directory-status")
+    exchange_directory_p.add_argument("worker_id")
+    exchange_directory_p.add_argument("status", choices=("ACTIVE", "PAUSED", "RETIRED"))
+    exchange_directory_p.add_argument("--exchange", required=True)
+    exchange_directory_p.add_argument("--owner", required=True)
+    exchange_directory_p.add_argument("--reason", required=True)
+    exchange_directory_p.set_defaults(handler=exchange_directory_status)
+
+    exchange_export_p = sub.add_parser("exchange-export")
+    exchange_export_p.add_argument("--exchange", required=True)
+    exchange_export_p.add_argument("--owner", required=True)
+    exchange_export_p.add_argument("--output", required=True)
+    exchange_export_p.set_defaults(handler=exchange_export)
 
     batch_plan_p = sub.add_parser("batch-plan")
     batch_plan_p.add_argument("kind", choices=BATCH_KINDS)

@@ -67,6 +67,14 @@ separate. Missing data remains `UNKNOWN`; non-zero swap alone is not current pre
 Only an approved host adapter may act on a fully safe tab-discard candidate, and every
 claimed improvement requires a later host snapshot. No force-quit path is provided.
 
+The optional Worker Exchange is a transport-owned local post room, not shared writable
+memory. Direct, Chief-mediated and mission-room messages use stable worker identities,
+exact route policy, immutable envelopes, bounded conversations and explicit delivery,
+acknowledgement, acceptance and result receipts. Message content never transfers
+permission. Each recipient writes only its own private exchange state while holding
+its writer lease. Follow `WORKER-EXCHANGE.md`; no exchange capability exists until an
+owner configures a relay and the worker records an exact join proof.
+
 Process stays proportional to effect. A read-only answer creates no task state. A clear
 user request for ordinary reversible local work uses standing worker-local permissions
 and deterministic task start/close commands, which auto-name the task when needed and

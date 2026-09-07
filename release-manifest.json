@@ -13,12 +13,12 @@
       "target": ".ai-human/system/PERSONAL-CONTEXT-RADAR.md"
     },
     {
-      "sha256": "5bb22bed6a50e14082bed8c888b3c5ff44eac536bb9a16a08a2d6de8e5ab3378",
+      "sha256": "1ced47f07df02125b744c6066694227af6bf666956314486f7a0d20e9979f3c3",
       "source": "core/AI-HUMAN.md",
       "target": ".ai-human/system/AI-HUMAN.md"
     },
     {
-      "sha256": "0104f2cf61df471c829e97cfa36f816043e9124e62ed17f669c8efa570550ad7",
+      "sha256": "d0ed1a579d9ad6c0454cfa5b25b21a8a3603304010a6980ea060c35f3dd35b1c",
       "source": "core/AGENT-RULES.md",
       "target": ".ai-human/system/AGENT-RULES.md"
     },
@@ -58,6 +58,11 @@
       "target": ".ai-human/system/RESOURCE-STEWARD.md"
     },
     {
+      "sha256": "c83753199efbb7a951c79dbdef4652239e9acc0ecc8a16c43e0db4fe1029e562",
+      "source": "core/WORKER-EXCHANGE.md",
+      "target": ".ai-human/system/WORKER-EXCHANGE.md"
+    },
+    {
       "sha256": "f5c1dcda603c3d3bc6a239470f7e0a7044f00b097c94ee99b52bf49dc1cdf972",
       "source": "core/GATES-SHARED.md",
       "target": ".ai-human/system/GATES-SHARED.md"
@@ -83,7 +88,7 @@
       "target": ".ai-human/VERSION"
     },
     {
-      "sha256": "6c8d2cf88c1c05eaa1e3798c6f80ef9f51d6cafc30b1bef1d1b2d14a1fc9d457",
+      "sha256": "073f52d61b90434f8b84c9a7ccd21e862660bf383f02039056431088c797f11c",
       "source": "scripts/ai_human.py",
       "target": ".ai-human/bin/ai_human.py"
     }
@@ -118,6 +123,7 @@
     ".ai-human/continuity/",
     ".ai-human/resources/",
     ".ai-human/personal/",
+    ".ai-human/exchange/",
     ".ai-human/backups/",
     ".ai-human/downgrade-exports/",
     ".ai-human/version-report.json",

@@ -290,6 +290,7 @@ class LifecycleTests(unittest.TestCase):
         adopt=False,
         automatic=False,
         worker_id="worker-001",
+        batch_cap=None,
         **identity,
     ):
         release = release or self.release
@@ -301,9 +302,75 @@ class LifecycleTests(unittest.TestCase):
         ]
         if automatic:
             arguments.append("--automatic-updates")
+        if batch_cap is not None:
+            arguments.extend(("--batch-cap", str(batch_cap)))
         if adopt:
             arguments.append("--adopt")
         return self.run_cli(*arguments)
+
+    def write_json_fixture(self, name, value):
+        path = self.base / name
+        path.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        return path
+
+    def acquire_session(self, worker, session_id="governor-session"):
+        acquired = self.run_cli(
+            "session-acquire", worker, "--session-id", session_id, "--actor", "Mission Owner"
+        )
+        return self.output_value(acquired.stdout, "expected-state hash")
+
+    def governor_policy(self, **overrides):
+        policy = {
+            "approval_reference": "DECISIONS.md H-52",
+            "hard_ceiling": 25,
+            "owner": "Mission Owner",
+            "pilot_size": 2,
+            "policy_id": "default-work-governor",
+            "policy_version": 1,
+            "promotion_successes": 1,
+            "schema": "ai-human.work-governor-policy/v1",
+            "unknown_external": "HALT",
+            "unknown_local_reversible": "PILOT",
+            "unknown_read_only": "PILOT",
+        }
+        policy.update(overrides)
+        return policy
+
+    def governor_request(
+        self,
+        request_id,
+        *,
+        units=8,
+        kind="item-execution",
+        effect="LOCAL_REVERSIBLE",
+        allowance=8,
+        unknown=(),
+        observations=None,
+        embedded_entries=0,
+    ):
+        signals = {}
+        for name in AI_HUMAN.GOVERNOR_SIGNAL_NAMES:
+            if name in unknown:
+                signals[name] = {
+                    "reason": "No trustworthy measurement was available",
+                    "status": "UNKNOWN",
+                }
+            else:
+                signals[name] = {
+                    "allowance": allowance,
+                    "evidence": "receipt://" + request_id + "/" + name,
+                    "status": "CONFIRMED",
+                }
+        return {
+            "effect": effect,
+            "embedded_entries": embedded_entries,
+            "independent_units": units,
+            "kind": kind,
+            "observations": observations or [],
+            "request_id": request_id,
+            "schema": "ai-human.work-governor-request/v1",
+            "signals": signals,
+        }
 
     def output_value(self, output, label):
         match = re.search(r"^- " + re.escape(label) + r": (.+)$", output, flags=re.M)
@@ -893,6 +960,422 @@ class LifecycleTests(unittest.TestCase):
         self.assertEqual(max(plan["batch_sizes"]), 25)
         self.assertGreater(len(plan["batch_sizes"]), 1)
         self.assertFalse(plan["preserve_artifact_intact"])
+
+    def test_governor_promotes_only_after_recorded_pilot_success(self):
+        worker = self.base / "governor-promotion"
+        self.install(worker)
+        metadata = json.loads((worker / ".ai-human/install.json").read_text(encoding="utf-8"))
+        self.assertEqual(metadata["batch_cap"], 25)
+        state_hash = self.acquire_session(worker)
+        policy_path = self.write_json_fixture("governor-policy.json", self.governor_policy())
+        configured = self.run_cli(
+            "governor-configure", worker, "--session-id", "governor-session",
+            "--expected-state-hash", state_hash, "--policy", policy_path,
+        )
+        state_hash = self.output_value(configured.stdout, "new expected-state hash")
+
+        request_path = self.write_json_fixture(
+            "governor-request-1.json", self.governor_request("request-1")
+        )
+        pilot = self.run_cli(
+            "governor-plan", worker, "--session-id", "governor-session",
+            "--expected-state-hash", state_hash, "--request", request_path,
+        )
+        self.assertIn("governor state: PILOT", pilot.stdout)
+        self.assertIn("effective batch: 2", pilot.stdout)
+        state_hash = self.output_value(pilot.stdout, "new expected-state hash")
+        plan_id = self.output_value(pilot.stdout, "plan id")
+
+        outcome_path = self.write_json_fixture(
+            "governor-outcome-1.json",
+            {
+                "completed_units": 8,
+                "evidence": "evidence://pilot-1-complete",
+                "plan_id": plan_id,
+                "schema": "ai-human.work-governor-outcome-request/v1",
+                "status": "SUCCESS",
+            },
+        )
+        recorded = self.run_cli(
+            "governor-record", worker, "--session-id", "governor-session",
+            "--expected-state-hash", state_hash, "--outcome", outcome_path,
+        )
+        state_hash = self.output_value(recorded.stdout, "new expected-state hash")
+
+        request_path = self.write_json_fixture(
+            "governor-request-2.json", self.governor_request("request-2")
+        )
+        steady = self.run_cli(
+            "governor-plan", worker, "--session-id", "governor-session",
+            "--expected-state-hash", state_hash, "--request", request_path,
+        )
+        self.assertIn("governor state: STEADY", steady.stdout)
+        self.assertIn("effective batch: 8", steady.stdout)
+        self.assertIn("batch sizes: 8", steady.stdout)
+
+    def test_governor_unknown_signals_never_self_award_external_capacity(self):
+        worker = self.base / "governor-unknown"
+        self.install(worker)
+        state_hash = self.acquire_session(worker)
+        policy_path = self.write_json_fixture("unknown-policy.json", self.governor_policy())
+        configured = self.run_cli(
+            "governor-configure", worker, "--session-id", "governor-session",
+            "--expected-state-hash", state_hash, "--policy", policy_path,
+        )
+        state_hash = self.output_value(configured.stdout, "new expected-state hash")
+        request = self.governor_request(
+            "unknown-external", kind="external-record-write",
+            effect="EXTERNAL_NON_IDEMPOTENT", unknown=("provider_api",),
+        )
+        request_path = self.write_json_fixture("unknown-request.json", request)
+        result = self.run_cli(
+            "governor-plan", worker, "--session-id", "governor-session",
+            "--expected-state-hash", state_hash, "--request", request_path,
+        )
+        self.assertIn("governor state: HALT", result.stdout)
+        self.assertIn("effective batch: 0", result.stdout)
+        self.assertIn("provider_api is UNKNOWN", result.stdout)
+
+    def test_governor_backoff_and_halt_observations_override_healthy_signals(self):
+        worker = self.base / "governor-observations"
+        self.install(worker)
+        state_hash = self.acquire_session(worker)
+        policy_path = self.write_json_fixture("observation-policy.json", self.governor_policy())
+        configured = self.run_cli(
+            "governor-configure", worker, "--session-id", "governor-session",
+            "--expected-state-hash", state_hash, "--policy", policy_path,
+        )
+        state_hash = self.output_value(configured.stdout, "new expected-state hash")
+        backoff_request = self.governor_request(
+            "backoff-request",
+            observations=[
+                {"code": "PROVIDER_THROTTLED", "evidence": "provider returned HTTP 429"}
+            ],
+        )
+        request_path = self.write_json_fixture("backoff-request.json", backoff_request)
+        backoff = self.run_cli(
+            "governor-plan", worker, "--session-id", "governor-session",
+            "--expected-state-hash", state_hash, "--request", request_path,
+        )
+        self.assertIn("governor state: BACKOFF", backoff.stdout)
+        self.assertIn("effective batch: 2", backoff.stdout)
+        state_hash = self.output_value(backoff.stdout, "new expected-state hash")
+        plan_id = self.output_value(backoff.stdout, "plan id")
+        outcome_path = self.write_json_fixture(
+            "backoff-outcome.json",
+            {
+                "completed_units": 0,
+                "evidence": "provider remained throttled",
+                "plan_id": plan_id,
+                "schema": "ai-human.work-governor-outcome-request/v1",
+                "status": "THROTTLED",
+            },
+        )
+        recorded = self.run_cli(
+            "governor-record", worker, "--session-id", "governor-session",
+            "--expected-state-hash", state_hash, "--outcome", outcome_path,
+        )
+        state_hash = self.output_value(recorded.stdout, "new expected-state hash")
+        halt_request = self.governor_request(
+            "halt-request", observations=[
+                {"code": "WRONG_TARGET", "evidence": "target identity did not match"}
+            ],
+        )
+        request_path = self.write_json_fixture("halt-request.json", halt_request)
+        halt = self.run_cli(
+            "governor-plan", worker, "--session-id", "governor-session",
+            "--expected-state-hash", state_hash, "--request", request_path,
+        )
+        self.assertIn("governor state: HALT", halt.stdout)
+        self.assertIn("effective batch: 0", halt.stdout)
+
+    def test_governor_refuses_a_second_plan_until_the_first_has_evidence(self):
+        worker = self.base / "governor-outstanding"
+        self.install(worker)
+        state_hash = self.acquire_session(worker)
+        policy_path = self.write_json_fixture("outstanding-policy.json", self.governor_policy())
+        configured = self.run_cli(
+            "governor-configure", worker, "--session-id", "governor-session",
+            "--expected-state-hash", state_hash, "--policy", policy_path,
+        )
+        state_hash = self.output_value(configured.stdout, "new expected-state hash")
+        request_path = self.write_json_fixture(
+            "outstanding-request-1.json", self.governor_request("outstanding-1")
+        )
+        first = self.run_cli(
+            "governor-plan", worker, "--session-id", "governor-session",
+            "--expected-state-hash", state_hash, "--request", request_path,
+        )
+        state_hash = self.output_value(first.stdout, "new expected-state hash")
+        request_path = self.write_json_fixture(
+            "outstanding-request-2.json", self.governor_request("outstanding-2")
+        )
+        refused = self.run_cli(
+            "governor-plan", worker, "--session-id", "governor-session",
+            "--expected-state-hash", state_hash, "--request", request_path, expect=1,
+        )
+        self.assertIn("record its outcome before planning more work", refused.stderr)
+
+    def test_governor_policy_ceiling_and_receipt_integrity_are_enforced(self):
+        worker = self.base / "governor-integrity"
+        self.install(worker)
+        state_hash = self.acquire_session(worker)
+        overlarge_path = self.write_json_fixture(
+            "overlarge-policy.json", self.governor_policy(hard_ceiling=26)
+        )
+        rejected = self.run_cli(
+            "governor-configure", worker, "--session-id", "governor-session",
+            "--expected-state-hash", state_hash, "--policy", overlarge_path, expect=1,
+        )
+        self.assertIn("hard ceiling must be between 1 and 25", rejected.stderr)
+        self.assertFalse((worker / ".ai-human/governor/policy.json").exists())
+
+        policy_path = self.write_json_fixture("integrity-policy.json", self.governor_policy())
+        configured = self.run_cli(
+            "governor-configure", worker, "--session-id", "governor-session",
+            "--expected-state-hash", state_hash, "--policy", policy_path,
+        )
+        state_hash = self.output_value(configured.stdout, "new expected-state hash")
+        request_path = self.write_json_fixture(
+            "integrity-request.json", self.governor_request("integrity-request")
+        )
+        planned = self.run_cli(
+            "governor-plan", worker, "--session-id", "governor-session",
+            "--expected-state-hash", state_hash, "--request", request_path,
+        )
+        receipt = next((worker / ".ai-human/governor/plans").glob("*.json"))
+        data = json.loads(receipt.read_text(encoding="utf-8"))
+        data["effective_batch"] = 25
+        data["record_sha256"] = AI_HUMAN.governed_record_sha256(data)
+        receipt.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        invalid = self.run_cli("validate", worker, expect=1)
+        self.assertIn("governor plan decision replay mismatch", invalid.stdout)
+
+    def test_governor_keeps_an_intact_artifact_as_one_unit(self):
+        worker = self.base / "governor-artifact"
+        self.install(worker)
+        state_hash = self.acquire_session(worker)
+        policy_path = self.write_json_fixture("artifact-policy.json", self.governor_policy())
+        configured = self.run_cli(
+            "governor-configure", worker, "--session-id", "governor-session",
+            "--expected-state-hash", state_hash, "--policy", policy_path,
+        )
+        state_hash = self.output_value(configured.stdout, "new expected-state hash")
+        request_path = self.write_json_fixture(
+            "artifact-request.json",
+            self.governor_request(
+                "artifact-request", kind="artifact-upload", effect="READ_ONLY",
+                units=1, embedded_entries=150,
+            ),
+        )
+        result = self.run_cli(
+            "governor-plan", worker, "--session-id", "governor-session",
+            "--expected-state-hash", state_hash, "--request", request_path,
+        )
+        self.assertIn("preserve artifact intact: YES", result.stdout)
+        self.assertIn("batch sizes: 1", result.stdout)
+
+    def test_governor_uses_the_lowest_confirmed_capacity_signal(self):
+        worker = self.base / "governor-lowest-signal"
+        self.install(worker)
+        state_hash = self.acquire_session(worker)
+        policy_path = self.write_json_fixture(
+            "lowest-signal-policy.json", self.governor_policy(pilot_size=10)
+        )
+        configured = self.run_cli(
+            "governor-configure", worker, "--session-id", "governor-session",
+            "--expected-state-hash", state_hash, "--policy", policy_path,
+        )
+        state_hash = self.output_value(configured.stdout, "new expected-state hash")
+        request = self.governor_request("lowest-signal", units=20, allowance=12)
+        request["signals"]["action_risk"]["allowance"] = 3
+        request_path = self.write_json_fixture("lowest-signal-request.json", request)
+        result = self.run_cli(
+            "governor-plan", worker, "--session-id", "governor-session",
+            "--expected-state-hash", state_hash, "--request", request_path,
+        )
+        self.assertIn("effective batch: 3", result.stdout)
+        self.assertIn("limiting signals: action_risk", result.stdout)
+        self.assertIn("batch sizes: 3, 3, 3, 3, 3, 3, 2", result.stdout)
+
+    def test_governor_backoff_wins_when_another_signal_is_unknown(self):
+        policy = self.governor_policy()
+        request = self.governor_request(
+            "unknown-and-backoff", unknown=("computer_resource",),
+            observations=[
+                {"code": "CONTEXT_PRESSURE", "evidence": "context crossed warning threshold"},
+                {"code": "EVIDENCE_BACKLOG", "evidence": "two receipts await verification"},
+            ],
+        )
+        decision = AI_HUMAN.governor_decision(policy, request, [], [])
+        self.assertEqual(decision["governor_state"], "BACKOFF")
+        self.assertEqual(decision["effective_batch"], 2)
+
+    def test_governor_fail_closed_battle_matrix(self):
+        policy = self.governor_policy(pilot_size=25)
+        for units in (1, 25):
+            with self.subTest(boundary_units=units):
+                request = self.governor_request(
+                    "boundary-" + str(units), units=units, allowance=25
+                )
+                decision = AI_HUMAN.governor_decision(policy, request, [], [])
+                self.assertEqual(decision["effective_batch"], units)
+        for code in sorted(AI_HUMAN.GOVERNOR_HALT_OBSERVATIONS):
+            with self.subTest(halt_observation=code):
+                request = self.governor_request(
+                    "halt-" + code.casefold(), observations=[
+                        {"code": code, "evidence": "battle-test halt evidence"}
+                    ],
+                )
+                decision = AI_HUMAN.governor_decision(policy, request, [], [])
+                self.assertEqual(decision["governor_state"], "HALT")
+                self.assertEqual(decision["effective_batch"], 0)
+        for code in sorted(AI_HUMAN.GOVERNOR_BACKOFF_OBSERVATIONS):
+            with self.subTest(backoff_observation=code):
+                request = self.governor_request(
+                    "backoff-" + code.casefold(), observations=[
+                        {"code": code, "evidence": "battle-test backoff evidence"}
+                    ],
+                )
+                decision = AI_HUMAN.governor_decision(policy, request, [], [])
+                self.assertEqual(decision["governor_state"], "BACKOFF")
+                self.assertLessEqual(decision["effective_batch"], policy["pilot_size"])
+        unknown_name = "rollback_evidence"
+        expectations = {
+            "READ_ONLY": "PILOT",
+            "LOCAL_REVERSIBLE": "PILOT",
+            "EXTERNAL_IDEMPOTENT": "HALT",
+            "EXTERNAL_NON_IDEMPOTENT": "HALT",
+        }
+        for effect, expected in expectations.items():
+            with self.subTest(unknown_effect=effect):
+                request = self.governor_request(
+                    "unknown-" + effect.casefold(), effect=effect, unknown=(unknown_name,)
+                )
+                decision = AI_HUMAN.governor_decision(policy, request, [], [])
+                self.assertEqual(decision["governor_state"], expected)
+        gate_zero = self.governor_request("gate-zero", effect="GATE_ZERO")
+        decision = AI_HUMAN.governor_decision(policy, gate_zero, [], [])
+        self.assertEqual((decision["governor_state"], decision["effective_batch"]), ("HALT", 0))
+
+        malformed = self.governor_request("missing-signal")
+        malformed["signals"].pop("context_budget")
+        with self.assertRaisesRegex(ValueError, "governor signals is missing"):
+            AI_HUMAN.validate_governor_request(malformed)
+
+    def test_governor_fatal_outcomes_latch_halt_until_a_new_policy_version(self):
+        for status in ("STATE_DIVERGED", "ROLLBACK_FAILED"):
+            with self.subTest(status=status):
+                worker = self.base / ("governor-fatal-" + status.casefold())
+                self.install(worker)
+                state_hash = self.acquire_session(worker)
+                policy_path = self.write_json_fixture(
+                    "fatal-policy-" + status + ".json", self.governor_policy()
+                )
+                configured = self.run_cli(
+                    "governor-configure", worker, "--session-id", "governor-session",
+                    "--expected-state-hash", state_hash, "--policy", policy_path,
+                )
+                state_hash = self.output_value(configured.stdout, "new expected-state hash")
+                request_path = self.write_json_fixture(
+                    "fatal-request-1-" + status + ".json",
+                    self.governor_request("fatal-1-" + status.casefold()),
+                )
+                planned = self.run_cli(
+                    "governor-plan", worker, "--session-id", "governor-session",
+                    "--expected-state-hash", state_hash, "--request", request_path,
+                )
+                state_hash = self.output_value(planned.stdout, "new expected-state hash")
+                outcome_path = self.write_json_fixture(
+                    "fatal-outcome-" + status + ".json",
+                    {
+                        "completed_units": 0,
+                        "evidence": "forced fatal outcome for battle test",
+                        "plan_id": self.output_value(planned.stdout, "plan id"),
+                        "schema": "ai-human.work-governor-outcome-request/v1",
+                        "status": status,
+                    },
+                )
+                recorded = self.run_cli(
+                    "governor-record", worker, "--session-id", "governor-session",
+                    "--expected-state-hash", state_hash, "--outcome", outcome_path,
+                )
+                state_hash = self.output_value(recorded.stdout, "new expected-state hash")
+                request_path = self.write_json_fixture(
+                    "fatal-request-2-" + status + ".json",
+                    self.governor_request("fatal-2-" + status.casefold()),
+                )
+                halted = self.run_cli(
+                    "governor-plan", worker, "--session-id", "governor-session",
+                    "--expected-state-hash", state_hash, "--request", request_path,
+                )
+                self.assertIn("governor state: HALT", halted.stdout)
+                self.assertIn("latest recorded outcome requires owner recovery", halted.stdout)
+
+    def test_governor_worker_policy_cap_cannot_be_raised_by_runtime_planning(self):
+        worker = self.base / "governor-worker-cap"
+        self.install(worker, batch_cap=5)
+        state_hash = self.acquire_session(worker)
+        policy_path = self.write_json_fixture(
+            "worker-cap-policy.json", self.governor_policy(hard_ceiling=6)
+        )
+        rejected = self.run_cli(
+            "governor-configure", worker, "--session-id", "governor-session",
+            "--expected-state-hash", state_hash, "--policy", policy_path, expect=1,
+        )
+        self.assertIn("cannot exceed the worker policy cap of 5", rejected.stderr)
+        self.assertFalse((worker / ".ai-human/governor").exists())
+
+    def test_update_preserves_all_governor_policy_plan_and_outcome_bytes(self):
+        worker = self.base / "governor-update-preservation"
+        self.install(worker)
+        state_hash = self.acquire_session(worker)
+        policy_path = self.write_json_fixture("preserve-policy.json", self.governor_policy())
+        configured = self.run_cli(
+            "governor-configure", worker, "--session-id", "governor-session",
+            "--expected-state-hash", state_hash, "--policy", policy_path,
+        )
+        state_hash = self.output_value(configured.stdout, "new expected-state hash")
+        request_path = self.write_json_fixture(
+            "preserve-request.json", self.governor_request("preserve-request")
+        )
+        planned = self.run_cli(
+            "governor-plan", worker, "--session-id", "governor-session",
+            "--expected-state-hash", state_hash, "--request", request_path,
+        )
+        state_hash = self.output_value(planned.stdout, "new expected-state hash")
+        outcome_path = self.write_json_fixture(
+            "preserve-outcome.json",
+            {
+                "completed_units": 8,
+                "evidence": "evidence://preserved-success",
+                "plan_id": self.output_value(planned.stdout, "plan id"),
+                "schema": "ai-human.work-governor-outcome-request/v1",
+                "status": "SUCCESS",
+            },
+        )
+        recorded = self.run_cli(
+            "governor-record", worker, "--session-id", "governor-session",
+            "--expected-state-hash", state_hash, "--outcome", outcome_path,
+        )
+        state_hash = self.output_value(recorded.stdout, "new expected-state hash")
+        self.run_cli(
+            "session-release", worker, "--session-id", "governor-session",
+            "--expected-state-hash", state_hash,
+        )
+        before = {
+            path.relative_to(worker).as_posix(): sha256(path)
+            for path in (worker / ".ai-human/governor").rglob("*.json")
+        }
+        refresh_release(self.release, TEST_UPGRADE_VERSION)
+        updated = self.run_cli("update", worker, "--source", self.release, "--at-checkpoint")
+        self.assertIn("AI-HUMAN UPDATE: PASS", updated.stdout)
+        after = {
+            path.relative_to(worker).as_posix(): sha256(path)
+            for path in (worker / ".ai-human/governor").rglob("*.json")
+        }
+        self.assertEqual(after, before)
+        self.assertEqual(self.run_cli("validate", worker).returncode, 0)
 
     def test_adoption_preserves_existing_project_files(self):
         worker = self.base / "existing-project"

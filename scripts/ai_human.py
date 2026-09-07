@@ -40,6 +40,71 @@ BATCH_KINDS = (
     "external-record-write",
 )
 INTACT_ARTIFACT_BATCH_KINDS = {"artifact-upload", "assignment-intake"}
+GOVERNOR_ROOT = Path(".ai-human/governor")
+GOVERNOR_POLICY_PATH = GOVERNOR_ROOT / "policy.json"
+GOVERNOR_POLICIES_ROOT = GOVERNOR_ROOT / "policies"
+GOVERNOR_PLANS_ROOT = GOVERNOR_ROOT / "plans"
+GOVERNOR_OUTCOMES_ROOT = GOVERNOR_ROOT / "outcomes"
+GOVERNOR_SIGNAL_NAMES = (
+    "worker_policy",
+    "action_risk",
+    "provider_api",
+    "rollback_evidence",
+    "context_budget",
+    "computer_resource",
+    "healthy_throughput",
+)
+GOVERNOR_EFFECTS = {
+    "READ_ONLY",
+    "LOCAL_REVERSIBLE",
+    "EXTERNAL_IDEMPOTENT",
+    "EXTERNAL_NON_IDEMPOTENT",
+    "GATE_ZERO",
+}
+GOVERNOR_STATES = {"PILOT", "STEADY", "BACKOFF", "HALT"}
+GOVERNOR_HALT_OBSERVATIONS = {
+    "PERMISSION_UNCERTAIN",
+    "GATE_ZERO",
+    "STATE_DIVERGENCE",
+    "ROLLBACK_MISSING",
+    "WRONG_TARGET",
+    "NON_IDEMPOTENT_RETRY",
+}
+GOVERNOR_BACKOFF_OBSERVATIONS = {
+    "PROVIDER_THROTTLED",
+    "CONTEXT_PRESSURE",
+    "RESOURCE_PRESSURE",
+    "AMBIGUOUS_OUTPUT",
+    "SLOW_EVIDENCE",
+    "PARTIAL_FAILURE",
+    "EVIDENCE_BACKLOG",
+}
+GOVERNOR_OUTCOME_STATUSES = {
+    "SUCCESS",
+    "FAILED",
+    "THROTTLED",
+    "PARTIAL",
+    "EVIDENCE_FAILED",
+    "ROLLBACK_FAILED",
+    "STATE_DIVERGED",
+    "CANCELLED",
+}
+GOVERNOR_FATAL_OUTCOMES = {"ROLLBACK_FAILED", "STATE_DIVERGED"}
+GOVERNOR_POLICY_FIELDS = {
+    "approval_reference", "hard_ceiling", "owner", "pilot_size", "policy_id",
+    "policy_version", "promotion_successes", "schema", "unknown_external",
+    "unknown_local_reversible", "unknown_read_only",
+}
+GOVERNOR_REQUEST_FIELDS = {
+    "effect", "embedded_entries", "independent_units", "kind", "observations",
+    "request_id", "schema", "signals",
+}
+GOVERNOR_SIGNAL_CONFIRMED_FIELDS = {"allowance", "evidence", "status"}
+GOVERNOR_SIGNAL_UNKNOWN_FIELDS = {"reason", "status"}
+GOVERNOR_OBSERVATION_FIELDS = {"code", "evidence"}
+GOVERNOR_OUTCOME_REQUEST_FIELDS = {
+    "completed_units", "evidence", "plan_id", "schema", "status",
+}
 LEASE_PATH = Path(".ai-human/control/session-lease.json")
 CONTROL_RECEIPTS = Path(".ai-human/control/receipts")
 CAPABILITY_ROOT = Path(".ai-human/capabilities")
@@ -83,6 +148,7 @@ MODE_GUARDED_COMMANDS = {
     "improvement-decision", "improvement-value", "improvement-show", "autonomy-choice", "autonomy-show",
     "action-execute",
     "autonomy-skill-install",
+    "governor-configure", "governor-plan", "governor-record",
 }
 COORDINATION_STATE_FILES = (
     "MASTER_CURSOR.md", "OPEN_REGISTER.md", "TODAY.md",
@@ -108,6 +174,7 @@ INTRINSIC_NEVER_MANAGED = set(STATE_FILES) | {
     ".ai-human/capabilities/",
     ".ai-human/improvement/",
     ".ai-human/autonomy/",
+    ".ai-human/governor/",
     ".ai-human/backups/",
     ".ai-human/downgrade-exports/",
     ".ai-human/install.json",
@@ -630,6 +697,409 @@ def require_exact_fields(data, expected, label):
     extra = set(data) - expected
     if extra:
         raise ValueError(label + " contains unexpected fields: " + ", ".join(sorted(extra)))
+
+
+def canonical_json_sha256(value):
+    encoded = json.dumps(
+        value, ensure_ascii=False, separators=(",", ":"), sort_keys=True
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def governed_record_sha256(record):
+    payload = dict(record)
+    payload.pop("record_sha256", None)
+    return canonical_json_sha256(payload)
+
+
+def positive_integer(value, label, maximum=None, allow_zero=False):
+    lower = 0 if allow_zero else 1
+    if isinstance(value, bool) or not isinstance(value, int) or value < lower:
+        qualifier = "a non-negative" if allow_zero else "a positive"
+        raise ValueError(label + " must be " + qualifier + " integer")
+    if maximum is not None and value > maximum:
+        raise ValueError(label + " must not exceed " + str(maximum))
+    return value
+
+
+def governor_safe_id(value, label):
+    value = safe_identity(str(value), label)
+    if len(value.encode("utf-8")) > 100:
+        raise ValueError(label + " exceeds 100 bytes")
+    return value
+
+
+def validate_governor_policy(data):
+    if not isinstance(data, dict):
+        raise ValueError("governor policy must be a JSON object")
+    require_exact_fields(data, GOVERNOR_POLICY_FIELDS, "governor policy")
+    if data.get("schema") != "ai-human.work-governor-policy/v1":
+        raise ValueError("unsupported governor policy schema")
+    governor_safe_id(data.get("policy_id", ""), "governor policy id")
+    positive_integer(data.get("policy_version"), "governor policy version")
+    for field in ("owner", "approval_reference"):
+        if not isinstance(data.get(field), str):
+            raise ValueError("governor policy " + field.replace("_", " ") + " must be text")
+        bounded_clean(data[field], "governor policy " + field.replace("_", " "), 500)
+    hard_ceiling = data.get("hard_ceiling")
+    if (
+        isinstance(hard_ceiling, bool)
+        or not isinstance(hard_ceiling, int)
+        or not 1 <= hard_ceiling <= BATCH_CAP
+    ):
+        raise ValueError(
+            "governor hard ceiling must be between 1 and " + str(BATCH_CAP)
+        )
+    pilot_size = positive_integer(data.get("pilot_size"), "governor pilot size")
+    if pilot_size > hard_ceiling:
+        raise ValueError("governor pilot size cannot exceed its hard ceiling")
+    positive_integer(
+        data.get("promotion_successes"), "governor promotion successes", BATCH_CAP
+    )
+    for field in (
+        "unknown_external", "unknown_local_reversible", "unknown_read_only",
+    ):
+        if data.get(field) not in {"PILOT", "HALT"}:
+            raise ValueError(field + " must be PILOT or HALT")
+    return data
+
+
+def validate_governor_request(data):
+    if not isinstance(data, dict):
+        raise ValueError("governor request must be a JSON object")
+    require_exact_fields(data, GOVERNOR_REQUEST_FIELDS, "governor request")
+    if data.get("schema") != "ai-human.work-governor-request/v1":
+        raise ValueError("unsupported governor request schema")
+    governor_safe_id(data.get("request_id", ""), "governor request id")
+    if data.get("kind") not in BATCH_KINDS:
+        raise ValueError("unsupported governor batch kind: " + repr(data.get("kind")))
+    if data.get("effect") not in GOVERNOR_EFFECTS:
+        raise ValueError("unsupported governor effect: " + repr(data.get("effect")))
+    positive_integer(data.get("independent_units"), "governor independent units")
+    embedded = positive_integer(
+        data.get("embedded_entries"), "governor embedded entries", allow_zero=True
+    )
+    preserve_artifact = data["kind"] in INTACT_ARTIFACT_BATCH_KINDS
+    if embedded and not preserve_artifact:
+        raise ValueError(
+            "governor embedded entries apply only to an intact artifact action"
+        )
+    signals = data.get("signals")
+    if not isinstance(signals, dict):
+        raise ValueError("governor signals must be a JSON object")
+    require_exact_fields(signals, set(GOVERNOR_SIGNAL_NAMES), "governor signals")
+    for name in GOVERNOR_SIGNAL_NAMES:
+        signal = signals[name]
+        if not isinstance(signal, dict):
+            raise ValueError("governor signal " + name + " must be a JSON object")
+        status = signal.get("status")
+        if status == "CONFIRMED":
+            require_exact_fields(
+                signal, GOVERNOR_SIGNAL_CONFIRMED_FIELDS, "confirmed governor signal " + name
+            )
+            positive_integer(
+                signal.get("allowance"), "governor signal allowance " + name, BATCH_CAP
+            )
+            if not isinstance(signal.get("evidence"), str):
+                raise ValueError("governor signal evidence " + name + " must be text")
+            bounded_clean(signal["evidence"], "governor signal evidence " + name, 1000)
+        elif status == "UNKNOWN":
+            require_exact_fields(
+                signal, GOVERNOR_SIGNAL_UNKNOWN_FIELDS, "unknown governor signal " + name
+            )
+            if not isinstance(signal.get("reason"), str):
+                raise ValueError("governor unknown reason " + name + " must be text")
+            bounded_clean(signal["reason"], "governor unknown reason " + name, 1000)
+        else:
+            raise ValueError("governor signal " + name + " must be CONFIRMED or UNKNOWN")
+    observations = data.get("observations")
+    if not isinstance(observations, list) or len(observations) > BATCH_CAP:
+        raise ValueError("governor observations must be a list within the safety ceiling")
+    allowed_observations = GOVERNOR_HALT_OBSERVATIONS | GOVERNOR_BACKOFF_OBSERVATIONS
+    for index, observation in enumerate(observations, start=1):
+        if not isinstance(observation, dict):
+            raise ValueError("governor observation must be a JSON object")
+        require_exact_fields(
+            observation, GOVERNOR_OBSERVATION_FIELDS,
+            "governor observation " + str(index),
+        )
+        if observation.get("code") not in allowed_observations:
+            raise ValueError("unsupported governor observation: " + repr(observation.get("code")))
+        if not isinstance(observation.get("evidence"), str):
+            raise ValueError("governor observation evidence must be text")
+        bounded_clean(
+            observation["evidence"], "governor observation evidence", 1000
+        )
+    return data
+
+
+def validate_governor_outcome_request(data):
+    if not isinstance(data, dict):
+        raise ValueError("governor outcome must be a JSON object")
+    require_exact_fields(data, GOVERNOR_OUTCOME_REQUEST_FIELDS, "governor outcome")
+    if data.get("schema") != "ai-human.work-governor-outcome-request/v1":
+        raise ValueError("unsupported governor outcome request schema")
+    governor_safe_id(data.get("plan_id", ""), "governor plan id")
+    if data.get("status") not in GOVERNOR_OUTCOME_STATUSES:
+        raise ValueError("unsupported governor outcome status: " + repr(data.get("status")))
+    positive_integer(
+        data.get("completed_units"), "governor completed units", allow_zero=True
+    )
+    if not isinstance(data.get("evidence"), str):
+        raise ValueError("governor outcome evidence must be text")
+    bounded_clean(data["evidence"], "governor outcome evidence", 2000)
+    return data
+
+
+def governor_path(worker, relative, label):
+    relative = safe_relative(relative, label)
+    key = portable_key(relative)
+    prefix = portable_key(GOVERNOR_ROOT) + "/"
+    if not key.startswith(prefix):
+        raise ValueError(label + " is outside the governor state")
+    return worker_target(worker, relative, label)
+
+
+def governor_policy(worker, required=True):
+    path = worker / GOVERNOR_POLICY_PATH
+    if not path.is_file():
+        if required:
+            raise ValueError("work governor is not configured")
+        return None
+    if path.is_symlink():
+        raise ValueError("governor policy may not be a symbolic link")
+    return validate_governor_policy(read_json(path))
+
+
+def governor_record_files(worker, relative_root):
+    root = worker / relative_root
+    if not root.exists():
+        return []
+    if root.is_symlink() or not root.is_dir():
+        raise ValueError(str(relative_root) + " must be a real directory")
+    paths = []
+    for path in sorted(root.iterdir(), key=lambda item: item.name.casefold()):
+        if path.is_symlink() or not path.is_file() or path.suffix.casefold() != ".json":
+            raise ValueError("governor state contains a forbidden entry: " + str(path))
+        paths.append(path)
+    return paths
+
+
+def governor_policy_catalog(worker):
+    catalog = {}
+    current = governor_policy(worker, required=False)
+    if current:
+        catalog[canonical_json_sha256(current)] = current
+    versions = {}
+    for path in governor_record_files(worker, GOVERNOR_POLICIES_ROOT):
+        policy = validate_governor_policy(read_json(path))
+        digest = canonical_json_sha256(policy)
+        expected_name = (
+            f"v{policy['policy_version']:06d}-{policy['policy_id']}-{digest[:12]}.json"
+        )
+        if path.name != expected_name:
+            raise ValueError("governor policy history filename does not match its content")
+        if policy["policy_version"] in versions and versions[policy["policy_version"]] != digest:
+            raise ValueError("governor policy version is ambiguous")
+        versions[policy["policy_version"]] = digest
+        if digest in catalog and catalog[digest] != policy:
+            raise ValueError("governor policy digest collision")
+        catalog[digest] = policy
+    if current:
+        current_version = current["policy_version"]
+        required_versions = set(range(1, current_version + 1))
+        if not required_versions.issubset(versions):
+            raise ValueError("governor policy history is incomplete")
+        if versions and max(versions) > current_version + 1:
+            raise ValueError("governor policy history advances beyond one pending version")
+        for policy in catalog.values():
+            if policy["policy_id"] != current["policy_id"] or policy["owner"] != current["owner"]:
+                raise ValueError("governor policy history changed its identity or owner")
+    return catalog
+
+
+def governor_plan_records(worker, validate=True):
+    plans = []
+    previous_hash = "NONE"
+    catalog = governor_policy_catalog(worker)
+    for sequence, path in enumerate(
+        governor_record_files(worker, GOVERNOR_PLANS_ROOT), start=1
+    ):
+        record = read_json(path)
+        expected_fields = {
+            "batch_sizes", "created_utc", "decision_reasons", "effective_batch",
+            "embedded_entries_are_batch_units", "governor_state", "independent_units",
+            "kind", "limiting_signals", "plan_id", "policy_id", "policy_sha256",
+            "policy_version", "preserve_artifact_intact", "prior_plan_sha256",
+            "record_sha256", "request", "request_sha256", "safety_ceiling", "schema",
+            "sequence",
+        }
+        require_exact_fields(record, expected_fields, "governor plan record")
+        if record.get("schema") != "ai-human.work-governor-plan/v1":
+            raise ValueError("unsupported governor plan record schema")
+        if record.get("sequence") != sequence:
+            raise ValueError("governor plan sequence is not contiguous")
+        plan_id = governor_safe_id(record.get("plan_id", ""), "governor plan id")
+        if path.name != f"{sequence:06d}-{plan_id}.json":
+            raise ValueError("governor plan filename does not match its record")
+        if record.get("prior_plan_sha256") != previous_hash:
+            raise ValueError("governor plan hash chain is broken")
+        if record.get("record_sha256") != governed_record_sha256(record):
+            raise ValueError("governor plan record hash mismatch")
+        request = validate_governor_request(record.get("request"))
+        if record.get("request_sha256") != canonical_json_sha256(request):
+            raise ValueError("governor request hash mismatch")
+        policy = catalog.get(record.get("policy_sha256"))
+        if not policy:
+            raise ValueError("governor plan references an unknown policy")
+        if (
+            record.get("policy_id") != policy["policy_id"]
+            or record.get("policy_version") != policy["policy_version"]
+            or record.get("safety_ceiling") != policy["hard_ceiling"]
+        ):
+            raise ValueError("governor plan policy identity mismatch")
+        if record.get("governor_state") not in GOVERNOR_STATES:
+            raise ValueError("governor plan contains an invalid state")
+        effective = positive_integer(
+            record.get("effective_batch"), "governor effective batch", allow_zero=True
+        )
+        if effective > policy["hard_ceiling"]:
+            raise ValueError("governor effective batch exceeds its hard ceiling")
+        sizes = record.get("batch_sizes")
+        if not isinstance(sizes, list) or any(
+            isinstance(size, bool) or not isinstance(size, int) or size < 1 or size > effective
+            for size in sizes
+        ):
+            if sizes or effective:
+                raise ValueError("governor batch sizes are invalid")
+        if effective == 0:
+            if record["governor_state"] != "HALT" or sizes:
+                raise ValueError("only a HALT plan may have no effective batch")
+        elif sum(sizes) != request["independent_units"]:
+            raise ValueError("governor batch sizes do not cover the requested work")
+        if record.get("independent_units") != request["independent_units"]:
+            raise ValueError("governor plan unit count differs from its request")
+        if record.get("kind") != request["kind"]:
+            raise ValueError("governor plan kind differs from its request")
+        preserve = request["kind"] in INTACT_ARTIFACT_BATCH_KINDS
+        if record.get("preserve_artifact_intact") is not preserve:
+            raise ValueError("governor artifact-preservation flag is invalid")
+        if record.get("embedded_entries_are_batch_units") is not False:
+            raise ValueError("governor counted embedded entries as batch units")
+        reasons = record.get("decision_reasons")
+        if not isinstance(reasons, list) or not reasons or any(
+            not isinstance(reason, str) or not reason.strip() for reason in reasons
+        ):
+            raise ValueError("governor plan must retain decision reasons")
+        limiting = record.get("limiting_signals")
+        if not isinstance(limiting, list) or any(
+            signal not in GOVERNOR_SIGNAL_NAMES for signal in limiting
+        ):
+            raise ValueError("governor limiting signals are invalid")
+        parse_recorded_utc(record.get("created_utc"), "governor plan created_utc")
+        previous_hash = record["record_sha256"]
+        plans.append(record)
+    return plans
+
+
+def governor_outcome_records(worker, plans=None):
+    plans = governor_plan_records(worker) if plans is None else plans
+    plan_by_id = {record["plan_id"]: record for record in plans}
+    outcomes = []
+    seen_plans = set()
+    previous_hash = "NONE"
+    for sequence, path in enumerate(
+        governor_record_files(worker, GOVERNOR_OUTCOMES_ROOT), start=1
+    ):
+        record = read_json(path)
+        expected_fields = {
+            "completed_units", "created_utc", "evidence", "plan_id",
+            "plan_record_sha256", "prior_outcome_sha256", "record_sha256", "schema",
+            "sequence", "status",
+        }
+        require_exact_fields(record, expected_fields, "governor outcome record")
+        if record.get("schema") != "ai-human.work-governor-outcome/v1":
+            raise ValueError("unsupported governor outcome record schema")
+        if record.get("sequence") != sequence:
+            raise ValueError("governor outcome sequence is not contiguous")
+        plan_id = governor_safe_id(record.get("plan_id", ""), "governor outcome plan id")
+        if path.name != f"{sequence:06d}-{plan_id}.json":
+            raise ValueError("governor outcome filename does not match its record")
+        if plan_id in seen_plans:
+            raise ValueError("governor plan has more than one outcome")
+        seen_plans.add(plan_id)
+        plan = plan_by_id.get(plan_id)
+        if not plan:
+            raise ValueError("governor outcome references an unknown plan")
+        if plan["effective_batch"] == 0:
+            raise ValueError("a halted governor plan cannot have an execution outcome")
+        if record.get("plan_record_sha256") != plan["record_sha256"]:
+            raise ValueError("governor outcome plan hash mismatch")
+        if record.get("prior_outcome_sha256") != previous_hash:
+            raise ValueError("governor outcome hash chain is broken")
+        if record.get("record_sha256") != governed_record_sha256(record):
+            raise ValueError("governor outcome record hash mismatch")
+        if record.get("status") not in GOVERNOR_OUTCOME_STATUSES:
+            raise ValueError("governor outcome status is invalid")
+        completed = positive_integer(
+            record.get("completed_units"), "governor completed units", allow_zero=True
+        )
+        if completed > plan["independent_units"]:
+            raise ValueError("governor outcome completed units exceed the plan")
+        if record["status"] == "SUCCESS" and completed != plan["independent_units"]:
+            raise ValueError("a successful governor outcome must complete every planned unit")
+        if record["status"] == "PARTIAL" and not 0 < completed < plan["independent_units"]:
+            raise ValueError("a partial governor outcome must complete some but not all units")
+        if not isinstance(record.get("evidence"), str):
+            raise ValueError("governor outcome evidence must be text")
+        bounded_clean(record["evidence"], "governor outcome evidence", 2000)
+        parse_recorded_utc(record.get("created_utc"), "governor outcome created_utc")
+        previous_hash = record["record_sha256"]
+        outcomes.append(record)
+    return outcomes
+
+
+def validate_governor_decision_replay(worker, plans, outcomes):
+    catalog = governor_policy_catalog(worker)
+    plan_sequence = {record["plan_id"]: record["sequence"] for record in plans}
+    for index, plan in enumerate(plans):
+        policy = catalog[plan["policy_sha256"]]
+        prior_outcomes = [
+            outcome for outcome in outcomes
+            if plan_sequence[outcome["plan_id"]] < plan["sequence"]
+        ]
+        replay = governor_decision(policy, plan["request"], plans[:index], prior_outcomes)
+        for field in (
+            "batch_sizes", "decision_reasons", "effective_batch", "governor_state",
+            "limiting_signals",
+        ):
+            if plan[field] != replay[field]:
+                raise ValueError("governor plan decision replay mismatch: " + field)
+
+
+def validate_governor_state(worker):
+    failures = []
+    root = worker / GOVERNOR_ROOT
+    if not root.exists():
+        return failures
+    if root.is_symlink() or not root.is_dir():
+        return ["governor state root must be a real directory"]
+    allowed = {"policy.json", "policies", "plans", "outcomes"}
+    for path in root.iterdir():
+        if path.name not in allowed:
+            failures.append("governor state contains a forbidden entry: " + path.name)
+        elif path.is_symlink():
+            failures.append("governor state may not contain symbolic links: " + path.name)
+    try:
+        if not (worker / GOVERNOR_POLICY_PATH).is_file():
+            raise ValueError("governor policy is missing")
+        governor_policy(worker)
+        plans = governor_plan_records(worker)
+        outcomes = governor_outcome_records(worker, plans)
+        validate_governor_decision_replay(worker, plans, outcomes)
+    except Exception as exc:
+        failures.append("invalid work governor state: " + str(exc))
+    return failures
 
 
 def validate_gate_profile(data, expected=None):
@@ -1658,6 +2128,9 @@ def controlled_state_paths(worker):
             path = worker / relative
             if path.is_file():
                 paths.append(path)
+    governor_root = worker / GOVERNOR_ROOT
+    if governor_root.is_dir():
+        paths.extend(path for path in governor_root.rglob("*.json") if path.is_file())
     return sorted(paths, key=lambda path: path.relative_to(worker).as_posix())
 
 
@@ -1724,6 +2197,407 @@ def unique_receipt(worker, prefix):
         path = parent / (stem + "-" + str(counter) + ".json")
         counter += 1
     return path
+
+
+def read_governor_input(raw_path, label):
+    path = Path(raw_path).expanduser().resolve()
+    if not path.is_file():
+        raise ValueError(label + " is not a file: " + str(path))
+    if path.stat().st_size > 1024 * 1024:
+        raise ValueError(label + " exceeds one megabyte")
+    try:
+        return read_json(path)
+    except Exception as exc:
+        raise ValueError("invalid " + label + ": " + str(exc)) from exc
+
+
+def write_governor_policy_history(worker, policy):
+    digest = canonical_json_sha256(policy)
+    filename = (
+        f"v{policy['policy_version']:06d}-{policy['policy_id']}-{digest[:12]}.json"
+    )
+    path = governor_path(
+        worker, GOVERNOR_POLICIES_ROOT / filename, "governor policy history target"
+    )
+    if path.exists():
+        if not path.is_file() or read_json(path) != policy:
+            raise ValueError("governor policy history target already contains different data")
+        return path
+    path.parent.mkdir(parents=True, exist_ok=True)
+    atomic_json(path, policy)
+    return path
+
+
+def installed_worker_batch_cap(worker):
+    metadata = install_metadata(worker)
+    value = metadata.get("batch_cap")
+    if value is None:
+        parameter = parameter_value(worker, "Batch cap")
+        match = re.match(r"^([1-9]\d*)\b", parameter)
+        if not match:
+            raise ValueError("installed worker batch cap is unavailable")
+        value = int(match.group(1))
+    if isinstance(value, bool) or not isinstance(value, int) or not 1 <= value <= BATCH_CAP:
+        raise ValueError("installed worker batch cap is invalid")
+    return value
+
+
+def governor_configure(args):
+    worker = safe_worker(args.worker)
+    lease, _state_hash = require_lease(
+        worker, args.session_id, args.expected_state_hash
+    )
+    proposed = validate_governor_policy(
+        read_governor_input(args.policy, "governor policy source")
+    )
+    if proposed["owner"] != lease["actor"]:
+        raise ValueError("governor policy owner must match the active lease actor")
+    worker_cap = installed_worker_batch_cap(worker)
+    if proposed["hard_ceiling"] > worker_cap:
+        raise ValueError(
+            "governor hard ceiling cannot exceed the worker policy cap of " + str(worker_cap)
+        )
+    current = governor_policy(worker, required=False)
+    if current:
+        failures = validate_governor_state(worker)
+        if failures:
+            raise ValueError("cannot replace invalid governor state: " + "; ".join(failures))
+        if proposed["policy_id"] != current["policy_id"]:
+            raise ValueError("governor policy id cannot change in place")
+        if proposed["owner"] != current["owner"]:
+            raise ValueError("governor policy owner cannot change in place")
+        if proposed["policy_version"] != current["policy_version"] + 1:
+            raise ValueError("governor policy version must advance by exactly one")
+        if proposed["approval_reference"] == current["approval_reference"]:
+            raise ValueError("a new governor policy version needs a new approval reference")
+        for existing in governor_policy_catalog(worker).values():
+            if (
+                existing["policy_version"] == proposed["policy_version"]
+                and existing != proposed
+            ):
+                raise ValueError(
+                    "a different pending governor policy already uses that version"
+                )
+        write_governor_policy_history(worker, current)
+    elif proposed["policy_version"] != 1:
+        raise ValueError("the first governor policy version must be 1")
+    history_path = write_governor_policy_history(worker, proposed)
+    policy_path = governor_path(
+        worker, GOVERNOR_POLICY_PATH, "governor policy target"
+    )
+    policy_path.parent.mkdir(parents=True, exist_ok=True)
+    atomic_json(policy_path, proposed)
+    updated = refresh_lease_state(worker, lease)
+    print("AI-HUMAN WORK GOVERNOR CONFIGURATION: PASS")
+    print("- policy: " + proposed["policy_id"])
+    print("- policy version: " + str(proposed["policy_version"]))
+    print("- hard safety ceiling: " + str(proposed["hard_ceiling"]))
+    print("- history: " + str(history_path))
+    print("- new expected-state hash: " + updated["state_hash"])
+
+
+def governor_outcomes_by_plan(outcomes):
+    return {record["plan_id"]: record for record in outcomes}
+
+
+def governor_recent_scope_history(plans, outcomes, policy_hash, request):
+    outcomes_by_plan = governor_outcomes_by_plan(outcomes)
+    history = []
+    for plan in plans:
+        if (
+            plan["policy_sha256"] == policy_hash
+            and plan["kind"] == request["kind"]
+            and plan["request"]["effect"] == request["effect"]
+            and plan["plan_id"] in outcomes_by_plan
+        ):
+            history.append(outcomes_by_plan[plan["plan_id"]])
+    return history
+
+
+def governor_decision(policy, request, plans, outcomes):
+    policy_hash = canonical_json_sha256(policy)
+    history = governor_recent_scope_history(plans, outcomes, policy_hash, request)
+    unknown = [
+        name for name in GOVERNOR_SIGNAL_NAMES
+        if request["signals"][name]["status"] == "UNKNOWN"
+    ]
+    confirmed_allowances = {
+        name: request["signals"][name]["allowance"]
+        for name in GOVERNOR_SIGNAL_NAMES
+        if request["signals"][name]["status"] == "CONFIRMED"
+    }
+    observation_codes = {item["code"] for item in request["observations"]}
+    consecutive_successes = 0
+    for outcome in reversed(history):
+        if outcome["status"] != "SUCCESS":
+            break
+        consecutive_successes += 1
+    latest_status = history[-1]["status"] if history else None
+    state = "PILOT"
+    reasons = []
+
+    if request["effect"] == "GATE_ZERO":
+        state = "HALT"
+        reasons.append("Gate 0 work cannot be batch-authorized by the governor")
+    elif observation_codes & GOVERNOR_HALT_OBSERVATIONS:
+        state = "HALT"
+        reasons.append(
+            "halt observation: "
+            + ", ".join(sorted(observation_codes & GOVERNOR_HALT_OBSERVATIONS))
+        )
+    elif latest_status in GOVERNOR_FATAL_OUTCOMES:
+        state = "HALT"
+        reasons.append("latest recorded outcome requires owner recovery: " + latest_status)
+    elif request["effect"] == "EXTERNAL_NON_IDEMPOTENT" and unknown:
+        state = "HALT"
+        reasons.append(
+            "non-idempotent external work cannot proceed while "
+            + ", ".join(unknown) + " is UNKNOWN"
+        )
+    elif unknown and (
+        policy[
+            "unknown_read_only" if request["effect"] == "READ_ONLY" else
+            "unknown_local_reversible" if request["effect"] == "LOCAL_REVERSIBLE" else
+            "unknown_external"
+        ] == "HALT"
+    ):
+        if request["effect"] == "READ_ONLY":
+            unknown_rule = policy["unknown_read_only"]
+        elif request["effect"] == "LOCAL_REVERSIBLE":
+            unknown_rule = policy["unknown_local_reversible"]
+        else:
+            unknown_rule = policy["unknown_external"]
+        state = unknown_rule
+        reasons.append(
+            ", ".join(unknown) + " is UNKNOWN; owner policy requires " + unknown_rule
+        )
+    elif observation_codes & GOVERNOR_BACKOFF_OBSERVATIONS:
+        state = "BACKOFF"
+        reasons.append(
+            "backoff observation: "
+            + ", ".join(sorted(observation_codes & GOVERNOR_BACKOFF_OBSERVATIONS))
+        )
+    elif latest_status and latest_status != "SUCCESS":
+        state = "BACKOFF"
+        reasons.append("latest recorded outcome requires backoff: " + latest_status)
+    elif unknown:
+        state = "PILOT"
+        reasons.append(
+            ", ".join(unknown) + " is UNKNOWN; owner policy requires PILOT"
+        )
+    elif consecutive_successes >= policy["promotion_successes"]:
+        state = "STEADY"
+        reasons.append(
+            "owner evidence rule satisfied by " + str(consecutive_successes)
+            + " consecutive successful outcome receipt(s)"
+        )
+    else:
+        state = "PILOT"
+        reasons.append(
+            "pilot required until " + str(policy["promotion_successes"])
+            + " consecutive successful outcome receipt(s) exist"
+        )
+
+    if state == "HALT":
+        effective = 0
+    else:
+        limits = [
+            policy["hard_ceiling"], request["independent_units"],
+            *confirmed_allowances.values(),
+        ]
+        effective = min(limits)
+        if state in {"PILOT", "BACKOFF"}:
+            effective = min(effective, policy["pilot_size"])
+    limiting = sorted(
+        name for name, allowance in confirmed_allowances.items()
+        if effective and allowance == effective
+    )
+    sizes = []
+    remaining = request["independent_units"] if effective else 0
+    while remaining:
+        size = min(remaining, effective)
+        sizes.append(size)
+        remaining -= size
+    return {
+        "batch_sizes": sizes,
+        "decision_reasons": reasons,
+        "effective_batch": effective,
+        "governor_state": state,
+        "limiting_signals": limiting,
+    }
+
+
+def governor_plan(args):
+    worker = safe_worker(args.worker)
+    lease, _state_hash = require_lease(
+        worker, args.session_id, args.expected_state_hash
+    )
+    failures = validate_governor_state(worker)
+    if failures:
+        raise ValueError("cannot plan with invalid governor state: " + "; ".join(failures))
+    policy = governor_policy(worker)
+    request = validate_governor_request(
+        read_governor_input(args.request, "governor request source")
+    )
+    plans = governor_plan_records(worker)
+    outcomes = governor_outcome_records(worker, plans)
+    outcomes_by_plan = governor_outcomes_by_plan(outcomes)
+    outstanding = next(
+        (
+            plan for plan in plans
+            if plan["effective_batch"] > 0 and plan["plan_id"] not in outcomes_by_plan
+        ),
+        None,
+    )
+    if outstanding:
+        raise ValueError(
+            "plan " + outstanding["plan_id"]
+            + " is still open; record its outcome before planning more work"
+        )
+    if any(plan["request"]["request_id"] == request["request_id"] for plan in plans):
+        raise ValueError("governor request id was already planned")
+    decision = governor_decision(policy, request, plans, outcomes)
+    sequence = len(plans) + 1
+    plan_id = f"plan-{sequence:06d}-{request['request_id']}"
+    if len(plan_id.encode("utf-8")) > 100:
+        plan_id = f"plan-{sequence:06d}-{canonical_json_sha256(request)[:20]}"
+    record = {
+        "batch_sizes": decision["batch_sizes"],
+        "created_utc": now_utc(),
+        "decision_reasons": decision["decision_reasons"],
+        "effective_batch": decision["effective_batch"],
+        "embedded_entries_are_batch_units": False,
+        "governor_state": decision["governor_state"],
+        "independent_units": request["independent_units"],
+        "kind": request["kind"],
+        "limiting_signals": decision["limiting_signals"],
+        "plan_id": plan_id,
+        "policy_id": policy["policy_id"],
+        "policy_sha256": canonical_json_sha256(policy),
+        "policy_version": policy["policy_version"],
+        "preserve_artifact_intact": request["kind"] in INTACT_ARTIFACT_BATCH_KINDS,
+        "prior_plan_sha256": plans[-1]["record_sha256"] if plans else "NONE",
+        "request": request,
+        "request_sha256": canonical_json_sha256(request),
+        "safety_ceiling": policy["hard_ceiling"],
+        "schema": "ai-human.work-governor-plan/v1",
+        "sequence": sequence,
+    }
+    record["record_sha256"] = governed_record_sha256(record)
+    target = governor_path(
+        worker, GOVERNOR_PLANS_ROOT / f"{sequence:06d}-{plan_id}.json",
+        "governor plan target",
+    )
+    target.parent.mkdir(parents=True, exist_ok=True)
+    atomic_json(target, record)
+    updated = refresh_lease_state(worker, lease)
+    print("AI-HUMAN WORK GOVERNOR PLAN: PASS")
+    print("- plan id: " + plan_id)
+    print("- governor state: " + record["governor_state"])
+    print("- hard safety ceiling: " + str(record["safety_ceiling"]))
+    print("- effective batch: " + str(record["effective_batch"]))
+    print(
+        "- limiting signals: "
+        + (", ".join(record["limiting_signals"]) or "NONE")
+    )
+    print(
+        "- batch sizes: "
+        + (", ".join(str(size) for size in record["batch_sizes"]) or "NONE")
+    )
+    print(
+        "- preserve artifact intact: "
+        + ("YES" if record["preserve_artifact_intact"] else "NO")
+    )
+    for reason in record["decision_reasons"]:
+        print("- reason: " + reason)
+    print("- receipt: " + str(target))
+    print("- new expected-state hash: " + updated["state_hash"])
+
+
+def governor_record(args):
+    worker = safe_worker(args.worker)
+    lease, _state_hash = require_lease(
+        worker, args.session_id, args.expected_state_hash
+    )
+    failures = validate_governor_state(worker)
+    if failures:
+        raise ValueError("cannot record into invalid governor state: " + "; ".join(failures))
+    request = validate_governor_outcome_request(
+        read_governor_input(args.outcome, "governor outcome source")
+    )
+    plans = governor_plan_records(worker)
+    outcomes = governor_outcome_records(worker, plans)
+    plan = next((item for item in plans if item["plan_id"] == request["plan_id"]), None)
+    if not plan:
+        raise ValueError("governor outcome references an unknown plan")
+    if plan["effective_batch"] == 0:
+        raise ValueError("a halted governor plan has no executable outcome to record")
+    if any(item["plan_id"] == plan["plan_id"] for item in outcomes):
+        raise ValueError("governor plan already has an immutable outcome")
+    if request["completed_units"] > plan["independent_units"]:
+        raise ValueError("governor completed units exceed the plan")
+    if (
+        request["status"] == "SUCCESS"
+        and request["completed_units"] != plan["independent_units"]
+    ):
+        raise ValueError("a successful governor outcome must complete every planned unit")
+    if (
+        request["status"] == "PARTIAL"
+        and not 0 < request["completed_units"] < plan["independent_units"]
+    ):
+        raise ValueError("a partial governor outcome must complete some but not all units")
+    sequence = len(outcomes) + 1
+    record = {
+        "completed_units": request["completed_units"],
+        "created_utc": now_utc(),
+        "evidence": request["evidence"],
+        "plan_id": plan["plan_id"],
+        "plan_record_sha256": plan["record_sha256"],
+        "prior_outcome_sha256": outcomes[-1]["record_sha256"] if outcomes else "NONE",
+        "schema": "ai-human.work-governor-outcome/v1",
+        "sequence": sequence,
+        "status": request["status"],
+    }
+    record["record_sha256"] = governed_record_sha256(record)
+    target = governor_path(
+        worker, GOVERNOR_OUTCOMES_ROOT / f"{sequence:06d}-{plan['plan_id']}.json",
+        "governor outcome target",
+    )
+    target.parent.mkdir(parents=True, exist_ok=True)
+    atomic_json(target, record)
+    updated = refresh_lease_state(worker, lease)
+    print("AI-HUMAN WORK GOVERNOR OUTCOME: PASS")
+    print("- plan id: " + plan["plan_id"])
+    print("- outcome: " + record["status"])
+    print("- completed units: " + str(record["completed_units"]))
+    print("- receipt: " + str(target))
+    print("- new expected-state hash: " + updated["state_hash"])
+
+
+def governor_show(args):
+    worker = safe_worker(args.worker)
+    policy = governor_policy(worker, required=False)
+    print("AI-HUMAN WORK GOVERNOR")
+    if not policy:
+        print("- status: UNCONFIGURED")
+        return
+    failures = validate_governor_state(worker)
+    if failures:
+        raise ValueError("invalid governor state: " + "; ".join(failures))
+    plans = governor_plan_records(worker)
+    outcomes = governor_outcome_records(worker, plans)
+    outcomes_by_plan = governor_outcomes_by_plan(outcomes)
+    outstanding = [
+        plan["plan_id"] for plan in plans
+        if plan["effective_batch"] > 0 and plan["plan_id"] not in outcomes_by_plan
+    ]
+    print("- status: CONFIGURED")
+    print("- policy: " + policy["policy_id"])
+    print("- policy version: " + str(policy["policy_version"]))
+    print("- hard safety ceiling: " + str(policy["hard_ceiling"]))
+    print("- latest state: " + (plans[-1]["governor_state"] if plans else "NOT YET PLANNED"))
+    print("- outstanding plan: " + (outstanding[0] if outstanding else "NONE"))
+    print("- recorded outcomes: " + str(len(outcomes)))
 
 
 def state_hashes(worker):
@@ -2188,6 +3062,12 @@ def validate_worker(worker, quiet=False, allow_transaction=False):
                 failures.append(str(exc))
         if metadata.get("automatic_updates") not in {None, "DISABLED", "ACTIVE"}:
             failures.append("invalid automatic update setting")
+        if "batch_cap" in metadata and (
+            isinstance(metadata["batch_cap"], bool)
+            or not isinstance(metadata["batch_cap"], int)
+            or not 1 <= metadata["batch_cap"] <= BATCH_CAP
+        ):
+            failures.append("invalid installed batch cap")
         required_identity = {
             "company", "legal_entity", "operating_units", "jurisdictions",
             "purpose_scope", "user_relationship", "compliance_owner",
@@ -2331,6 +3211,7 @@ def validate_worker(worker, quiet=False, allow_transaction=False):
             failures.append("live task is missing from TODAY.md: " + task_id)
     failures.extend(validate_improvement_state(worker))
     failures.extend(validate_autonomy_state(worker, version))
+    failures.extend(validate_governor_state(worker))
     failures.extend(validate_completion_records(worker))
     lease = None
     try:
@@ -2373,6 +3254,7 @@ def install(args):
     rendered_gate_files = render_gate_files(gate_profile)
     settings = {
         "automatic_updates": "ACTIVE" if args.automatic_updates else "DISABLED",
+        "batch_cap": args.batch_cap,
         **expected_profile,
         "gate_profile_id": gate_profile["profile_id"],
     }
@@ -7025,6 +7907,31 @@ def parser():
         help="offset-aware worker-local date-time for the confirmed fleet cohort",
     )
     fleet_p.set_defaults(handler=fleet_update)
+
+    governor_configure_p = sub.add_parser("governor-configure")
+    governor_configure_p.add_argument("worker")
+    governor_configure_p.add_argument("--session-id", required=True)
+    governor_configure_p.add_argument("--expected-state-hash", required=True)
+    governor_configure_p.add_argument("--policy", required=True)
+    governor_configure_p.set_defaults(handler=governor_configure)
+
+    governor_plan_p = sub.add_parser("governor-plan")
+    governor_plan_p.add_argument("worker")
+    governor_plan_p.add_argument("--session-id", required=True)
+    governor_plan_p.add_argument("--expected-state-hash", required=True)
+    governor_plan_p.add_argument("--request", required=True)
+    governor_plan_p.set_defaults(handler=governor_plan)
+
+    governor_record_p = sub.add_parser("governor-record")
+    governor_record_p.add_argument("worker")
+    governor_record_p.add_argument("--session-id", required=True)
+    governor_record_p.add_argument("--expected-state-hash", required=True)
+    governor_record_p.add_argument("--outcome", required=True)
+    governor_record_p.set_defaults(handler=governor_record)
+
+    governor_show_p = sub.add_parser("governor-show")
+    governor_show_p.add_argument("worker")
+    governor_show_p.set_defaults(handler=governor_show)
 
     batch_plan_p = sub.add_parser("batch-plan")
     batch_plan_p.add_argument("kind", choices=BATCH_KINDS)

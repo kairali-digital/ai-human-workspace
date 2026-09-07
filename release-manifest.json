@@ -8,12 +8,12 @@
   },
   "managed_files": [
     {
-      "sha256": "4e131c63dffa09d20543958c9ba32a481ba3977ebf833b5e8c92019c36f9e7d0",
+      "sha256": "e0c0340613a52a32651b906364beb5bf2ddb985a4bac8815ac46f8cd02d4f773",
       "source": "core/AI-HUMAN.md",
       "target": ".ai-human/system/AI-HUMAN.md"
     },
     {
-      "sha256": "6a2d5638c5bbf41c25703823e8cc4d6aa9c4791747461aee520004fe21e9f381",
+      "sha256": "358a6d8985d118f1ef196a9943beee9fae535ef8e510ceb79b88471a2ac08f90",
       "source": "core/AGENT-RULES.md",
       "target": ".ai-human/system/AGENT-RULES.md"
     },
@@ -33,9 +33,14 @@
       "target": ".ai-human/system/QUARTERLY-IMPROVEMENT.md"
     },
     {
-      "sha256": "730b41d7bf757464cc555c16fbe919b6031912376643334085d952e05fa61027",
+      "sha256": "785f85feb8e0c6fc6885e0d48987df25ba52d946e70a683d607dcb652917b66f",
       "source": "core/OPERATING-LOOP.md",
       "target": ".ai-human/system/OPERATING-LOOP.md"
+    },
+    {
+      "sha256": "7ba2db30478db29eafcb2be979ff1b1e919e2c7297d5296c0b45acbf55b2ae24",
+      "source": "core/WORK-GOVERNOR.md",
+      "target": ".ai-human/system/WORK-GOVERNOR.md"
     },
     {
       "sha256": "f5c1dcda603c3d3bc6a239470f7e0a7044f00b097c94ee99b52bf49dc1cdf972",
@@ -63,7 +68,7 @@
       "target": ".ai-human/VERSION"
     },
     {
-      "sha256": "ed84d52a11e7522480556300f32f97dbc86eee168cf89e16e8addd5421e5384f",
+      "sha256": "d0dbaa3306473571cdb08c8c9830296405ee9ab69c25837a42039a0cfbf7758f",
       "source": "scripts/ai_human.py",
       "target": ".ai-human/bin/ai_human.py"
     }
@@ -94,6 +99,7 @@
     ".ai-human/capabilities/",
     ".ai-human/improvement/",
     ".ai-human/autonomy/",
+    ".ai-human/governor/",
     ".ai-human/backups/",
     ".ai-human/downgrade-exports/",
     ".ai-human/version-report.json",

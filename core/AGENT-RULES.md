@@ -28,12 +28,15 @@
    without that ID the write permission is not active. Call `task-complete` after the
    readback and before answering. A standalone worker `validate` PASS does not close or
    prove an unregistered write.
-3. Name the independent batch unit before applying the local batch cap. The cap applies
-   to separately executed items, separately processed people/workers/artifacts and
-   repeated external writes. Entries embedded in one authorized artifact or assignment
-   intake are not separate batch units: preserve the complete artifact and never
-   truncate or partially upload it. If entries become separate records or actions,
-   each one is a batch unit. Stop each execution batch at the cap and checkpoint.
+3. Follow `WORK-GOVERNOR.md` before executing bounded work. Name the independent batch
+   unit, classify the effect and submit every required signal as `CONFIRMED` with
+   evidence or `UNKNOWN` with a reason. The installed cap is a hard safety ceiling, not
+   a target. The governor may only keep or reduce it and emits `PILOT`, `STEADY`,
+   `BACKOFF` or `HALT`; execute only its receipt and record the real outcome before
+   planning more work. Never edit or version a governor policy without the owner's
+   explicit approval. Entries embedded in one authorized artifact or assignment intake
+   are content, not separate units; preserve the complete artifact. Separately executed
+   records or actions remain separate units.
 4. A change is not complete until the result is verified and recorded.
 5. Capture new ideas in `OPEN_REGISTER.md`; do not interrupt the live task.
 6. Never invent a number, fact, source, permission, approval or completion. Use only

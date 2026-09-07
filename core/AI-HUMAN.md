@@ -51,6 +51,12 @@ One session owns the writer lease. Cursor, register, today, ledger, evidence and
 capability records change only through an expected-state commit. A conflicting writer
 or stale hash stops instead of overwriting newer state.
 
+The private work governor keeps its owner-versioned policy, exact signal request,
+decision and outcome receipts under `.ai-human/governor/`. Its configured ceiling can
+never exceed the worker policy or product safety ceiling. Runtime evidence may promote
+a proven scope from pilot to steady operation; missing or unhealthy evidence can only
+reduce capacity or halt it. Updates never manage or replace this private state.
+
 Process stays proportional to effect. A read-only answer creates no task state. A clear
 user request for ordinary reversible local work uses standing worker-local permissions
 and deterministic task start/close commands, which auto-name the task when needed and

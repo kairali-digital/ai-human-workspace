@@ -8,7 +8,12 @@
   },
   "managed_files": [
     {
-      "sha256": "e7b64858664c3d5bade439ab1039797d2002c16b5d7d70289d365559e7b8a526",
+      "sha256": "6602ea17e613401e665ac3454579cab7e88521bdac8a9aa7726cc7d26c5ce9f9",
+      "source": "core/PERSONAL-CONTEXT-RADAR.md",
+      "target": ".ai-human/system/PERSONAL-CONTEXT-RADAR.md"
+    },
+    {
+      "sha256": "5bb22bed6a50e14082bed8c888b3c5ff44eac536bb9a16a08a2d6de8e5ab3378",
       "source": "core/AI-HUMAN.md",
       "target": ".ai-human/system/AI-HUMAN.md"
     },
@@ -78,7 +83,7 @@
       "target": ".ai-human/VERSION"
     },
     {
-      "sha256": "f7209a1011369449c2576b363896d9e2e361ca7e177b12ec2d6827c1487ae9a4",
+      "sha256": "b8c44913075f7eec025b72ca7cb78b8f279227507fce261e9cdebef7da960b9c",
       "source": "scripts/ai_human.py",
       "target": ".ai-human/bin/ai_human.py"
     }
@@ -112,6 +117,7 @@
     ".ai-human/governor/",
     ".ai-human/continuity/",
     ".ai-human/resources/",
+    ".ai-human/personal/",
     ".ai-human/backups/",
     ".ai-human/downgrade-exports/",
     ".ai-human/version-report.json",

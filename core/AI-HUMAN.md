@@ -91,6 +91,11 @@ activates a capability by itself. The brief keeps decision history and records o
 owner-supplied time measurements. Scheduler availability, the visible Scheduled card,
 exact prompt fingerprint and next run are verified separately from local configuration.
 
+Personal context discovery and the Opportunity Radar start OFF. Follow
+`PERSONAL-CONTEXT-RADAR.md` for explicit identity/source consent, private map review,
+correction, forgetting, retention and separately verified suggestion-only schedules.
+USER_GLOBAL scope remains at its designated owner; it never grants cross-worker reads.
+
 ## Isolation
 
 Every user, specialist or project uses a separate worker folder. Shared facts have

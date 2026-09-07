@@ -138,6 +138,7 @@ CONTEXT_DIRECTIVES = {
 CONTEXT_NEW_WORK_COMMANDS = {
     "task-start", "governor-plan", "action-execute", "improvement-run",
     "autonomy-skill-install", "resource-snapshot", "resource-plan",
+    "work-map-discover", "work-map-record", "radar-run",
 }
 HANDOFF_REQUEST_FIELDS = {
     "active_gates", "approval_boundaries", "done_condition", "expires_utc",
@@ -225,6 +226,8 @@ MODE_GUARDED_COMMANDS = {
     "continuity-configure", "context-check", "handoff-create", "handoff-consume",
     "continuity-recover",
     "resource-configure", "resource-snapshot", "resource-plan", "resource-record",
+    "work-map-consent", "work-map-discover", "work-map-record", "radar-configure",
+    "radar-verify", "radar-run", "radar-decide",
 }
 COORDINATION_STATE_FILES = (
     "MASTER_CURSOR.md", "OPEN_REGISTER.md", "TODAY.md",
@@ -246,6 +249,7 @@ STATE_FILES = (
     "AUTOMATIONS.md", "START-HERE.md", "READ-ME-FIRST.txt",
 )
 INTRINSIC_NEVER_MANAGED = set(STATE_FILES) | {
+    ".ai-human/personal/",
     ".ai-human/control/",
     ".ai-human/capabilities/",
     ".ai-human/improvement/",
@@ -2626,6 +2630,573 @@ def contains_secret_material(value):
     return any(re.search(pattern, serialized, flags=re.I) for pattern in patterns)
 
 
+# H-54 has one private, atomically replaced document. Missing/legacy state is OFF.
+# Global is a scope label at its designated owner, never a cross-worker read path.
+WORK_MAP_PATH = Path(".ai-human/personal/work-map.json")
+WORK_MAP_TX_PATH = Path(".ai-human/control/work-map-transaction.json")
+WORK_MAP_SCOPES = {"WORKER_LOCAL", "USER_GLOBAL"}
+WORK_MAP_KINDS = {"SKILL", "WORKER_OR_BOT", "PROJECT", "LEARNING", "PROCESS_FIX"}
+
+
+def map_fields(value, fields, label):
+    if not isinstance(value, dict) or set(value) != set(fields.split()):
+        raise ValueError(label + " fields differ from required schema")
+    return value
+
+
+def map_text(value, label, limit=1000):
+    if not isinstance(value, str):
+        raise ValueError(label + " must be text")
+    result = bounded_clean(value, label, limit)
+    # Deny common credentials even when punctuation/JSON obscures the assignment.
+    if contains_secret_material(value) or re.search(
+        r"(?i)(?:bearer\s+[a-z0-9._-]{12,}|(?:password|api[_ -]?key|access[_ -]?token|secret)"
+        r"[\s\"']*[:=][\s\"']*\S+|AKIA[0-9A-Z]{16}|sk-[a-z0-9_-]{20,})", result
+    ):
+        raise ValueError(label + " contains possible credential material")
+    return result
+
+
+def map_id(value):
+    if not isinstance(value, str) or not COMPONENT_ID.fullmatch(value) or len(value) > 80:
+        raise ValueError("work-map identifier must be a bounded lowercase slug")
+    return value
+
+
+def map_path(worker):
+    return worker_target(worker, WORK_MAP_PATH, "private work map")
+
+
+def map_expiry(value, label, maximum=365):
+    moment = parse_recorded_utc(value, label)
+    current = parse_recorded_utc(now_utc(), "now")
+    if not current < moment <= current + datetime.timedelta(days=maximum):
+        raise ValueError(label + " must be in the future within retention policy")
+    return value
+
+
+def work_map(worker, required=True):
+    path = map_path(worker)
+    if not path.exists():
+        if required:
+            raise ValueError("personal context is OFF; explicit identity and source consent required")
+        return None
+    data = read_json(path)
+    map_fields(data, "schema worker_id identity_sha256 owner identity consent consent_expires_utc status retention_days sources entries suggestions decisions radar revision", "work map")
+    if data["schema"] != "ai-human.work-map/v1":
+        raise ValueError("unsupported work-map schema; explicit re-consent required")
+    if data["worker_id"] != installed_worker_id(worker) or data["identity_sha256"] != worker_identity_sha256(worker):
+        raise ValueError("work map belongs to a different worker identity")
+    map_text(data["owner"], "map owner")
+    if data["status"] not in {"DRAFT", "CONFIRMED", "REVOKED"}:
+        raise ValueError("invalid map status")
+    if type(data["revision"]) is not int or data["revision"] < 1:
+        raise ValueError("invalid map revision")
+    if type(data["retention_days"]) is not int or not 1 <= data["retention_days"] <= 365:
+        raise ValueError("retention must be 1..365 days")
+    for name in ("sources", "entries", "suggestions", "decisions"):
+        if not isinstance(data[name], dict) or len(data[name]) > 250:
+            raise ValueError("work-map collection exceeds bounded retention")
+    parse_recorded_utc(data["consent_expires_utc"], "consent expiry")
+    map_text(data["consent"], "consent reference")
+    if data["status"] != "REVOKED":
+        map_fields(data["identity"], "name role company unit responsibilities decision_rights goals", "declared identity")
+        for key, value in data["identity"].items():
+            map_text(value, "declared " + key)
+        if data["identity"]["name"] != data["owner"]:
+            raise ValueError("map identity differs from owner")
+    elif any(data[name] for name in ("identity", "entries", "sources", "suggestions", "decisions")):
+        raise ValueError("revoked map retains private content")
+    for identifier, source in data["sources"].items():
+        map_fields(source, "id path mode scope sensitivity status consent", "map source")
+        if map_id(identifier) != source["id"] or source["status"] not in {"APPROVED", "REVOKED"} or source["scope"] not in WORK_MAP_SCOPES or source["mode"] not in {"SUMMARY", "METADATA"} or source["sensitivity"] != "PRIVATE_WORK" or source["consent"] != data["consent"]:
+            raise ValueError("invalid stored source contract")
+        worker_target(worker, safe_relative(source["path"], "map source"), "map source")
+    for identifier, entry in data["entries"].items():
+        map_fields(entry, "id text source_id source_sha256 scope confidence review_due supersedes recorded_utc status sensitivity", "stored map entry")
+        source = data["sources"].get(entry["source_id"])
+        if map_id(identifier) != entry["id"] or not source or source["status"] != "APPROVED" or entry["scope"] != source["scope"] or entry["status"] not in {"ACTIVE", "SUPERSEDED"} or entry["confidence"] not in {"OWNER_STATED", "SOURCE_CONFIRMED", "OBSERVED_VERIFY", "UNKNOWN"} or entry["sensitivity"] != "PRIVATE_WORK":
+            raise ValueError("stored map entry crosses its source contract")
+        map_text(entry["text"], "stored entry")
+        if not SHA256_HEX.fullmatch(str(entry["source_sha256"])):
+            raise ValueError("entry lacks source hash")
+        for field in ("review_due", "recorded_utc"):
+            parse_recorded_utc(entry[field], field)
+    for identifier, card in data["suggestions"].items():
+        map_fields(card, "id kind text evidence_ids expected_output permissions risks overlap confidence value_basis signature activation decision recorded_utc", "stored suggestion")
+        if map_id(identifier) != card["id"] or card["kind"] not in WORK_MAP_KINDS or card["activation"] != "NOT_ACTIVATED" or card["decision"] != "REVIEW_REQUIRED" or not isinstance(card["evidence_ids"], list) or not card["evidence_ids"] or any(ref not in data["entries"] for ref in card["evidence_ids"]):
+            raise ValueError("invalid stored suggestion")
+        if card["signature"] != canonical_json_sha256({key: card[key] for key in ("kind", "text", "evidence_ids")}):
+            raise ValueError("stored suggestion signature differs")
+    for signature, decision in data["decisions"].items():
+        map_fields(decision, "choice until_utc expires_utc", "stored radar decision")
+        if not SHA256_HEX.fullmatch(signature) or decision["choice"] not in {"PROPOSE", "LATER", "REJECT"}:
+            raise ValueError("invalid stored radar decision")
+        parse_recorded_utc(decision["expires_utc"], "decision expiry")
+        if decision["choice"] == "LATER":
+            parse_recorded_utc(decision["until_utc"], "decision snooze")
+    if data["radar"] is not None:
+        radar = data["radar"]
+        if radar.get("status") == "NEEDS_EXTERNAL_REMOVAL":
+            map_fields(radar, "status external_id prompt_sha256", "radar removal pointer")
+            map_text(radar["external_id"], "radar external id")
+            if not SHA256_HEX.fullmatch(str(radar["prompt_sha256"])):
+                raise ValueError("radar removal pointer has invalid prompt digest")
+            return data
+        map_fields(radar, "frequency local_time timezone approval_reference status prompt prompt_sha256 proof last_consumed_due", "stored radar")
+        if radar["status"] not in {"AWAITING_VISIBLE_PROOF", "VERIFIED_ACTIVE", "VERIFIED_PAUSED", "VERIFIED_REMOVED", "UNAVAILABLE", "AWAITING_NEXT_RUN_PROOF"} or radar["frequency"] not in {"MONTHLY", "QUARTERLY"}:
+            raise ValueError("invalid stored radar status")
+        validate_timezone(radar["timezone"])
+        if not LOCAL_CLOCK.fullmatch(str(radar["local_time"])) or hashlib.sha256(radar["prompt"].encode()).hexdigest() != radar["prompt_sha256"]:
+            raise ValueError("stored radar prompt/time differs")
+    if contains_secret_material(data):
+        raise ValueError("work map contains possible secret material")
+    return data
+
+
+def map_commit(worker, lease, data):
+    """Journal only the next digest, never an extra copy of private/forgotten data."""
+    path = map_path(worker)
+    journal = worker_target(worker, WORK_MAP_TX_PATH, "map transaction")
+    if journal.exists():
+        raise ValueError("interrupted map transaction; run work-map-recover")
+    before = controlled_state_hash(worker)
+    data["revision"] += 1
+    encoded = json.dumps(data, indent=2, sort_keys=True) + "\n"
+    atomic_json(journal, {
+        "schema": "ai-human.work-map-transaction/v1", "session_id": lease["session_id"],
+        "before": before, "after_file_sha256": hashlib.sha256(encoded.encode()).hexdigest(),
+        "other_state_sha256": map_other_state_hash(worker),
+    })
+    atomic_text(path, encoded)
+    updated = refresh_lease_state(worker, lease)
+    journal.unlink()
+    print("AI-HUMAN PERSONAL CONTEXT: PASS")
+    print("- new expected-state hash: " + updated["state_hash"])
+
+
+def work_map_recover(args):
+    worker = safe_worker(args.worker)
+    journal = worker_target(worker, WORK_MAP_TX_PATH, "map transaction")
+    record = read_json(journal)
+    map_fields(record, "schema session_id before after_file_sha256 other_state_sha256", "map transaction")
+    lease = read_lease(worker)
+    if record["schema"] != "ai-human.work-map-transaction/v1" or record["session_id"] != args.session_id or lease["session_id"] != args.session_id:
+        raise ValueError("map recovery belongs to another writer")
+    current = controlled_state_hash(worker)
+    if current != args.expected_state_hash:
+        raise ValueError("recovery expected-state hash mismatch")
+    if map_other_state_hash(worker) != record["other_state_sha256"]:
+        raise ValueError("other controlled state changed during map transaction")
+    path = map_path(worker)
+    if current != record["before"]:
+        if not path.is_file() or sha256(path) != record["after_file_sha256"]:
+            raise ValueError("map recovery digest mismatch")
+        work_map(worker)
+        # Prove other controlled state did not change by hashing it with the old map
+        # excluded. The journal captures that hash before replacing this one file.
+        if lease["state_hash"] not in {record["before"], current}:
+            raise ValueError("map recovery lease differs from transaction")
+    refresh_lease_state(worker, lease)
+    journal.unlink()
+    print("AI-HUMAN WORK-MAP RECOVERY: PASS")
+
+
+def map_other_state_hash(worker):
+    digest = hashlib.sha256()
+    for path in controlled_state_paths(worker):
+        if path == worker / WORK_MAP_PATH:
+            continue
+        digest.update(path.relative_to(worker).as_posix().encode() + b"\0")
+        digest.update(bytes.fromhex(sha256(path)) if path.is_file() else b"MISSING")
+        digest.update(b"\n")
+    return digest.hexdigest()
+
+
+def validate_work_map_state(worker):
+    try:
+        work_map(worker, required=False)
+        if worker_target(worker, WORK_MAP_TX_PATH, "map transaction").exists():
+            return ["interrupted work-map transaction; run work-map-recover"]
+        return []
+    except Exception as exc:
+        return ["invalid private work map: " + str(exc)]
+
+
+def map_mutation(args):
+    worker = safe_worker(args.worker)
+    if worker_target(worker, WORK_MAP_TX_PATH, "map transaction").exists():
+        raise ValueError("interrupted map transaction; run work-map-recover")
+    lease, _ = require_lease(worker, args.session_id, args.expected_state_hash)
+    data = work_map(worker, required=False)
+    if data and data["owner"] != lease["actor"]:
+        raise ValueError("work map belongs to a different declared user")
+    return worker, lease, data
+
+
+def work_map_consent(args):
+    worker, lease, previous = map_mutation(args)
+    if previous and map_external_schedule_exists(previous):
+        raise ValueError("remove and verify the existing external radar schedule before re-consent")
+    request = read_governor_input(args.request, "personal context consent")
+    map_fields(request, "schema owner identity approval_reference retention_days sources", "consent")
+    if request["schema"] != "ai-human.work-map-consent/v1" or request["owner"] != lease["actor"]:
+        raise ValueError("consent must name the active declared user")
+    map_fields(request["identity"], "name role company unit responsibilities decision_rights goals", "declared identity")
+    for key, value in request["identity"].items():
+        map_text(value, "declared " + key)
+    if request["identity"]["name"] != request["owner"]:
+        raise ValueError("declared name differs from the consent owner")
+    approval = map_text(request["approval_reference"], "explicit informed consent")
+    if previous and approval == previous["consent"]:
+        raise ValueError("re-consent requires a fresh approval reference")
+    retention = request["retention_days"]
+    if type(retention) is not int or not 1 <= retention <= 365:
+        raise ValueError("retention must be 1..365 days")
+    if not isinstance(request["sources"], list) or len(request["sources"]) > installed_worker_batch_cap(worker):
+        raise ValueError("source choices exceed worker batch cap")
+    sources = {}
+    for source in request["sources"]:
+        map_fields(source, "id path mode scope sensitivity", "approved source")
+        identifier = map_id(source["id"])
+        relative = safe_relative(source["path"], "approved source")
+        # Never recursively scan, follow links, or reach another worker/private system.
+        if relative.parts[0].startswith(".") or any(part.startswith(".") for part in relative.parts):
+            raise ValueError("hidden/private system sources are excluded")
+        if relative.suffix.lower() not in {".md", ".txt", ".csv", ".json"}:
+            raise ValueError("source must be an explicitly selected work summary")
+        if re.search(r"(?i)(credential|password|secret|token|browser|history|cookies|contacts|mailbox)", str(relative)):
+            raise ValueError("sensitive source category is excluded")
+        worker_target(worker, relative, "approved source")
+        if source["mode"] not in {"METADATA", "SUMMARY"} or source["scope"] not in WORK_MAP_SCOPES or source["sensitivity"] != "PRIVATE_WORK":
+            raise ValueError("source mode, scope or sensitivity is invalid")
+        if identifier in sources:
+            raise ValueError("duplicate source id")
+        sources[identifier] = {**source, "path": relative.as_posix(), "status": "APPROVED", "consent": approval}
+    data = {
+        "schema": "ai-human.work-map/v1", "worker_id": installed_worker_id(worker),
+        "identity_sha256": worker_identity_sha256(worker), "owner": request["owner"],
+        "identity": request["identity"], "consent": approval, "status": "DRAFT",
+        "consent_expires_utc": (parse_recorded_utc(now_utc(), "now") + datetime.timedelta(days=retention)).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "retention_days": retention, "sources": sources, "entries": {},
+        "suggestions": {}, "decisions": {}, "radar": None,
+        "revision": previous["revision"] if previous else 0,
+    }
+    map_commit(worker, lease, data)
+
+
+def map_require_active(data):
+    if not data or data["status"] == "REVOKED":
+        raise ValueError("personal context is OFF or REVOKED; re-consent required")
+    if parse_recorded_utc(data["consent_expires_utc"], "consent expiry") <= parse_recorded_utc(now_utc(), "now"):
+        raise ValueError("personal consent expired; re-consent required")
+
+
+def map_source_snapshot(worker, data, identifier):
+    worker = Path(worker).resolve()
+    source = data["sources"].get(identifier)
+    if not source or source["status"] != "APPROVED":
+        raise ValueError("source was not approved or has been revoked")
+    path = worker_target(worker, source["path"], "approved summary source")
+    for parent in path.parents:
+        if parent == worker:
+            break
+        if (parent / ".ai-human").exists():
+            raise ValueError("another worker's private state is not an approved local summary")
+    if not path.is_file():
+        return {"status": "UNKNOWN", "source_id": identifier}
+    if path.stat().st_size > 32768:
+        raise ValueError("source exceeds concise-summary size limit")
+    result = {"status": "AVAILABLE", "source_id": identifier, "bytes": path.stat().st_size, "mode": source["mode"]}
+    if source["mode"] == "SUMMARY":
+        content = path.read_text(encoding="utf-8")
+        map_text(content, "source summary", 32768)
+        result["sha256"] = hashlib.sha256(content.encode()).hexdigest()
+        # Content remains untrusted data and is never executed or copied to global state.
+    return result
+
+
+def map_batch_cap(worker):
+    cap = installed_worker_batch_cap(worker)
+    policy = governor_policy(worker, required=False)
+    if policy:
+        failures = validate_governor_state(worker)
+        if failures:
+            raise ValueError("invalid work governor: " + "; ".join(failures))
+        plans = governor_plan_records(worker)
+        cap = min(cap, policy["hard_ceiling"], plans[-1]["effective_batch"] if plans else policy["pilot_size"])
+    if cap == 0:
+        raise ValueError("work governor is halted; radar/discovery deferred")
+    return cap
+
+
+def work_map_discover(args):
+    worker = safe_worker(args.worker)
+    data = work_map(worker)
+    if args.owner != data["owner"]:
+        raise ValueError("discovery requires the exact declared owner")
+    map_require_active(data)
+    requested = args.source or list(data["sources"])
+    if len(requested) > map_batch_cap(worker):
+        raise ValueError("discovery exceeds worker batch cap")
+    print(json.dumps([map_source_snapshot(worker, data, identifier) for identifier in requested], indent=2))
+
+
+def work_map_record(args):
+    worker, lease, data = map_mutation(args)
+    map_require_active(data)
+    map_batch_cap(worker)
+    request = read_governor_input(args.request, "map entry")
+    map_fields(request, "id text source_id source_sha256 scope confidence review_due supersedes", "map entry")
+    identifier = map_id(request["id"])
+    if identifier in data["entries"] or len(data["entries"]) >= 250:
+        raise ValueError("entry id already exists or retention capacity reached")
+    map_text(request["text"], "map entry")
+    source = data["sources"].get(request["source_id"])
+    snapshot = map_source_snapshot(worker, data, request["source_id"])
+    if snapshot.get("sha256") != request["source_sha256"] or snapshot["status"] != "AVAILABLE" or source["mode"] != "SUMMARY":
+        raise ValueError("entry requires exact current approved summary content proof")
+    if request["scope"] != source["scope"] or request["scope"] not in WORK_MAP_SCOPES:
+        raise ValueError("entry cannot promote source into another memory scope")
+    if request["confidence"] not in {"OWNER_STATED", "SOURCE_CONFIRMED", "OBSERVED_VERIFY", "UNKNOWN"}:
+        raise ValueError("invalid entry confidence")
+    map_expiry(request["review_due"], "entry review date", data["retention_days"])
+    if request["supersedes"] is not None:
+        old = data["entries"].get(request["supersedes"])
+        if not old or old["status"] != "ACTIVE":
+            raise ValueError("correction must identify one active entry")
+        old["status"] = "SUPERSEDED"
+    data["entries"][identifier] = {**request, "recorded_utc": now_utc(), "status": "ACTIVE", "sensitivity": "PRIVATE_WORK"}
+    data["status"] = "DRAFT"
+    data["radar"] = map_schedule_removal_pointer(data)
+    data["suggestions"] = {}
+    map_commit(worker, lease, data)
+
+
+def work_map_control(args):
+    worker, lease, data = map_mutation(args)
+    if args.action not in {"REVOKE", "PRUNE"}:
+        map_require_active(data)
+    elif not data:
+        raise ValueError("personal context is OFF")
+    if args.action == "CONFIRM":
+        map_text(args.approval_reference, "map confirmation")
+        data["status"] = "CONFIRMED"
+    elif args.action == "REVOKE":
+        # Delete profile/content in this same atomic replacement; no private backups.
+        pointer = map_schedule_removal_pointer(data)
+        data.update(identity={}, entries={}, sources={}, suggestions={}, decisions={}, radar=pointer, status="REVOKED")
+    elif args.action == "EXCLUDE":
+        if args.item not in data["sources"]:
+            raise ValueError("unknown source id")
+        data["sources"][args.item]["status"] = "REVOKED"
+        data["entries"] = {key: value for key, value in data["entries"].items() if value["source_id"] != args.item}
+        data["suggestions"] = {}
+        data["radar"] = map_schedule_removal_pointer(data)
+        data["status"] = "DRAFT"
+    elif args.action == "FORGET":
+        if args.item not in data["entries"]:
+            raise ValueError("unknown exact entry id")
+        del data["entries"][args.item]
+        data["suggestions"] = {}
+        data["radar"] = map_schedule_removal_pointer(data)
+        data["status"] = "DRAFT"
+    elif args.action == "PRUNE":
+        current = parse_recorded_utc(now_utc(), "now")
+        data["entries"] = {key: value for key, value in data["entries"].items() if parse_recorded_utc(value["review_due"], "review date") > current}
+        data["suggestions"] = {}
+        data["radar"] = map_schedule_removal_pointer(data)
+        data["decisions"] = {key: value for key, value in data["decisions"].items() if parse_recorded_utc(value["expires_utc"], "decision expiry") > current}
+        if parse_recorded_utc(data["consent_expires_utc"], "consent expiry") <= current:
+            data.update(identity={}, entries={}, sources={}, suggestions={}, decisions={}, status="REVOKED")
+    map_commit(worker, lease, data)
+
+
+def work_map_show(args):
+    worker = safe_worker(args.worker)
+    data = work_map(worker, required=False)
+    # Export uses stdout only; caller chooses destination with its own permissions.
+    if not data:
+        print(json.dumps({"status": "OFF", "identity": "UNKNOWN", "schedule": "NOT_ENABLED"}))
+        return
+    if args.owner != data["owner"]:
+        raise ValueError("private map requires the exact declared owner")
+    visible = json.loads(json.dumps(data))
+    current = parse_recorded_utc(now_utc(), "now")
+    if parse_recorded_utc(data["consent_expires_utc"], "consent expiry") <= current:
+        print(json.dumps({"status": "EXPIRED", "action": "Re-consent or prune retained private data"}))
+        return
+    visible["entries"] = {key: value for key, value in visible["entries"].items() if parse_recorded_utc(value["review_due"], "review date") > current}
+    visible["suggestions"] = {key: value for key, value in visible["suggestions"].items() if all(ref in visible["entries"] for ref in value["evidence_ids"])}
+    print(json.dumps(visible, indent=2, sort_keys=True))
+
+
+def radar_prompt(data, frequency, local_time, timezone):
+    return (
+        "Review only the explicitly approved private work-map summary sources for worker "
+        + data["worker_id"] + ". Owner: " + data["owner"] + ". Consent: " + data["consent"]
+        + ". Schedule: " + frequency + " " + local_time + " " + timezone
+        + ". Map digest: " + canonical_json_sha256({"identity": data["identity"], "entries": data["entries"], "sources": data["sources"]})
+        + ". Produce evidence-backed suggestion cards only. Stay quiet on no material change. "
+        "Never install, activate, create a skill/worker/project, connect, send, publish, spend or delete."
+    )
+
+
+def map_external_schedule_exists(data):
+    radar = data.get("radar") if data else None
+    return bool(radar and radar["status"] in {"VERIFIED_ACTIVE", "VERIFIED_PAUSED", "AWAITING_NEXT_RUN_PROOF", "NEEDS_EXTERNAL_REMOVAL"})
+
+
+def map_schedule_removal_pointer(data):
+    if not map_external_schedule_exists(data):
+        return None
+    radar = data["radar"]
+    return {"status": "NEEDS_EXTERNAL_REMOVAL", "external_id": radar.get("external_id") or radar["proof"]["external_id"], "prompt_sha256": radar["prompt_sha256"]}
+
+
+def radar_configure(args):
+    worker, lease, data = map_mutation(args)
+    map_require_active(data)
+    if map_external_schedule_exists(data):
+        raise ValueError("remove and verify existing external radar schedule before changing it")
+    if data["status"] != "CONFIRMED":
+        raise ValueError("radar requires a confirmed map")
+    request = read_governor_input(args.request, "radar schedule choice")
+    map_fields(request, "frequency local_time timezone approval_reference", "radar choice")
+    if request["frequency"] not in {"MONTHLY", "QUARTERLY"} or not LOCAL_CLOCK.fullmatch(str(request["local_time"])):
+        raise ValueError("radar needs monthly/quarterly and exact local HH:MM")
+    validate_timezone(request["timezone"])
+    map_text(request["approval_reference"], "separate radar approval")
+    prompt = radar_prompt(data, request["frequency"], request["local_time"], request["timezone"])
+    data["radar"] = {**request, "status": "AWAITING_VISIBLE_PROOF", "prompt": prompt, "prompt_sha256": hashlib.sha256(prompt.encode()).hexdigest(), "proof": None, "last_consumed_due": None}
+    map_commit(worker, lease, data)
+    print(prompt)
+
+
+def radar_verify(args):
+    worker, lease, data = map_mutation(args)
+    radar = data["radar"] if data else None
+    if radar and radar["status"] == "NEEDS_EXTERNAL_REMOVAL":
+        proof = read_governor_input(args.request, "radar removal proof")
+        map_fields(proof, "external_id status verified_utc visible_card", "radar removal proof")
+        current = parse_recorded_utc(now_utc(), "now")
+        verified = parse_recorded_utc(proof["verified_utc"], "removal verification")
+        if proof["external_id"] != radar["external_id"] or proof["status"] != "VERIFIED_REMOVED" or proof["visible_card"] is not True or not current - datetime.timedelta(minutes=15) <= verified <= current:
+            raise ValueError("exact external radar removal has not been verified")
+        data["radar"] = None
+        map_commit(worker, lease, data)
+        return
+    map_require_active(data)
+    if not radar or data["status"] != "CONFIRMED":
+        raise ValueError("radar configuration is unavailable")
+    proof = read_governor_input(args.request, "visible radar proof")
+    map_fields(proof, "external_id visible_card tested_prompt task_prompt_sha256 next_run_local verified_utc status", "radar proof")
+    if map_external_schedule_exists(data) and proof["status"] == "UNAVAILABLE":
+        raise ValueError("unavailable visibility cannot prove removal of an existing schedule")
+    if (proof["status"] != "UNAVAILABLE" and (proof["visible_card"] is not True or proof["tested_prompt"] is not True)) or proof["task_prompt_sha256"] != radar["prompt_sha256"]:
+        raise ValueError("radar requires visible card and tested exact prompt")
+    if proof["status"] not in {"VERIFIED_ACTIVE", "VERIFIED_PAUSED", "VERIFIED_REMOVED", "UNAVAILABLE"}:
+        raise ValueError("invalid radar schedule status")
+    map_text(proof["external_id"], "external schedule id", 200)
+    verified = parse_recorded_utc(proof["verified_utc"], "radar verification")
+    current = parse_recorded_utc(now_utc(), "now")
+    if not current - datetime.timedelta(minutes=15) <= verified <= current:
+        raise ValueError("radar verification must be current")
+    if proof["status"] == "VERIFIED_ACTIVE":
+        moment = parse_offset_datetime(proof["next_run_local"], "radar next run")
+        validate_moment_in_timezone(moment, radar["timezone"], "radar next run")
+        if moment.strftime("%H:%M") != radar["local_time"] or not current < moment <= current + datetime.timedelta(days=100):
+            raise ValueError("radar next run does not match future local schedule")
+        if radar["last_consumed_due"] and moment <= parse_offset_datetime(radar["last_consumed_due"], "consumed occurrence"):
+            raise ValueError("radar occurrence was already consumed")
+    radar.update(status=proof["status"], proof=proof)
+    map_commit(worker, lease, data)
+
+
+def radar_run(args):
+    worker, lease, data = map_mutation(args)
+    map_require_active(data)
+    if data["status"] != "CONFIRMED":
+        raise ValueError("radar requires confirmed private context")
+    current = parse_recorded_utc(now_utc(), "now")
+    if args.scheduled:
+        radar = data["radar"]
+        if not radar or radar["status"] != "VERIFIED_ACTIVE" or radar["proof"] is None:
+            raise ValueError("radar schedule has no verified active proof")
+        if radar["prompt"] != radar_prompt(data, radar["frequency"], radar["local_time"], radar["timezone"]):
+            raise ValueError("radar prompt is stale")
+        due = parse_offset_datetime(radar["proof"]["next_run_local"], "radar due")
+        if current < due:
+            print("AI-HUMAN RADAR: NOT_DUE — quiet")
+            return
+        if current > due + datetime.timedelta(days=1):
+            raise ValueError("radar missed its occurrence; verify a new next run")
+    request = read_governor_input(args.request, "suggestion cards")
+    map_fields(request, "suggestions", "radar run")
+    cards = request["suggestions"]
+    if not isinstance(cards, list) or len(cards) > map_batch_cap(worker):
+        raise ValueError("suggestions exceed worker batch cap")
+    additions = {}
+    for card in cards:
+        map_fields(card, "id kind text evidence_ids expected_output permissions risks overlap confidence value_basis", "suggestion")
+        identifier = map_id(card["id"])
+        if card["kind"] not in WORK_MAP_KINDS or card["confidence"] not in {"SOURCE_CONFIRMED", "OBSERVED_VERIFY"}:
+            raise ValueError("invalid suggestion kind or confidence")
+        for field in ("text", "expected_output", "permissions", "risks", "overlap"):
+            map_text(card[field], "suggestion " + field)
+        if card["value_basis"] != "UNMEASURED" or re.search(r"[$₹€£]|\b\d+\s*(?:%|hours?|days?|roi|x)\b|\b(?:urgent|guaranteed|deadline)\b", card["text"] + card["expected_output"], re.I):
+            raise ValueError("suggestions cannot invent quantified value or urgency")
+        if card["overlap"] != "NONE_CONFIRMED":
+            continue  # Unknown/already existing overlap is not a new opportunity.
+        refs = card["evidence_ids"]
+        if not isinstance(refs, list) or not 1 <= len(refs) <= BATCH_CAP or len(set(refs)) != len(refs):
+            raise ValueError("suggestion requires bounded unique evidence references")
+        for ref in refs:
+            entry = data["entries"].get(ref)
+            if not entry or entry["status"] != "ACTIVE" or entry["confidence"] in {"UNKNOWN", "OBSERVED_VERIFY"}:
+                raise ValueError("suggestion evidence must be active and confirmed")
+            if parse_recorded_utc(entry["review_due"], "entry review") <= current:
+                raise ValueError("suggestion evidence is stale")
+            if map_source_snapshot(worker, data, entry["source_id"]).get("sha256") != entry["source_sha256"]:
+                raise ValueError("suggestion source changed or became unavailable")
+        signature = canonical_json_sha256({key: card[key] for key in ("kind", "text", "evidence_ids")})
+        decision = data["decisions"].get(signature)
+        if decision and parse_recorded_utc(decision["expires_utc"], "decision expiry") > current:
+            if decision["choice"] in {"REJECT", "PROPOSE"} or parse_recorded_utc(decision["until_utc"], "snooze") > current:
+                continue
+        if signature in {value["signature"] for value in data["suggestions"].values()}:
+            continue
+        if identifier in data["suggestions"] or identifier in additions:
+            raise ValueError("suggestion id reused for different content")
+        additions[identifier] = {**card, "signature": signature, "activation": "NOT_ACTIVATED", "decision": "REVIEW_REQUIRED", "recorded_utc": now_utc()}
+    if len(data["suggestions"]) + len(additions) > 250:
+        raise ValueError("suggestion retention capacity reached; prune first")
+    data["suggestions"].update(additions)
+    if args.scheduled:
+        data["radar"]["last_consumed_due"] = data["radar"]["proof"]["next_run_local"]
+        data["radar"]["status"] = "AWAITING_NEXT_RUN_PROOF"
+    map_commit(worker, lease, data)
+    print("AI-HUMAN RADAR: " + ("MATERIAL_NEW_OPPORTUNITY" if additions else "NO_CHANGE — quiet"))
+    print(json.dumps(list(additions.values()), indent=2))
+
+
+def radar_decide(args):
+    worker, lease, data = map_mutation(args)
+    map_require_active(data)
+    card = data["suggestions"].get(args.item)
+    if not card:
+        raise ValueError("unknown suggestion")
+    if args.choice == "LATER":
+        map_expiry(args.until_utc, "snooze date", data["retention_days"])
+    expiry = parse_recorded_utc(now_utc(), "now") + datetime.timedelta(days=data["retention_days"])
+    if len(data["decisions"]) >= 250 and card["signature"] not in data["decisions"]:
+        raise ValueError("decision retention capacity reached")
+    data["decisions"][card["signature"]] = {"choice": args.choice, "until_utc": args.until_utc if args.choice == "LATER" else None, "expires_utc": expiry.strftime("%Y-%m-%dT%H:%M:%SZ")}
+    del data["suggestions"][args.item]
+    map_commit(worker, lease, data)
+    print("- choice: " + args.choice + "; activation: NOT_ACTIVATED")
+
+
 def improvement_target(worker, relative, label):
     relative = safe_relative(relative, label)
     key = portable_key(relative)
@@ -3349,6 +3920,10 @@ def validate_improvement_state(worker):
 def controlled_state_paths(worker):
     paths = [worker / name for name in COORDINATION_STATE_FILES]
     paths.append(worker / "AUTOMATIONS.md")
+    worker_target(worker, WORK_MAP_PATH, "controlled private map")
+    personal_path = worker / WORK_MAP_PATH
+    if personal_path.is_file():
+        paths.append(personal_path)
     capability_root = worker / CAPABILITY_ROOT
     if capability_root.is_dir():
         paths.extend(path for path in capability_root.rglob("*.json") if path.is_file())
@@ -5525,6 +6100,7 @@ def validate_worker(worker, quiet=False, allow_transaction=False):
     failures.extend(validate_governor_state(worker))
     failures.extend(validate_continuity_state(worker))
     failures.extend(validate_resource_state(worker))
+    failures.extend(validate_work_map_state(worker))
     failures.extend(validate_completion_records(worker))
     lease = None
     try:
@@ -10329,6 +10905,52 @@ def parser():
     resource_show_p.add_argument("worker")
     resource_show_p.set_defaults(handler=resource_show)
 
+    for command, handler in (
+        ("work-map-consent", work_map_consent), ("work-map-record", work_map_record),
+        ("radar-configure", radar_configure), ("radar-verify", radar_verify),
+        ("radar-run", radar_run),
+    ):
+        command_p = sub.add_parser(command)
+        command_p.add_argument("worker")
+        command_p.add_argument("--session-id", required=True)
+        command_p.add_argument("--expected-state-hash", required=True)
+        command_p.add_argument("--request", required=True)
+        if command == "radar-run":
+            command_p.add_argument("--scheduled", action="store_true")
+        command_p.set_defaults(handler=handler)
+
+    for command in ("work-map-show", "work-map-export", "work-map-discover"):
+        command_p = sub.add_parser(command)
+        command_p.add_argument("worker")
+        command_p.add_argument("--owner", required=True)
+        if command == "work-map-discover":
+            command_p.add_argument("--source", action="append")
+        command_p.set_defaults(handler=work_map_discover if command == "work-map-discover" else work_map_show)
+
+    map_control_p = sub.add_parser("work-map-control")
+    map_control_p.add_argument("worker")
+    map_control_p.add_argument("action", choices=("CONFIRM", "REVOKE", "EXCLUDE", "FORGET", "PRUNE"))
+    map_control_p.add_argument("--session-id", required=True)
+    map_control_p.add_argument("--expected-state-hash", required=True)
+    map_control_p.add_argument("--approval-reference")
+    map_control_p.add_argument("--item")
+    map_control_p.set_defaults(handler=work_map_control)
+
+    map_recover_p = sub.add_parser("work-map-recover")
+    map_recover_p.add_argument("worker")
+    map_recover_p.add_argument("--session-id", required=True)
+    map_recover_p.add_argument("--expected-state-hash", required=True)
+    map_recover_p.set_defaults(handler=work_map_recover)
+
+    radar_decide_p = sub.add_parser("radar-decide")
+    radar_decide_p.add_argument("worker")
+    radar_decide_p.add_argument("--session-id", required=True)
+    radar_decide_p.add_argument("--expected-state-hash", required=True)
+    radar_decide_p.add_argument("--item", required=True)
+    radar_decide_p.add_argument("--choice", choices=("PROPOSE", "LATER", "REJECT"), required=True)
+    radar_decide_p.add_argument("--until-utc")
+    radar_decide_p.set_defaults(handler=radar_decide)
+
     batch_plan_p = sub.add_parser("batch-plan")
     batch_plan_p.add_argument("kind", choices=BATCH_KINDS)
     batch_plan_p.add_argument("--units", type=int, required=True)
@@ -10386,6 +11008,8 @@ def main():
         if hasattr(args, "worker") and args.command != "install":
             worker = safe_worker(args.worker)
             if args.command == "suspend":
+                if map_external_schedule_exists(work_map(worker, required=False)):
+                    raise ValueError("remove and visibly verify the external radar schedule before suspension")
                 schedule = improvement_schedule(worker)
                 if external_improvement_schedule_still_exists(schedule):
                     raise ValueError(
@@ -10401,6 +11025,10 @@ def main():
                 worker, wait_seconds=30 if args.command == "suspend" else 0
             )
         with operation:
+            if worker is not None and args.command in {"suspend", "uninstall"} and map_external_schedule_exists(work_map(worker, required=False)):
+                raise ValueError("remove and visibly verify the external radar schedule before suspension or uninstall")
+            if worker is not None and args.command not in {"work-map-recover", "session-status", "validate"} and worker_target(worker, WORK_MAP_TX_PATH, "map transaction").exists():
+                raise ValueError("interrupted work-map transaction detected; run work-map-recover first")
             if (
                 worker is not None
                 and args.command != "recover-lifecycle"

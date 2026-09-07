@@ -14,7 +14,7 @@
 | Worker ID | {{WORKER_ID}} |
 | Confirmed time zone | {{TIMEZONE}} |
 | Designated capability supervisor | {{SUPERVISOR_ID}} |
-| Automatic managed updates | {{AUTOMATIC_UPDATES}} — first calendar day at 10:00 AM local time, only when idle and eligible |
+| Automatic managed updates | Legacy compatibility setting: {{AUTOMATIC_UPDATES}}. The native schedule is still OFF until the owner explicitly configures WEEKLY or MONTHLY, day, exact local time, confirmed IANA/native zone and rollout lane |
 | Unattended mode | Disabled unless an approved `AUTOMATIONS.md` row is ACTIVE |
 | External actions | Require authority recorded in the live task, `DECISIONS.md` or `GATES.md` |
 | Completion | Result verified in both ledger and evidence log |

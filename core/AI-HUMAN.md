@@ -117,11 +117,12 @@ profile process; it does not supply universal company gates.
 
 ## Update boundary
 
-The shared system checks only a validated semantic-version release. Its monthly check
-runs on the first calendar day at 10:00 AM using the offset-aware worker-local time
-explicitly supplied by the approved scheduler adapter; it never guesses from the host
-machine clock. An automatic update is allowed only when explicitly active, idle,
-released, owner-approved, hash-verified and backward-compatible. Every path journals,
+The shared system checks only a validated semantic-version release. A native schedule
+is off by default and follows `UPDATE-SCHEDULER.md`: the owner must explicitly choose
+weekly or monthly cadence, day, exact local time, confirmed IANA/native host time zone
+and rollout lane. An automatic update is allowed only when explicitly active, due,
+idle, released, owner-approved, hash-verified and backward-compatible; general rollout
+also requires exact-release Daily Email Triage pilot approval. Every path journals,
 backs up, validates and reports. Interrupted work fails closed until recovery verifies
 the applied release or restores a trusted tagged source.
 Company, role, user state and user settings are never managed by the release.

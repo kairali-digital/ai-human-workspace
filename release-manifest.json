@@ -13,12 +13,12 @@
       "target": ".ai-human/system/PERSONAL-CONTEXT-RADAR.md"
     },
     {
-      "sha256": "3a3eb717b198d6e2357b8380982e8507842ad172073e28efd4a5401817fb7e52",
+      "sha256": "7710688aa8ef67315c130a7108c15c18f20046a5566a8475112e559966787bfd",
       "source": "core/AI-HUMAN.md",
       "target": ".ai-human/system/AI-HUMAN.md"
     },
     {
-      "sha256": "d0ed1a579d9ad6c0454cfa5b25b21a8a3603304010a6980ea060c35f3dd35b1c",
+      "sha256": "ecf351077e34bdf618cd9115ce487aace0b2091b9e973e489e8e6630e2fbfe65",
       "source": "core/AGENT-RULES.md",
       "target": ".ai-human/system/AGENT-RULES.md"
     },
@@ -63,12 +63,17 @@
       "target": ".ai-human/system/WORKER-EXCHANGE.md"
     },
     {
+      "sha256": "3ca70e5d211663748a2d644eee4fa2fad3d02b4234b8374cf66b11a05c2679a2",
+      "source": "core/UPDATE-SCHEDULER.md",
+      "target": ".ai-human/system/UPDATE-SCHEDULER.md"
+    },
+    {
       "sha256": "f5c1dcda603c3d3bc6a239470f7e0a7044f00b097c94ee99b52bf49dc1cdf972",
       "source": "core/GATES-SHARED.md",
       "target": ".ai-human/system/GATES-SHARED.md"
     },
     {
-      "sha256": "db385c64c02776502b7802ac0089c1b6c424ac240bdabee11e6505392aa8bf8d",
+      "sha256": "9b7bc96a6bf2e1291c6c312e4616fb7bec7250e6211216b62c32e1656d8aa018",
       "source": "core/SESSION-START.md",
       "target": ".ai-human/system/SESSION-START.md"
     },
@@ -88,7 +93,7 @@
       "target": ".ai-human/VERSION"
     },
     {
-      "sha256": "9f062aa1312ae42631ade9b2aa865d41b40c88991860d63b27453a675ba98331",
+      "sha256": "4f0a78d03a0ec3be664349aef6b92028019edcf3e30ba4604cb8e0761ddb0f0f",
       "source": "scripts/ai_human.py",
       "target": ".ai-human/bin/ai_human.py"
     }
@@ -124,6 +129,7 @@
     ".ai-human/resources/",
     ".ai-human/personal/",
     ".ai-human/exchange/",
+    ".ai-human/update-schedule/",
     ".ai-human/backups/",
     ".ai-human/downgrade-exports/",
     ".ai-human/version-report.json",

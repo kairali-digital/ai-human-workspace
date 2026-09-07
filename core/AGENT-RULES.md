@@ -80,11 +80,12 @@
     omit the task ID, lifecycle narration, validation housekeeping, no-network audit
     and undo unless the user requested that proof. Never say nothing else changed or
     was touched.
-12. Follow `SESSION-START.md` for version checks. An automatic update may run only on
-    the first calendar day at 10:00 AM in the offset-aware worker-local time explicitly
-    supplied by the approved scheduler adapter, with no live task or writer, and only
-    for a verified released backward-compatible version. Never infer the worker's clock
-    from the machine running the lifecycle command.
+12. Follow `SESSION-START.md` and `UPDATE-SCHEDULER.md` for version checks. A native
+    schedule is off by default and may run only on its explicit owner-configured due
+    occurrence, after native/IANA zone and definition readback, with no live task or
+    writer, and only for a verified released backward-compatible version. General
+    auto-apply also requires an artifact binding that exact release to the passing
+    Daily Email Triage pilot. Never infer cadence, day, time, time zone or rollout lane.
 13. A reusable capability remains a proposal until the user chooses `PROPOSE` and
     the designated supervisor approves its proof and scope. `LATER` and `REJECT` never
     activate it.

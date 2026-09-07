@@ -526,23 +526,76 @@ def sha256(path):
     return digest.hexdigest()
 
 
-def tree_sha256(root, ignore_receipt=False):
+TREE_PROOF_ALGORITHM = "sha256-posix-path-nul-raw-sha256-lf/v1"
+
+
+def tree_proof(root, *, targets=None, exclude=()):
+    """Describe exact bytes without timestamps, absolute paths or receipt recursion."""
     root = Path(root)
+    if root.is_symlink() or not root.is_dir():
+        raise ValueError("tree proof root must be a real directory")
+    root = root.resolve()
+    exclusions = sorted(safe_relative(item, "tree proof exclusion").as_posix() for item in exclude)
+    if len(exclusions) != len(set(exclusions)):
+        raise ValueError("duplicate tree proof exclusion")
+    if targets is not None and exclusions:
+        raise ValueError("selected-file proofs may not exclude files")
+    if targets is None:
+        paths = sorted(root.rglob("*"), key=lambda item: item.relative_to(root).as_posix())
+    else:
+        names = [safe_relative(item, "tree proof target").as_posix() for item in targets]
+        if len(names) != len(set(names)):
+            raise ValueError("duplicate tree proof target")
+        paths = [release_file(root, name, "tree proof target") for name in sorted(names)]
     digest = hashlib.sha256()
-    count = 0
-    paths = sorted(root.rglob("*"), key=lambda item: item.relative_to(root).as_posix())
+    files = []
     for path in paths:
         if path.is_symlink():
             raise ValueError("component trees may not contain symbolic links: " + str(path))
-        if not path.is_file():
-            continue
         relative = path.relative_to(root).as_posix()
-        if ignore_receipt and relative == COMPONENT_RECEIPT:
+        if relative in exclusions:
+            if not path.is_file():
+                raise ValueError("tree proof exclusions must name files")
             continue
+        if not path.is_file():
+            if not path.is_dir():
+                raise ValueError("tree proof contains a non-regular file: " + relative)
+            continue
+        file_digest = sha256(path)
         digest.update(relative.encode("utf-8") + b"\0")
-        digest.update(bytes.fromhex(sha256(path)) + b"\n")
-        count += 1
-    return digest.hexdigest(), count
+        digest.update(bytes.fromhex(file_digest) + b"\n")
+        files.append({"path": relative, "sha256": file_digest})
+    return {
+        "algorithm": TREE_PROOF_ALGORITHM,
+        "excluded_files": exclusions,
+        "file_count": len(files),
+        "files": files,
+        "schema": "ai-human.tree-proof/v1",
+        "scope": "TREE" if targets is None else "SELECTED_FILES",
+        "tree_sha256": digest.hexdigest(),
+    }
+
+
+def verify_tree_proof(root, proof, *, targets=None, exclude=()):
+    """The verifier's expected scope comes from the caller, never the receipt."""
+    expected = tree_proof(root, targets=targets, exclude=exclude)
+    # Canonical JSON also distinguishes JSON booleans from integer file counts.
+    if json.dumps(proof, sort_keys=True) != json.dumps(expected, sort_keys=True):
+        raise ValueError("tree proof integrity or scope mismatch")
+    return expected
+
+
+def tree_sha256(root, ignore_receipt=False):
+    proof = tree_proof(root, exclude=(COMPONENT_RECEIPT,) if ignore_receipt else ())
+    return proof["tree_sha256"], proof["file_count"]
+
+
+def show_tree_proof(args):
+    if args.verify:
+        verify_tree_proof(args.root, read_json(Path(args.verify)), exclude=args.exclude)
+        print("AI-HUMAN TREE PROOF: PASS")
+    else:
+        print(json.dumps(tree_proof(args.root, exclude=args.exclude), indent=2, sort_keys=True))
 
 
 def atomic_text(path, content):
@@ -5016,6 +5069,8 @@ def write_install_metadata(worker, manifest, settings=None):
         {
             "installed_version": manifest["version"],
             "managed_targets": managed_targets(manifest),
+            "managed_payload_proof": tree_proof(worker, targets=managed_targets(manifest)),
+            "managed_payload_proof_version": manifest["version"],
             "repository": manifest["repository"],
             "schema": "ai-human.workspace-install/v1",
         }
@@ -8361,6 +8416,7 @@ def apply_update(worker, release, manifest, at_checkpoint=False, automatic=False
     before_state = state_hashes(worker)
     old_manifest = read_json(worker / ".ai-human/release-manifest.json")
     backup = backup_for_update(worker, old_manifest, manifest)
+    backup_proof = tree_proof(backup)
     expected_backup_targets = update_backup_targets(old_manifest, manifest)
     write_lifecycle_transaction(
         worker, "UPDATE", old_manifest, manifest, backup, "PREPARED"
@@ -8397,6 +8453,7 @@ def apply_update(worker, release, manifest, at_checkpoint=False, automatic=False
             worker / ".ai-human/update-receipt.json",
             {
                 "automatic": automatic, "backup": str(backup),
+                "backup_proof": backup_proof,
                 "failure": str(exc), "from_version": old_version,
                 "rollback": "PASS" if rollback_ok else "FAIL",
                 "rollback_failures": rollback_failures,
@@ -8411,6 +8468,8 @@ def apply_update(worker, release, manifest, at_checkpoint=False, automatic=False
         worker / ".ai-human/update-receipt.json",
         {
             "automatic": automatic, "backup": str(backup), "from_version": old_version,
+            "backup_proof": backup_proof,
+            "installed_payload_proof": install_metadata(worker)["managed_payload_proof"],
             "schema": "ai-human.update-receipt/v2", "state_preserved": True,
             "status": "UPDATED", "to_version": new_version, "validator": "PASS",
         },
@@ -8869,6 +8928,7 @@ def rollback(args):
         current_manifest = read_json(worker / ".ai-human/release-manifest.json")
         before = state_hashes(worker)
         forward_backup = backup_for_update(worker, current_manifest, target_manifest)
+        backup_proof = tree_proof(forward_backup)
         expected_targets = update_backup_targets(current_manifest, target_manifest)
         write_lifecycle_transaction(
             worker, "ROLLBACK", current_manifest, target_manifest,
@@ -8905,6 +8965,8 @@ def rollback(args):
             worker / ".ai-human/rollback-receipt.json",
             {
                 "from_version": current, "source": str(release),
+                "backup": str(forward_backup), "backup_proof": backup_proof,
+                "installed_payload_proof": install_metadata(worker)["managed_payload_proof"],
                 "state_preserved": True, "to_version": args.version,
                 "validator": "PASS",
             },
@@ -9643,6 +9705,10 @@ def component_receipt(target):
         raise ValueError("invalid component id in install receipt")
     if receipt.get("component_type") not in {"skill", "reference-pack"}:
         raise ValueError("invalid component type in install receipt")
+    if "payload_proof" in receipt:
+        proof = verify_tree_proof(target, receipt["payload_proof"], exclude=(COMPONENT_RECEIPT,))
+        if proof["tree_sha256"] != receipt.get("source_tree_sha256"):
+            raise ValueError("component receipt summary differs from its payload proof")
     return receipt
 
 
@@ -9705,6 +9771,7 @@ def install_component_tree(release, release_manifest, record, target, upgrade=Fa
                 "repository": release_manifest["repository"],
                 "schema": "ai-human.component-install/v1",
                 "source_tree_sha256": expected_digest,
+                "payload_proof": tree_proof(temporary, exclude=(COMPONENT_RECEIPT,)),
             },
         )
         if target.exists():
@@ -10271,6 +10338,12 @@ def parser():
     components_p = sub.add_parser("components")
     add_component_source_options(components_p)
     components_p.set_defaults(handler=list_components)
+
+    tree_proof_p = sub.add_parser("tree-proof")
+    tree_proof_p.add_argument("root")
+    tree_proof_p.add_argument("--exclude", action="append", default=[])
+    tree_proof_p.add_argument("--verify")
+    tree_proof_p.set_defaults(handler=show_tree_proof)
 
     install_skill_p = sub.add_parser("install-skill")
     install_skill_p.add_argument("component")

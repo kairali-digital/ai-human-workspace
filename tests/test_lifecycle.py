@@ -1137,6 +1137,131 @@ class LifecycleTests(unittest.TestCase):
         self.assertIn("between 1 and 25", result.stderr)
         self.assertFalse(worker.exists())
 
+    def test_tree_proof_round_trip_scope_and_tamper(self):
+        payload = self.base / "proof-payload"
+        (payload / "nested").mkdir(parents=True)
+        (payload / "README.md").write_bytes(b"read me\n")
+        (payload / "nested/data.txt").write_bytes(b"data\0\xff\n")
+        receipt_name = "INSTALL-RECEIPT.json"
+        proof = AI_HUMAN.tree_proof(payload, exclude=(receipt_name,))
+        expected = hashlib.sha256()
+        for relative in ("README.md", "nested/data.txt"):
+            expected.update(relative.encode() + b"\0")
+            expected.update(bytes.fromhex(sha256(payload / relative)) + b"\n")
+        self.assertEqual(proof["tree_sha256"], expected.hexdigest())
+        AI_HUMAN.atomic_json(payload / receipt_name, proof)
+        copied = self.base / "relocated-proof"
+        shutil.copytree(payload, copied)
+        self.run_cli("tree-proof", copied, "--exclude", receipt_name, "--verify", copied / receipt_name)
+        with self.assertRaisesRegex(ValueError, "scope mismatch"):
+            AI_HUMAN.verify_tree_proof(copied, proof)
+        for field, value in (("algorithm", "unknown/v1"), ("file_count", True),
+                             ("files", []), ("tree_sha256", "0" * 64)):
+            with self.subTest(field=field), self.assertRaises(ValueError):
+                AI_HUMAN.verify_tree_proof(copied, dict(proof, **{field: value}), exclude=(receipt_name,))
+        for operation in ("edit", "add", "remove", "rename"):
+            target = copied / "nested/data.txt"
+            with self.subTest(operation=operation):
+                if operation == "edit":
+                    target.write_bytes(b"tamper")
+                elif operation == "add":
+                    (copied / "extra.txt").write_bytes(b"extra")
+                elif operation == "remove":
+                    target.unlink()
+                else:
+                    target.rename(copied / "renamed.txt")
+                with self.assertRaises(ValueError):
+                    AI_HUMAN.verify_tree_proof(copied, proof, exclude=(receipt_name,))
+                shutil.rmtree(copied)
+                shutil.copytree(payload, copied)
+        (copied / "link").symlink_to(payload / "README.md")
+        with self.assertRaisesRegex(ValueError, "symbolic links"):
+            AI_HUMAN.verify_tree_proof(copied, proof, exclude=(receipt_name, "link"))
+        with self.assertRaises(ValueError):
+            AI_HUMAN.tree_proof(self.base / "missing")
+
+    def test_historical_shasum_receipt_encoding_is_not_canonical_tree_encoding(self):
+        payload = self.base / "legacy-proof"
+        payload.mkdir()
+        (payload / "a.txt").write_bytes(b"example\n")
+        legacy_line = (sha256(payload / "a.txt") + "  ./a.txt\n").encode("utf-8")
+        legacy_hash = hashlib.sha256(legacy_line).hexdigest()
+        receipt = payload / "INSTALL-RECEIPT.json"
+        AI_HUMAN.atomic_json(receipt, {"schema": "ai-human.skill-install/v1", "installed_payload_tree_sha256": legacy_hash})
+        historical_bytes = receipt.read_bytes()
+        proof = AI_HUMAN.tree_proof(payload, exclude=(receipt.name,))
+        self.assertNotEqual(proof["tree_sha256"], legacy_hash)
+        AI_HUMAN.verify_tree_proof(payload, proof, exclude=(receipt.name,))
+        self.assertEqual(receipt.read_bytes(), historical_bytes)
+
+    def test_install_update_rollback_receipt_proofs_round_trip_and_tamper(self):
+        worker = self.base / "proof-worker"
+        self.install(worker)
+        before_state = state_hashes(worker)
+        installed = AI_HUMAN.install_metadata(worker)
+        initial_proof = installed["managed_payload_proof"]
+        AI_HUMAN.verify_tree_proof(worker, initial_proof, targets=installed["managed_targets"])
+        # A legacy install still validates; its next actual update adds the proof.
+        installed.pop("managed_payload_proof")
+        AI_HUMAN.atomic_json(worker / ".ai-human/install.json", installed)
+        self.run_cli("validate", worker)
+        new_release = self.base / "proof-new-release"
+        shutil.copytree(self.release, new_release)
+        refresh_release(new_release, TEST_UPGRADE_VERSION)
+        self.run_cli("update", worker, "--source", new_release, "--at-checkpoint")
+        receipt = AI_HUMAN.read_json(worker / ".ai-human/update-receipt.json")
+        AI_HUMAN.verify_tree_proof(Path(receipt["backup"]), receipt["backup_proof"])
+        AI_HUMAN.verify_tree_proof(worker, receipt["installed_payload_proof"], targets=installed["managed_targets"])
+        self.run_cli("rollback", worker, "--version", CURRENT_VERSION, "--source", self.release)
+        rolled_back = AI_HUMAN.read_json(worker / ".ai-human/rollback-receipt.json")
+        AI_HUMAN.verify_tree_proof(Path(rolled_back["backup"]), rolled_back["backup_proof"])
+        self.assertEqual(rolled_back["installed_payload_proof"], initial_proof)
+        AI_HUMAN.verify_tree_proof(worker, initial_proof, targets=installed["managed_targets"])
+        self.assertEqual(state_hashes(worker), before_state)
+        backup_file = Path(receipt["backup"]) / "files/.ai-human/VERSION"
+        backup_file.write_bytes(b"tampered\n")
+        with self.assertRaises(ValueError):
+            AI_HUMAN.verify_tree_proof(Path(receipt["backup"]), receipt["backup_proof"])
+        metadata = AI_HUMAN.install_metadata(worker)
+        metadata["managed_payload_proof"]["files"] = []
+        AI_HUMAN.atomic_json(worker / ".ai-human/install.json", metadata)
+        with self.assertRaises(ValueError):
+            AI_HUMAN.verify_tree_proof(
+                worker, metadata["managed_payload_proof"], targets=installed["managed_targets"]
+            )
+        # Older CLIs preserve unknown metadata fields. A retained historical proof
+        # must not break their updates; current byte validation uses the manifest.
+        self.run_cli("validate", worker)
+
+    def test_component_receipt_proof_and_legacy_upgrade_round_trip(self):
+        source = self.base / "component-source"
+        source.mkdir()
+        (source / "README.md").write_bytes(b"component\n")
+        digest, count = AI_HUMAN.tree_sha256(source)
+        record = {"source": source.name, "tree_sha256": digest, "file_count": count,
+                  "id": "test-component", "type": "reference-pack"}
+        manifest = {"version": CURRENT_VERSION, "repository": "standalone-local/example"}
+        target = self.base / "installed-component"
+        AI_HUMAN.install_component_tree(self.base, manifest, record, target)
+        receipt = AI_HUMAN.component_receipt(target)
+        AI_HUMAN.verify_tree_proof(target, receipt["payload_proof"], exclude=(AI_HUMAN.COMPONENT_RECEIPT,))
+        receipt["payload_proof"]["file_count"] += 1
+        AI_HUMAN.atomic_json(target / AI_HUMAN.COMPONENT_RECEIPT, receipt)
+        with self.assertRaises(ValueError):
+            AI_HUMAN.component_receipt(target)
+        receipt.pop("payload_proof")
+        AI_HUMAN.atomic_json(target / AI_HUMAN.COMPONENT_RECEIPT, receipt)
+        legacy_bytes = (target / AI_HUMAN.COMPONENT_RECEIPT).read_bytes()
+        backup = AI_HUMAN.install_component_tree(
+            self.base, dict(manifest, version=TEST_UPGRADE_VERSION), record, target,
+            upgrade=True, at_checkpoint=True,
+        )
+        self.assertEqual((backup / AI_HUMAN.COMPONENT_RECEIPT).read_bytes(), legacy_bytes)
+        AI_HUMAN.component_receipt(target)
+        (target / "README.md").write_bytes(b"tampered\n")
+        with self.assertRaises(ValueError):
+            AI_HUMAN.component_receipt(target)
+
     def test_one_artifact_with_150_embedded_issues_is_one_batch_unit(self):
         plan = AI_HUMAN.plan_batches("artifact-upload", 1, embedded_entries=150)
         self.assertEqual(plan["batch_sizes"], [1])
@@ -4318,6 +4443,13 @@ class LifecycleTests(unittest.TestCase):
         self.assertEqual(receipt["status"], "FAILED")
         self.assertEqual(receipt["rollback"], "PASS")
         self.assertTrue(receipt["state_preserved"])
+
+        AI_HUMAN.verify_tree_proof(Path(receipt["backup"]), receipt["backup_proof"])
+        restored_metadata = AI_HUMAN.install_metadata(worker)
+        AI_HUMAN.verify_tree_proof(
+            worker, restored_metadata["managed_payload_proof"],
+            targets=restored_metadata["managed_targets"],
+        )
 
     def test_duplicate_json_keys_are_rejected_fail_closed(self):
         manifest_path = self.release / "release-manifest.json"

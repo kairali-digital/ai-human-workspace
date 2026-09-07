@@ -8,7 +8,7 @@
   },
   "managed_files": [
     {
-      "sha256": "3eb6c54180b581dd1cff7942ebcec032a1a6e7b6f2b80c883900f51e33baa4a1",
+      "sha256": "b84027255425034610759053c0bdef8a9e30a863f6368205f7f8f7d6cac7ef9c",
       "source": "core/PERSONAL-CONTEXT-RADAR.md",
       "target": ".ai-human/system/PERSONAL-CONTEXT-RADAR.md"
     },

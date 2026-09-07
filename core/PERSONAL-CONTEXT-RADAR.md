@@ -3,7 +3,7 @@
 H-54 starts OFF. Installing or upgrading never identifies a person, searches a
 computer, reads a source, configures a schedule or creates a profile. Missing state
 means OFF; an unknown schema fails closed. The Setup Helper asks one question at a
-time, using the employee's visible app. Employees never need to type CLI commands.
+time, using the person's visible app. Users never need to type CLI commands.
 
 First confirm the person's declared name, role, company, operating unit,
 responsibilities, decision rights and goals. Do not infer identity from an account,

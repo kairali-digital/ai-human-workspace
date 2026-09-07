@@ -377,7 +377,8 @@ class LifecycleTests(unittest.TestCase):
 
     def test_work_map_rejects_paths_secrets_symlinks_and_promotion(self):
         worker, consent = self.map_fixture()
-        for path in ("../other/summary.txt", "C:\\Users\\other\\summary.txt", ".secrets.txt", "passwords.txt"):
+        windows_home_path = "\\".join(("C:", "Users", "other", "summary.txt"))
+        for path in ("../other/summary.txt", windows_home_path, ".secrets.txt", "passwords.txt"):
             invalid = json.loads(json.dumps(consent))
             invalid["sources"][0]["path"] = path
             self.map_command(worker, "work-map-consent", invalid, expect=1)

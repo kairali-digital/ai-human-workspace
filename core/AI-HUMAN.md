@@ -104,6 +104,13 @@ Personal context discovery and the Opportunity Radar start OFF. Follow
 correction, forgetting, retention and separately verified suggestion-only schedules.
 USER_GLOBAL scope remains at its designated owner; it never grants cross-worker reads.
 
+Layered memory and the read-only Chief of Staff start OFF. Follow
+`CHIEF-OF-STAFF-AND-MEMORY.md`: records require provenance, bitemporal validity,
+freshness, sensitivity, access and an owning source. Global truth is curated rather
+than copied. The Chief receives only target-bound portfolio metadata and addressed
+exchange results; it cannot read private worker state, cross-write, self-approve or
+perform external effects. No material change produces no brief.
+
 ## Isolation
 
 Every user, specialist or project uses a separate worker folder. Shared facts have

@@ -131,6 +131,8 @@ INTRINSIC_NEVER_MANAGED = LOCAL_STATE | {
     ".ai-human/capabilities/",
     ".ai-human/improvement/",
     ".ai-human/autonomy/",
+    ".ai-human/memory/",
+    ".ai-human/chief/",
     ".ai-human/backups/",
     ".ai-human/downgrade-exports/",
     ".ai-human/install.json",

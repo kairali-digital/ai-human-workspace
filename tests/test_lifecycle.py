@@ -1221,6 +1221,8 @@ class LifecycleTests(unittest.TestCase):
             "access_classes": [access],
             "allowed_message_types": types or sorted(AI_HUMAN.EXCHANGE_MESSAGE_TYPES),
             "allowed_modes": modes or ["DIRECT", "MISSION_ROOM"],
+            "approval_reference": "DECISIONS.md H-55 " + policy_id,
+            "cross_boundary_authorization_reference": "NONE",
             "expires_utc": expiry.strftime("%Y-%m-%dT%H:%M:%SZ"),
             "policy_id": policy_id,
             "recipient_worker_id": recipient,
@@ -3240,6 +3242,25 @@ class LifecycleTests(unittest.TestCase):
             envelope["trusted_transport_receipt"]["trust_mode"],
             "LOCAL_RELAY_VERIFIED_CURRENT_JOIN_AND_WRITER_LEASE",
         )
+        delivery_path = exchange / "inboxes/recipient-001/direct-message-001.json"
+        original_delivery = delivery_path.read_bytes()
+        invalid_delivery = json.loads(original_delivery)
+        invalid_delivery["unexpected"] = "forged"
+        invalid_delivery["receipt_sha256"] = AI_HUMAN.exchange_record_sha256(
+            invalid_delivery, "receipt_sha256"
+        )
+        delivery_path.write_text(
+            json.dumps(invalid_delivery, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        )
+        self.assertIn(
+            "unexpected fields",
+            self.run_cli(
+                "exchange-send", sender["path"], "--exchange", exchange,
+                "--session-id", sender["session"], "--expected-state-hash", sender["state"],
+                "--request", request_path, expect=1,
+            ).stderr,
+        )
+        delivery_path.write_bytes(original_delivery)
         repeated = self.run_cli(
             "exchange-send", sender["path"], "--exchange", exchange,
             "--session-id", sender["session"], "--expected-state-hash", sender["state"],
@@ -3263,6 +3284,75 @@ class LifecycleTests(unittest.TestCase):
         self.assertIn("live task interrupted: NO", accepted.stdout)
         result_file = recipient["path"] / "RESULT.json"
         result_file.write_text('{"schema":"example.result/v1","status":"verified"}\n', encoding="utf-8")
+        duplicate_result = {
+            "artifacts": [
+                {"media_type": "application/json", "path": "RESULT.json", "sha256": sha256(result_file)},
+                {"media_type": "application/json", "path": "RESULT.json", "sha256": sha256(result_file)},
+            ],
+            "evidence": "Duplicate source path must fail",
+            "fact_claims": [],
+            "message_id": "direct-message-001",
+            "result_id": "duplicate-result",
+            "result_version": "1.0.0",
+            "schema": "ai-human.exchange-result-request/v1",
+            "source_owner_worker_id": "recipient-001",
+        }
+        duplicate_path = self.write_json_fixture("duplicate-result.json", duplicate_result)
+        self.assertIn(
+            "source path is duplicated",
+            self.run_cli(
+                "exchange-result", recipient["path"], "--exchange", exchange,
+                "--session-id", recipient["session"],
+                "--expected-state-hash", recipient["state"], "--result", duplicate_path,
+                expect=1,
+            ).stderr,
+        )
+        large_artifacts = []
+        for index in range(3):
+            large = recipient["path"] / ("LARGE-" + str(index) + ".bin")
+            large.write_bytes(bytes([65 + index]) * 800_000)
+            large_artifacts.append({
+                "media_type": "application/octet-stream", "path": large.name,
+                "sha256": sha256(large),
+            })
+        aggregate_result = {
+            "artifacts": large_artifacts,
+            "evidence": "Aggregate byte cap must fail",
+            "fact_claims": [],
+            "message_id": "direct-message-001",
+            "result_id": "oversized-result",
+            "result_version": "1.0.0",
+            "schema": "ai-human.exchange-result-request/v1",
+            "source_owner_worker_id": "recipient-001",
+        }
+        aggregate_path = self.write_json_fixture("aggregate-result.json", aggregate_result)
+        self.assertIn(
+            "aggregate byte limit",
+            self.run_cli(
+                "exchange-result", recipient["path"], "--exchange", exchange,
+                "--session-id", recipient["session"],
+                "--expected-state-hash", recipient["state"], "--result", aggregate_path,
+                expect=1,
+            ).stderr,
+        )
+        secret_result = dict(aggregate_result)
+        secret_result.update({
+            "artifacts": [{
+                "media_type": "application/json", "path": "RESULT.json",
+                "sha256": sha256(result_file),
+            }],
+            "evidence": "password=synthetic-secret", "result_id": "secret-result",
+        })
+        secret_result_path = self.write_json_fixture("secret-result.json", secret_result)
+        self.assertIn(
+            "result request appears to contain secret material",
+            self.run_cli(
+                "exchange-result", recipient["path"], "--exchange", exchange,
+                "--session-id", recipient["session"],
+                "--expected-state-hash", recipient["state"], "--result", secret_result_path,
+                expect=1,
+            ).stderr,
+        )
         result_request = {
             "artifacts": [{
                 "media_type": "application/json", "path": "RESULT.json",
@@ -3287,6 +3377,22 @@ class LifecycleTests(unittest.TestCase):
         )
         recipient["state"] = self.output_value(completed.stdout, "new expected-state hash")
         self.assertIn("WORKER EXCHANGE RESULT: PASS", completed.stdout)
+        immutable_result_path = (
+            exchange
+            / "messages/direct-message-001/results/recipient-001-result-001/result.json"
+        )
+        original_result = immutable_result_path.read_bytes()
+        forged_result = json.loads(original_result)
+        forged_result["artifacts"][0]["media_type"] = "text/html"
+        forged_result["result_sha256"] = AI_HUMAN.exchange_result_sha256(forged_result)
+        immutable_result_path.write_text(
+            json.dumps(forged_result, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        )
+        with self.assertRaisesRegex(ValueError, "differs from its signed request descriptor"):
+            AI_HUMAN.exchange_load_result(
+                exchange, "direct-message-001", "recipient-001", "result-001"
+            )
+        immutable_result_path.write_bytes(original_result)
         self.assertIn("AUDIT: PASS", self.run_cli("exchange-audit", "--exchange", exchange).stdout)
         self.assertEqual(self.run_cli("validate", recipient["path"]).returncode, 0)
 
@@ -3369,6 +3475,7 @@ class LifecycleTests(unittest.TestCase):
             "mission_id": "mission-room-001",
             "name": "Synthetic integration mission",
             "purpose": "Combine one bounded result without shared writable state",
+            "required_result_worker_ids": ["contributor"],
             "schema": "ai-human.exchange-mission/v1",
             "source_owner_worker_id": "mission-owner",
             "status": "ACTIVE",
@@ -3391,6 +3498,51 @@ class LifecycleTests(unittest.TestCase):
             "--session-id", owner["session"], "--expected-state-hash", owner["state"],
             "--request", mission_request_path,
         )
+        for sequence in (2, 3):
+            extra_path = self.write_json_fixture(
+                "mission-request-" + str(sequence) + ".json",
+                self.exchange_request(
+                    "mission-message-" + str(sequence), ["contributor"],
+                    route="MISSION_ROOM", mission_id="mission-room-001",
+                    conversation_id="mission-conversation-" + str(sequence),
+                ),
+            )
+            self.run_cli(
+                "exchange-send", owner["path"], "--exchange", exchange,
+                "--session-id", owner["session"], "--expected-state-hash", owner["state"],
+                "--request", extra_path,
+            )
+        exhausted_path = self.write_json_fixture(
+            "mission-request-exhausted.json",
+            self.exchange_request(
+                "mission-message-4", ["contributor"], route="MISSION_ROOM",
+                mission_id="mission-room-001", conversation_id="mission-conversation-4",
+            ),
+        )
+        self.assertIn(
+            "mission-room message budget is exhausted",
+            self.run_cli(
+                "exchange-send", owner["path"], "--exchange", exchange,
+                "--session-id", owner["session"], "--expected-state-hash", owner["state"],
+                "--request", exhausted_path, expect=1,
+            ).stderr,
+        )
+        mission_transport_path = exchange / "missions/mission-room-001.json"
+        original_mission = mission_transport_path.read_bytes()
+        paused_mission = json.loads(original_mission)
+        paused_mission["status"] = "PAUSED"
+        mission_transport_path.write_text(
+            json.dumps(paused_mission, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        )
+        self.assertIn(
+            "current mission",
+            self.run_cli(
+                "exchange-ack", contributor["path"], "mission-message", "--exchange", exchange,
+                "--session-id", contributor["session"],
+                "--expected-state-hash", contributor["state"], expect=1,
+            ).stderr,
+        )
+        mission_transport_path.write_bytes(original_mission)
         acked = self.run_cli(
             "exchange-ack", contributor["path"], "mission-message", "--exchange", exchange,
             "--session-id", contributor["session"],
@@ -3403,6 +3555,26 @@ class LifecycleTests(unittest.TestCase):
             "--expected-state-hash", contributor["state"], "--reason", "Bounded contract accepted",
         )
         contributor["state"] = self.output_value(accepted.stdout, "new expected-state hash")
+        incomplete_integration_path = self.write_json_fixture(
+            "incomplete-integration.json",
+            {
+                "expected": [{
+                    "message_id": "mission-message", "result_id": "mission-result",
+                    "result_sha256": "a" * 64, "result_version": "1.0.0",
+                    "worker_id": "contributor",
+                }],
+                "mission_id": "mission-room-001",
+                "schema": "ai-human.exchange-integration-request/v1",
+            },
+        )
+        self.assertIn(
+            "lifecycle to be COMPLETED",
+            self.run_cli(
+                "exchange-integrate", owner["path"], "--exchange", exchange,
+                "--session-id", owner["session"], "--expected-state-hash", owner["state"],
+                "--integration", incomplete_integration_path, expect=1,
+            ).stderr,
+        )
         artifact = contributor["path"] / "MISSION-RESULT.json"
         artifact.write_text('{"schema":"example.result/v1","value":"joined"}\n', encoding="utf-8")
         result_request = {
@@ -3429,6 +3601,25 @@ class LifecycleTests(unittest.TestCase):
         )
         contributor["state"] = self.output_value(completed.stdout, "new expected-state hash")
         result_hash = self.output_value(completed.stdout, "result sha256")
+        extra_worker_path = self.write_json_fixture(
+            "extra-worker-integration.json",
+            {
+                "expected": [{
+                    "message_id": "mission-message", "result_id": "mission-result",
+                    "result_sha256": result_hash, "result_version": "1.0.0",
+                    "worker_id": "mission-owner",
+                }],
+                "mission_id": "mission-room-001",
+                "schema": "ai-human.exchange-integration-request/v1",
+            },
+        )
+        worker_set_denied = self.run_cli(
+            "exchange-integrate", owner["path"], "--exchange", exchange,
+            "--session-id", owner["session"], "--expected-state-hash", owner["state"],
+            "--integration", extra_worker_path, expect=1,
+        )
+        self.assertIn("missing contributor", worker_set_denied.stderr)
+        self.assertIn("extra mission-owner", worker_set_denied.stderr)
         wrong_version_path = self.write_json_fixture(
             "wrong-version-integration.json",
             {
@@ -3475,13 +3666,789 @@ class LifecycleTests(unittest.TestCase):
         )
         self.assertIn("INTEGRATION: IDEMPOTENT", repeated_join.stdout)
         self.assertIn("AUDIT: PASS", self.run_cli("exchange-audit", "--exchange", exchange).stdout)
+        self.run_cli(
+            "exchange-policy-revoke", "owner-to-contributor", "--exchange", exchange,
+            "--owner", "Mission Owner", "--approval-reference", "DECISIONS.md end mission access",
+            "--reason", "Prove integration uses current exact route access",
+        )
+        self.assertIn(
+            "exact route policy",
+            self.run_cli(
+                "exchange-integrate", owner["path"], "--exchange", exchange,
+                "--session-id", owner["session"], "--expected-state-hash", owner["state"],
+                "--integration", integration_path, expect=1,
+            ).stderr,
+        )
+        self.assertIn("AUDIT: PASS", self.run_cli("exchange-audit", "--exchange", exchange).stdout)
+
+    def test_worker_exchange_local_mutations_recover_after_post_write_crash(self):
+        exchange, workers = self.setup_exchange_workers([
+            ("crash-owner", "INTERNAL"), ("crash-worker", "INTERNAL"),
+        ])
+        owner = workers["crash-owner"]
+        worker = workers["crash-worker"]
+        policy_path = self.write_json_fixture(
+            "crash-policy.json",
+            self.exchange_policy(
+                "crash-policy", "crash-owner", "crash-worker",
+                modes=["DIRECT", "MISSION_ROOM"],
+            ),
+        )
+        self.run_cli(
+            "exchange-policy-add", "--exchange", exchange, "--owner", "Mission Owner",
+            "--policy", policy_path,
+        )
+        expiry = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=1)
+        mission = {
+            "dependencies": [{"from_worker_id": "crash-owner", "to_worker_id": "crash-worker"}],
+            "done_condition": "Recover one exact result and integration proof",
+            "expires_utc": expiry.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "integration_owner_worker_id": "crash-owner",
+            "max_messages": 3,
+            "members": ["crash-owner", "crash-worker"],
+            "mission_id": "crash-mission",
+            "name": "Crash recovery mission",
+            "purpose": "Prove local receipt recovery after transport commit",
+            "required_result_worker_ids": ["crash-worker"],
+            "schema": "ai-human.exchange-mission/v1",
+            "source_owner_worker_id": "crash-owner",
+            "status": "ACTIVE",
+        }
+        mission_path = self.write_json_fixture("crash-mission.json", mission)
+        self.run_cli(
+            "exchange-mission-create", owner["path"], "--exchange", exchange,
+            "--session-id", owner["session"], "--expected-state-hash", owner["state"],
+            "--mission", mission_path,
+        )
+        request_path = self.write_json_fixture(
+            "crash-message.json",
+            self.exchange_request(
+                "crash-message", ["crash-worker"], route="MISSION_ROOM",
+                mission_id="crash-mission", conversation_id="crash-conversation",
+            ),
+        )
+        self.run_cli(
+            "exchange-send", owner["path"], "--exchange", exchange,
+            "--session-id", owner["session"], "--expected-state-hash", owner["state"],
+            "--request", request_path,
+        )
+
+        prepared_path = self.write_json_fixture(
+            "prepared-message.json",
+            self.exchange_request(
+                "prepared-message", ["crash-worker"], route="MISSION_ROOM",
+                mission_id="crash-mission", conversation_id="prepared-conversation",
+            ),
+        )
+        self.run_cli(
+            "exchange-send", owner["path"], "--exchange", exchange,
+            "--session-id", owner["session"], "--expected-state-hash", owner["state"],
+            "--request", prepared_path,
+        )
+        prepared_ack = SimpleNamespace(
+            worker=str(worker["path"]), exchange=str(exchange), message_id="prepared-message",
+            session_id=worker["session"], expected_state_hash=worker["state"],
+        )
+        with mock.patch.object(
+            AI_HUMAN, "exchange_after_transport_mutation",
+            side_effect=RuntimeError("injected post-ACK-event crash"),
+        ), mock.patch("builtins.print"):
+            with self.assertRaisesRegex(RuntimeError, "post-ACK-event crash"):
+                AI_HUMAN.exchange_ack(prepared_ack)
+        prepared_transaction = worker["path"] / AI_HUMAN.EXCHANGE_MUTATION_PATH
+        self.assertTrue(prepared_transaction.is_file())
+        self.assertEqual(
+            AI_HUMAN.controlled_state_hash(worker["path"]),
+            AI_HUMAN.read_lease(worker["path"])["state_hash"],
+        )
+        self.assertIn(
+            "belongs to another operation",
+            self.run_cli(
+                "exchange-decide", worker["path"], "prepared-message", "ACCEPT",
+                "--exchange", exchange, "--session-id", worker["session"],
+                "--expected-state-hash", worker["state"], "--reason", "Must wait for ACK proof",
+                expect=1,
+            ).stderr,
+        )
+        recovered_ack = self.run_cli(
+            "exchange-ack", worker["path"], "prepared-message", "--exchange", exchange,
+            "--session-id", worker["session"], "--expected-state-hash", worker["state"],
+        )
+        worker["state"] = self.output_value(recovered_ack.stdout, "new expected-state hash")
+
+        prepared_decide = SimpleNamespace(
+            worker=str(worker["path"]), exchange=str(exchange), message_id="prepared-message",
+            decision="ACCEPT", reason="Prepared result accepted",
+            session_id=worker["session"], expected_state_hash=worker["state"],
+        )
+        with mock.patch.object(
+            AI_HUMAN, "exchange_after_transport_mutation",
+            side_effect=RuntimeError("injected post-decision-event crash"),
+        ), mock.patch("builtins.print"):
+            with self.assertRaisesRegex(RuntimeError, "post-decision-event crash"):
+                AI_HUMAN.exchange_decide(prepared_decide)
+        prepared_artifact = worker["path"] / "PREPARED-RESULT.json"
+        prepared_artifact.write_text(
+            '{"schema":"example.result/v1","prepared":true}\n', encoding="utf-8"
+        )
+        prepared_result_request = {
+            "artifacts": [{
+                "media_type": "application/json", "path": prepared_artifact.name,
+                "sha256": sha256(prepared_artifact),
+            }],
+            "evidence": "Prepared result crash proof", "fact_claims": [],
+            "message_id": "prepared-message", "result_id": "prepared-result",
+            "result_version": "1.0.0", "schema": "ai-human.exchange-result-request/v1",
+            "source_owner_worker_id": "crash-worker",
+        }
+        prepared_result_path = self.write_json_fixture(
+            "prepared-result-request.json", prepared_result_request
+        )
+        self.assertIn(
+            "belongs to another operation",
+            self.run_cli(
+                "exchange-result", worker["path"], "--exchange", exchange,
+                "--session-id", worker["session"], "--expected-state-hash", worker["state"],
+                "--result", prepared_result_path, expect=1,
+            ).stderr,
+        )
+        recovered_decision = self.run_cli(
+            "exchange-decide", worker["path"], "prepared-message", "ACCEPT",
+            "--exchange", exchange, "--session-id", worker["session"],
+            "--expected-state-hash", worker["state"], "--reason", "Prepared result accepted",
+        )
+        worker["state"] = self.output_value(
+            recovered_decision.stdout, "new expected-state hash"
+        )
+        prepared_result_args = SimpleNamespace(
+            worker=str(worker["path"]), exchange=str(exchange), result=str(prepared_result_path),
+            session_id=worker["session"], expected_state_hash=worker["state"],
+        )
+        with mock.patch.object(
+            AI_HUMAN, "exchange_after_transport_mutation",
+            side_effect=RuntimeError("injected post-result-publication crash"),
+        ), mock.patch("builtins.print"):
+            with self.assertRaisesRegex(RuntimeError, "post-result-publication crash"):
+                AI_HUMAN.exchange_result(prepared_result_args)
+        prepared_result = AI_HUMAN.exchange_load_result(
+            exchange, "prepared-message", "crash-worker", "prepared-result"
+        )
+        self.assertEqual(
+            AI_HUMAN.exchange_current_state(exchange, "prepared-message", "crash-worker"),
+            "ACCEPTED",
+        )
+        premature_integration = self.write_json_fixture(
+            "premature-integration.json",
+            {
+                "expected": [{
+                    "message_id": "prepared-message", "result_id": "prepared-result",
+                    "result_sha256": prepared_result["result_sha256"],
+                    "result_version": "1.0.0", "worker_id": "crash-worker",
+                }],
+                "mission_id": "crash-mission",
+                "schema": "ai-human.exchange-integration-request/v1",
+            },
+        )
+        self.assertIn(
+            "lifecycle to be COMPLETED",
+            self.run_cli(
+                "exchange-integrate", owner["path"], "--exchange", exchange,
+                "--session-id", owner["session"], "--expected-state-hash", owner["state"],
+                "--integration", premature_integration, expect=1,
+            ).stderr,
+        )
+        recovered_result = self.run_cli(
+            "exchange-result", worker["path"], "--exchange", exchange,
+            "--session-id", worker["session"], "--expected-state-hash", worker["state"],
+            "--result", prepared_result_path,
+        )
+        worker["state"] = self.output_value(recovered_result.stdout, "new expected-state hash")
+        self.assertEqual(
+            AI_HUMAN.exchange_current_state(exchange, "prepared-message", "crash-worker"),
+            "COMPLETED",
+        )
+
+        ack_args = SimpleNamespace(
+            worker=str(worker["path"]), exchange=str(exchange), message_id="crash-message",
+            session_id=worker["session"], expected_state_hash=worker["state"],
+        )
+        with mock.patch.object(
+            AI_HUMAN, "refresh_lease_state", side_effect=RuntimeError("injected post-write crash")
+        ), mock.patch("builtins.print"):
+            with self.assertRaisesRegex(RuntimeError, "injected post-write crash"):
+                AI_HUMAN.exchange_ack(ack_args)
+        transaction_path = worker["path"] / AI_HUMAN.EXCHANGE_MUTATION_PATH
+        self.assertTrue(transaction_path.is_file())
+        self.assertNotEqual(
+            AI_HUMAN.controlled_state_hash(worker["path"]),
+            AI_HUMAN.read_lease(worker["path"])["state_hash"],
+        )
+
+        transaction_before = transaction_path.read_bytes()
+        forged = json.loads(transaction_before)
+        forged["bindings"]["event_sha256"] = "f" * 64
+        forged["record_sha256"] = AI_HUMAN.exchange_record_sha256(forged, "record_sha256")
+        transaction_path.write_text(
+            json.dumps(forged, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        )
+        self.assertIn(
+            "transport event differs from its exact bindings",
+            self.run_cli(
+                "exchange-local-recover", worker["path"], "--exchange", exchange,
+                "--session-id", worker["session"],
+                "--expected-state-hash", worker["state"], expect=1,
+            ).stderr,
+        )
+        transaction_path.write_bytes(transaction_before)
+        facts_path = worker["path"] / "TODAY.md"
+        facts_before = facts_path.read_bytes()
+        facts_path.write_bytes(facts_before + b"\nUnrelated crash-window change.\n")
+        self.assertIn(
+            "unrelated controlled-state changes",
+            self.run_cli(
+                "exchange-local-recover", worker["path"], "--exchange", exchange,
+                "--session-id", worker["session"],
+                "--expected-state-hash", worker["state"], expect=1,
+            ).stderr,
+        )
+        facts_path.write_bytes(facts_before)
+        ack_retry = self.run_cli(
+            "exchange-ack", worker["path"], "crash-message", "--exchange", exchange,
+            "--session-id", worker["session"], "--expected-state-hash", worker["state"],
+        )
+        self.assertIn("ACK: IDEMPOTENT", ack_retry.stdout)
+        worker["state"] = self.output_value(ack_retry.stdout, "new expected-state hash")
+        self.assertFalse(transaction_path.exists())
+
+        decide_args = SimpleNamespace(
+            worker=str(worker["path"]), exchange=str(exchange), message_id="crash-message",
+            decision="ACCEPT", reason="Exact crash mission accepted",
+            session_id=worker["session"], expected_state_hash=worker["state"],
+        )
+        with mock.patch.object(
+            AI_HUMAN, "refresh_lease_state", side_effect=RuntimeError("injected decide crash")
+        ), mock.patch("builtins.print"):
+            with self.assertRaisesRegex(RuntimeError, "injected decide crash"):
+                AI_HUMAN.exchange_decide(decide_args)
+        recovered = self.run_cli(
+            "exchange-local-recover", worker["path"], "--exchange", exchange,
+            "--session-id", worker["session"], "--expected-state-hash", worker["state"],
+        )
+        self.assertIn("operation: DECIDE", recovered.stdout)
+        worker["state"] = self.output_value(recovered.stdout, "new expected-state hash")
+
+        artifact = worker["path"] / "CRASH-RESULT.json"
+        artifact.write_text('{"schema":"example.result/v1","ok":true}\n', encoding="utf-8")
+        result_request = {
+            "artifacts": [{
+                "media_type": "application/json", "path": artifact.name,
+                "sha256": sha256(artifact),
+            }],
+            "evidence": "Recovered exact local result receipt",
+            "fact_claims": [],
+            "message_id": "crash-message",
+            "result_id": "crash-result",
+            "result_version": "1.0.0",
+            "schema": "ai-human.exchange-result-request/v1",
+            "source_owner_worker_id": "crash-worker",
+        }
+        result_path = self.write_json_fixture("crash-result.json", result_request)
+        result_args = SimpleNamespace(
+            worker=str(worker["path"]), exchange=str(exchange), result=str(result_path),
+            session_id=worker["session"], expected_state_hash=worker["state"],
+        )
+        with mock.patch.object(
+            AI_HUMAN, "refresh_lease_state", side_effect=RuntimeError("injected result crash")
+        ), mock.patch("builtins.print"):
+            with self.assertRaisesRegex(RuntimeError, "injected result crash"):
+                AI_HUMAN.exchange_result(result_args)
+        recovered = self.run_cli(
+            "exchange-local-recover", worker["path"], "--exchange", exchange,
+            "--session-id", worker["session"], "--expected-state-hash", worker["state"],
+        )
+        self.assertIn("operation: RESULT", recovered.stdout)
+        worker["state"] = self.output_value(recovered.stdout, "new expected-state hash")
+        immutable_result = AI_HUMAN.exchange_load_result(
+            exchange, "crash-message", "crash-worker", "crash-result"
+        )
+
+        integration = {
+            "expected": [{
+                "message_id": "crash-message", "result_id": "crash-result",
+                "result_sha256": immutable_result["result_sha256"],
+                "result_version": "1.0.0", "worker_id": "crash-worker",
+            }],
+            "mission_id": "crash-mission",
+            "schema": "ai-human.exchange-integration-request/v1",
+        }
+        integration_path = self.write_json_fixture("crash-integration.json", integration)
+        integrate_args = SimpleNamespace(
+            worker=str(owner["path"]), exchange=str(exchange), integration=str(integration_path),
+            session_id=owner["session"], expected_state_hash=owner["state"],
+        )
+        with mock.patch.object(
+            AI_HUMAN, "refresh_lease_state", side_effect=RuntimeError("injected integration crash")
+        ), mock.patch("builtins.print"):
+            with self.assertRaisesRegex(RuntimeError, "injected integration crash"):
+                AI_HUMAN.exchange_integrate(integrate_args)
+        recovered = self.run_cli(
+            "exchange-local-recover", owner["path"], "--exchange", exchange,
+            "--session-id", owner["session"], "--expected-state-hash", owner["state"],
+        )
+        self.assertIn("operation: INTEGRATE", recovered.stdout)
+        owner["state"] = self.output_value(recovered.stdout, "new expected-state hash")
+
+        reject_path = self.write_json_fixture(
+            "reject-message.json",
+            self.exchange_request(
+                "reject-message", ["crash-worker"], conversation_id="reject-conversation"
+            ),
+        )
+        self.run_cli(
+            "exchange-send", owner["path"], "--exchange", exchange,
+            "--session-id", owner["session"], "--expected-state-hash", owner["state"],
+            "--request", reject_path,
+        )
+        acked = self.run_cli(
+            "exchange-ack", worker["path"], "reject-message", "--exchange", exchange,
+            "--session-id", worker["session"], "--expected-state-hash", worker["state"],
+        )
+        worker["state"] = self.output_value(acked.stdout, "new expected-state hash")
+        rejected = self.run_cli(
+            "exchange-decide", worker["path"], "reject-message", "REJECT",
+            "--exchange", exchange, "--session-id", worker["session"],
+            "--expected-state-hash", worker["state"], "--reason", "Not in current scope",
+        )
+        worker["state"] = self.output_value(rejected.stdout, "new expected-state hash")
+        retry_reject = self.run_cli(
+            "exchange-decide", worker["path"], "reject-message", "REJECT",
+            "--exchange", exchange, "--session-id", worker["session"],
+            "--expected-state-hash", worker["state"], "--reason", "Not in current scope",
+        )
+        self.assertIn("DECISION: IDEMPOTENT", retry_reject.stdout)
+        self.assertTrue((worker["path"] / ".ai-human/exchange/received/reject-message.json").is_file())
+        self.assertTrue((worker["path"] / ".ai-human/exchange/rejected/reject-message.json").is_file())
+
+        self.run_cli(
+            "exchange-policy-revoke", "crash-policy", "--exchange", exchange,
+            "--owner", "Mission Owner", "--approval-reference", "DECISIONS.md revoke crash route",
+            "--reason", "Prepare exact worker leave",
+        )
+        self.run_cli(
+            "exchange-directory-status", "crash-worker", "PAUSED", "--exchange", exchange,
+            "--owner", "Mission Owner", "--reason", "Prepare downgrade-safe leave",
+        )
+        leave_args = SimpleNamespace(
+            worker=str(worker["path"]), exchange=str(exchange), session_id=worker["session"],
+            expected_state_hash=worker["state"],
+        )
+        with mock.patch.object(
+            AI_HUMAN, "refresh_lease_state", side_effect=RuntimeError("injected leave crash")
+        ), mock.patch("builtins.print"):
+            with self.assertRaisesRegex(RuntimeError, "injected leave crash"):
+                AI_HUMAN.exchange_leave(leave_args)
+        recovered = self.run_cli(
+            "exchange-local-recover", worker["path"], "--exchange", exchange,
+            "--session-id", worker["session"], "--expected-state-hash", worker["state"],
+        )
+        self.assertIn("operation: LEAVE", recovered.stdout)
+        worker["state"] = self.output_value(recovered.stdout, "new expected-state hash")
+        self.assertEqual(
+            AI_HUMAN.controlled_state_hash(worker["path"]),
+            AI_HUMAN.read_lease(worker["path"])["state_hash"],
+        )
+        self.assertIn("AUDIT: PASS", self.run_cli("exchange-audit", "--exchange", exchange).stdout)
+
+    def test_worker_exchange_join_repairs_partial_state_and_refreshes_stale_directory(self):
+        exchange = self.base / "join-recovery-exchange"
+        config_path = self.write_json_fixture(
+            "join-recovery-config.json", self.exchange_config(directory_max_age_minutes=1)
+        )
+        self.run_cli(
+            "exchange-init", "--exchange", exchange, "--config", config_path,
+            "--owner", "Mission Owner",
+        )
+        worker = self.base / "join-recovery-worker"
+        self.install(worker, worker_id="join-recovery-worker")
+        state = self.acquire_session(worker, "join-recovery-session")
+        joined = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(minutes=10)
+        entry = self.exchange_entry(
+            worker, "join-recovery-worker",
+            joined_utc=joined.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        )
+        entry_path = self.write_json_fixture("join-recovery-entry.json", entry)
+        config = AI_HUMAN.exchange_config(exchange)
+        proof = {
+            "config_sha256": AI_HUMAN.canonical_json_sha256(config),
+            "directory_entry": entry,
+            "exchange_id": config["exchange_id"],
+            "joined_utc": entry["joined_utc"],
+            "proof_sha256": "",
+            "schema": "ai-human.exchange-join-proof/v1",
+        }
+        proof["proof_sha256"] = AI_HUMAN.exchange_record_sha256(proof, "proof_sha256")
+        (exchange / "directory/join-recovery-worker.json").write_text(
+            json.dumps(entry, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        )
+        recovered = self.run_cli(
+            "exchange-join", worker, "--exchange", exchange,
+            "--session-id", "join-recovery-session", "--expected-state-hash", state,
+            "--entry", entry_path,
+        )
+        self.assertIn("JOIN: RECOVERED", recovered.stdout)
+        state = self.output_value(recovered.stdout, "new expected-state hash")
+        repeated = self.run_cli(
+            "exchange-join", worker, "--exchange", exchange,
+            "--session-id", "join-recovery-session", "--expected-state-hash", state,
+            "--entry", entry_path,
+        )
+        self.assertIn("JOIN: IDEMPOTENT", repeated.stdout)
+
+        stale_entry = dict(entry)
+        stale_entry["verified_utc"] = (
+            joined + datetime.timedelta(minutes=1)
+        ).strftime("%Y-%m-%dT%H:%M:%SZ")
+        stale_proof = {
+            **proof,
+            "directory_entry": stale_entry,
+            "proof_sha256": "",
+        }
+        stale_proof["proof_sha256"] = AI_HUMAN.exchange_record_sha256(
+            stale_proof, "proof_sha256"
+        )
+        for path, value in (
+            (exchange / "directory/join-recovery-worker.json", stale_entry),
+            (exchange / "join-receipts/join-recovery-worker.json", stale_proof),
+            (exchange / "join-history" / (stale_proof["proof_sha256"] + ".json"), stale_proof),
+            (worker / ".ai-human/exchange/join.json", stale_proof),
+        ):
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        AI_HUMAN.refresh_lease_state(worker, AI_HUMAN.read_lease(worker))
+        state = AI_HUMAN.read_lease(worker)["state_hash"]
+        self.assertIn(
+            "directory entry is stale",
+            self.run_cli("exchange-show", worker, "--exchange", exchange, expect=1).stderr,
+        )
+        fresh_entry = dict(stale_entry)
+        fresh_entry["verified_utc"] = datetime.datetime.now(
+            datetime.timezone.utc
+        ).strftime("%Y-%m-%dT%H:%M:%SZ")
+        fresh_path = self.write_json_fixture("fresh-directory-entry.json", fresh_entry)
+        refreshed = self.run_cli(
+            "exchange-directory-refresh", worker, "--exchange", exchange,
+            "--session-id", "join-recovery-session", "--expected-state-hash", state,
+            "--entry", fresh_path,
+        )
+        self.assertIn("DIRECTORY REFRESH: PASS", refreshed.stdout)
+        self.assertIn("AUDIT: PASS", self.run_cli("exchange-audit", "--exchange", exchange).stdout)
+
+        second = self.base / "join-recovery-worker-two"
+        self.install(second, worker_id="join-recovery-worker-two")
+        second_state = self.acquire_session(second, "join-recovery-session-two")
+        second_entry = self.exchange_entry(second, "join-recovery-worker-two")
+        second_entry_path = self.write_json_fixture("join-recovery-entry-two.json", second_entry)
+        second_proof = {
+            "config_sha256": AI_HUMAN.canonical_json_sha256(config),
+            "directory_entry": second_entry,
+            "exchange_id": config["exchange_id"],
+            "joined_utc": second_entry["joined_utc"],
+            "proof_sha256": "",
+            "schema": "ai-human.exchange-join-proof/v1",
+        }
+        second_proof["proof_sha256"] = AI_HUMAN.exchange_record_sha256(
+            second_proof, "proof_sha256"
+        )
+        AI_HUMAN.exchange_write_join_triplet(second, exchange, second_entry, second_proof)
+        repaired_lease = self.run_cli(
+            "exchange-join", second, "--exchange", exchange,
+            "--session-id", "join-recovery-session-two",
+            "--expected-state-hash", second_state, "--entry", second_entry_path,
+        )
+        self.assertIn("JOIN: RECOVERED", repaired_lease.stdout)
+        self.assertEqual(
+            AI_HUMAN.controlled_state_hash(second), AI_HUMAN.read_lease(second)["state_hash"]
+        )
+        self.assertIn("AUDIT: PASS", self.run_cli("exchange-audit", "--exchange", exchange).stdout)
+
+    def test_worker_exchange_refresh_and_route_revocation_hide_future_retrieval_only(self):
+        exchange, workers = self.setup_exchange_workers([
+            ("access-sender", "INTERNAL"), ("access-recipient", "INTERNAL"),
+        ])
+        sender = workers["access-sender"]
+        recipient = workers["access-recipient"]
+        policy_path = self.write_json_fixture(
+            "access-policy.json",
+            self.exchange_policy("access-policy", "access-sender", "access-recipient"),
+        )
+        self.run_cli(
+            "exchange-policy-add", "--exchange", exchange, "--owner", "Mission Owner",
+            "--policy", policy_path,
+        )
+        request_path = self.write_json_fixture(
+            "access-message.json",
+            self.exchange_request("access-message", ["access-recipient"]),
+        )
+        self.run_cli(
+            "exchange-send", sender["path"], "--exchange", exchange,
+            "--session-id", sender["session"], "--expected-state-hash", sender["state"],
+            "--request", request_path,
+        )
+        current = json.loads(
+            (recipient["path"] / ".ai-human/exchange/join.json").read_text(encoding="utf-8")
+        )["directory_entry"]
+        refreshed_entry = dict(current)
+        refreshed_entry["verified_utc"] = (
+            datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(seconds=1)
+        ).strftime("%Y-%m-%dT%H:%M:%SZ")
+        refresh_path = self.write_json_fixture("access-refresh.json", refreshed_entry)
+        refreshed = self.run_cli(
+            "exchange-directory-refresh", recipient["path"], "--exchange", exchange,
+            "--session-id", recipient["session"],
+            "--expected-state-hash", recipient["state"], "--entry", refresh_path,
+        )
+        recipient["state"] = self.output_value(refreshed.stdout, "new expected-state hash")
+        self.assertIn(
+            "visible messages: 1",
+            self.run_cli("exchange-show", recipient["path"], "--exchange", exchange).stdout,
+        )
+        self.run_cli(
+            "exchange-directory-status", "access-sender", "PAUSED", "--exchange", exchange,
+            "--owner", "Mission Owner", "--reason", "Prove sender retirement gates retrieval",
+        )
+        self.assertIn(
+            "visible messages: 0",
+            self.run_cli("exchange-show", recipient["path"], "--exchange", exchange).stdout,
+        )
+        self.run_cli(
+            "exchange-directory-status", "access-sender", "ACTIVE", "--exchange", exchange,
+            "--owner", "Mission Owner", "--reason", "Restore sender for policy revocation proof",
+        )
+        self.run_cli(
+            "exchange-policy-revoke", "access-policy", "--exchange", exchange,
+            "--owner", "Mission Owner", "--approval-reference", "DECISIONS.md access revoke",
+            "--reason", "End future exact route access",
+        )
+        self.assertIn(
+            "visible messages: 0",
+            self.run_cli("exchange-show", recipient["path"], "--exchange", exchange).stdout,
+        )
+        denied_path = self.write_json_fixture(
+            "access-denied.json",
+            self.exchange_request("access-denied", ["access-recipient"]),
+        )
+        self.assertIn(
+            "exact route policy",
+            self.run_cli(
+                "exchange-send", sender["path"], "--exchange", exchange,
+                "--session-id", sender["session"], "--expected-state-hash", sender["state"],
+                "--request", denied_path, expect=1,
+            ).stderr,
+        )
+        self.assertTrue((exchange / "messages/access-message/envelope.json").is_file())
+        delivery = exchange / "inboxes/access-recipient/access-message.json"
+        delivery.unlink()
+        recovered = self.run_cli(
+            "exchange-recover", "--exchange", exchange, "--owner", "Mission Owner"
+        )
+        self.assertIn("RECOVERY: PASS", recovered.stdout)
+        self.assertFalse(delivery.exists())
+        self.assertEqual(
+            AI_HUMAN.exchange_current_state(exchange, "access-message", "access-recipient"),
+            "FAILED",
+        )
+        self.assertIn("AUDIT: PASS", self.run_cli("exchange-audit", "--exchange", exchange).stdout)
+
+    def test_worker_exchange_cross_boundary_route_requires_explicit_authorization(self):
+        exchange = self.base / "cross-boundary-exchange"
+        config_path = self.write_json_fixture("cross-boundary-config.json", self.exchange_config())
+        self.run_cli(
+            "exchange-init", "--exchange", exchange, "--config", config_path,
+            "--owner", "Mission Owner",
+        )
+        specs = [
+            ("boundary-a", {}),
+            ("boundary-b", {
+                "company": "Different Holdings",
+                "legal_entity": "Different Holdings Private Limited",
+                "operating_units": ["Different Operations Unit"],
+            }),
+        ]
+        for worker_id, identity in specs:
+            worker = self.base / worker_id
+            self.install(worker, worker_id=worker_id, **identity)
+            state = self.acquire_session(worker, worker_id + "-session")
+            entry_overrides = {}
+            if identity:
+                entry_overrides = {
+                    "company": identity["company"],
+                    "legal_entity": identity["legal_entity"],
+                    "operating_unit": identity["operating_units"][0],
+                }
+            entry_path = self.write_json_fixture(
+                "cross-entry-" + worker_id + ".json",
+                self.exchange_entry(worker, worker_id, **entry_overrides),
+            )
+            self.run_cli(
+                "exchange-join", worker, "--exchange", exchange,
+                "--session-id", worker_id + "-session", "--expected-state-hash", state,
+                "--entry", entry_path,
+            )
+        denied_policy = self.write_json_fixture(
+            "cross-policy-denied.json",
+            self.exchange_policy("cross-policy-denied", "boundary-a", "boundary-b"),
+        )
+        self.assertIn(
+            "cross-boundary route policy requires",
+            self.run_cli(
+                "exchange-policy-add", "--exchange", exchange, "--owner", "Mission Owner",
+                "--policy", denied_policy, expect=1,
+            ).stderr,
+        )
+        allowed_policy = self.write_json_fixture(
+            "cross-policy-allowed.json",
+            self.exchange_policy(
+                "cross-policy-allowed", "boundary-a", "boundary-b",
+                cross_boundary_authorization_reference="DECISIONS.md approved cross-entity route",
+            ),
+        )
+        self.assertIn(
+            "POLICY: PASS",
+            self.run_cli(
+                "exchange-policy-add", "--exchange", exchange, "--owner", "Mission Owner",
+                "--policy", allowed_policy,
+            ).stdout,
+        )
+
+    def test_worker_exchange_applies_current_governor_cap_to_independent_work(self):
+        exchange, workers = self.setup_exchange_workers([
+            ("cap-sender", "INTERNAL"), ("cap-recipient", "INTERNAL"),
+            ("cap-third", "INTERNAL"),
+        ])
+        sender = workers["cap-sender"]
+        recipient = workers["cap-recipient"]
+        for name, worker in (("sender", sender), ("recipient", recipient)):
+            policy_path = self.write_json_fixture(
+                "cap-governor-" + name + ".json",
+                self.governor_policy(policy_id="cap-governor-" + name, pilot_size=1),
+            )
+            configured = self.run_cli(
+                "governor-configure", worker["path"], "--session-id", worker["session"],
+                "--expected-state-hash", worker["state"], "--policy", policy_path,
+            )
+            worker["state"] = self.output_value(configured.stdout, "new expected-state hash")
+        policy_path = self.write_json_fixture(
+            "cap-route.json", self.exchange_policy(
+                "cap-route", "cap-sender", "cap-recipient"
+            ),
+        )
+        self.run_cli(
+            "exchange-policy-add", "--exchange", exchange, "--owner", "Mission Owner",
+            "--policy", policy_path,
+        )
+
+        fanout_path = self.write_json_fixture(
+            "cap-fanout.json",
+            self.exchange_request("cap-fanout", ["cap-recipient", "cap-third"]),
+        )
+        self.assertIn(
+            "current effective batch cap",
+            self.run_cli(
+                "exchange-send", sender["path"], "--exchange", exchange,
+                "--session-id", sender["session"], "--expected-state-hash", sender["state"],
+                "--request", fanout_path, expect=1,
+            ).stderr,
+        )
+        attachment_path = self.write_json_fixture(
+            "cap-attachments.json",
+            self.exchange_request(
+                "cap-attachments", ["cap-recipient"], attachments=[
+                    {"media_type": "text/plain", "path": "one.txt", "sha256": "1" * 64},
+                    {"media_type": "text/plain", "path": "two.txt", "sha256": "2" * 64},
+                ],
+            ),
+        )
+        self.assertIn(
+            "current effective batch cap",
+            self.run_cli(
+                "exchange-send", sender["path"], "--exchange", exchange,
+                "--session-id", sender["session"], "--expected-state-hash", sender["state"],
+                "--request", attachment_path, expect=1,
+            ).stderr,
+        )
+
+        message_path = self.write_json_fixture(
+            "cap-message.json", self.exchange_request("cap-message", ["cap-recipient"])
+        )
+        self.run_cli(
+            "exchange-send", sender["path"], "--exchange", exchange,
+            "--session-id", sender["session"], "--expected-state-hash", sender["state"],
+            "--request", message_path,
+        )
+        acked = self.run_cli(
+            "exchange-ack", recipient["path"], "cap-message", "--exchange", exchange,
+            "--session-id", recipient["session"], "--expected-state-hash", recipient["state"],
+        )
+        recipient["state"] = self.output_value(acked.stdout, "new expected-state hash")
+        accepted = self.run_cli(
+            "exchange-decide", recipient["path"], "cap-message", "ACCEPT",
+            "--exchange", exchange, "--session-id", recipient["session"],
+            "--expected-state-hash", recipient["state"], "--reason", "Bounded acceptance",
+        )
+        recipient["state"] = self.output_value(accepted.stdout, "new expected-state hash")
+        result_path = self.write_json_fixture(
+            "cap-result.json",
+            {
+                "artifacts": [
+                    {"media_type": "text/plain", "path": "one.txt", "sha256": "1" * 64},
+                    {"media_type": "text/plain", "path": "two.txt", "sha256": "2" * 64},
+                ],
+                "evidence": "Synthetic cap proof", "fact_claims": [],
+                "message_id": "cap-message", "result_id": "cap-result",
+                "result_version": "1.0.0", "schema": "ai-human.exchange-result-request/v1",
+                "source_owner_worker_id": "cap-recipient",
+            },
+        )
+        self.assertIn(
+            "current effective batch cap",
+            self.run_cli(
+                "exchange-result", recipient["path"], "--exchange", exchange,
+                "--session-id", recipient["session"],
+                "--expected-state-hash", recipient["state"], "--result", result_path,
+                expect=1,
+            ).stderr,
+        )
+        integration_path = self.write_json_fixture(
+            "cap-integration.json",
+            {
+                "expected": [
+                    {"message_id": "one", "result_id": "one", "result_sha256": "1" * 64,
+                     "result_version": "1", "worker_id": "cap-recipient"},
+                    {"message_id": "two", "result_id": "two", "result_sha256": "2" * 64,
+                     "result_version": "1", "worker_id": "cap-third"},
+                ],
+                "mission_id": "cap-mission", "schema": "ai-human.exchange-integration-request/v1",
+            },
+        )
+        self.assertIn(
+            "current effective batch cap",
+            self.run_cli(
+                "exchange-integrate", sender["path"], "--exchange", exchange,
+                "--session-id", sender["session"], "--expected-state-hash", sender["state"],
+                "--integration", integration_path, expect=1,
+            ).stderr,
+        )
 
     def test_worker_exchange_rejects_forgery_noise_unsafe_payloads_and_recovers_crashes(self):
         exchange, workers = self.setup_exchange_workers(
-            [("relay-sender", "INTERNAL"), ("relay-recipient", "INTERNAL")]
+            [
+                ("relay-sender", "INTERNAL"), ("relay-recipient", "INTERNAL"),
+                ("relay-outsider", "INTERNAL"),
+            ]
         )
         sender = workers["relay-sender"]
         recipient = workers["relay-recipient"]
+        outsider = workers["relay-outsider"]
         request = self.exchange_request("no-policy", ["relay-recipient"])
         request_path = self.write_json_fixture("no-policy.json", request)
         denied = self.run_cli(
@@ -3497,6 +4464,66 @@ class LifecycleTests(unittest.TestCase):
         self.run_cli(
             "exchange-policy-add", "--exchange", exchange, "--owner", "Mission Owner",
             "--policy", policy_path,
+        )
+        outsider_policy = self.write_json_fixture(
+            "outsider-policy.json",
+            self.exchange_policy("outsider-policy", "relay-outsider", "relay-sender"),
+        )
+        self.run_cli(
+            "exchange-policy-add", "--exchange", exchange, "--owner", "Mission Owner",
+            "--policy", outsider_policy,
+        )
+
+        for lifecycle_type in ("ACK", "REJECT", "CANCEL"):
+            lifecycle_path = self.write_json_fixture(
+                "unsupported-" + lifecycle_type.casefold() + ".json",
+                self.exchange_request(
+                    "unsupported-" + lifecycle_type.casefold(), ["relay-recipient"],
+                    message_type=lifecycle_type,
+                ),
+            )
+            self.assertIn(
+                "message type is invalid",
+                self.run_cli(
+                    "exchange-send", sender["path"], "--exchange", exchange,
+                    "--session-id", sender["session"],
+                    "--expected-state-hash", sender["state"],
+                    "--request", lifecycle_path, expect=1,
+                ).stderr,
+            )
+
+        secret_request_path = self.write_json_fixture(
+            "secret-request.json",
+            self.exchange_request(
+                "secret-request", ["relay-recipient"], purpose="api_key=synthetic-secret"
+            ),
+        )
+        self.assertIn(
+            "request appears to contain secret material",
+            self.run_cli(
+                "exchange-send", sender["path"], "--exchange", exchange,
+                "--session-id", sender["session"], "--expected-state-hash", sender["state"],
+                "--request", secret_request_path, expect=1,
+            ).stderr,
+        )
+        secret_file = sender["path"] / "notes.txt"
+        secret_file.write_text("api_key=synthetic-secret\n", encoding="utf-8")
+        secret_attachment_path = self.write_json_fixture(
+            "secret-attachment.json",
+            self.exchange_request(
+                "secret-attachment", ["relay-recipient"], attachments=[{
+                    "media_type": "text/plain", "path": secret_file.name,
+                    "sha256": sha256(secret_file),
+                }],
+            ),
+        )
+        self.assertIn(
+            "appears to contain secret material",
+            self.run_cli(
+                "exchange-send", sender["path"], "--exchange", exchange,
+                "--session-id", sender["session"], "--expected-state-hash", sender["state"],
+                "--request", secret_attachment_path, expect=1,
+            ).stderr,
         )
 
         unsafe = self.exchange_request(
@@ -3556,6 +4583,22 @@ class LifecycleTests(unittest.TestCase):
             "--session-id", sender["session"], "--expected-state-hash", sender["state"],
             "--request", valid_path,
         )
+        outsider_reply_path = self.write_json_fixture(
+            "outsider-reply.json",
+            self.exchange_request(
+                "outsider-reply", ["relay-sender"], reply_to="recoverable-message", hop=1,
+                conversation_id="recoverable-conversation",
+            ),
+        )
+        self.assertIn(
+            "did not participate in the parent envelope",
+            self.run_cli(
+                "exchange-send", outsider["path"], "--exchange", exchange,
+                "--session-id", outsider["session"],
+                "--expected-state-hash", outsider["state"],
+                "--request", outsider_reply_path, expect=1,
+            ).stderr,
+        )
         bundle = next((exchange / "messages/recoverable-message/attachments").iterdir())
         original_bundle = bundle.read_bytes()
         bundle.write_bytes(b"tampered")
@@ -3570,12 +4613,90 @@ class LifecycleTests(unittest.TestCase):
         bundle.write_bytes(original_bundle)
         envelope_path = exchange / "messages/recoverable-message/envelope.json"
         original_envelope = envelope_path.read_bytes()
+        semantic_tampers = (
+            ("protocol", lambda value: value.__setitem__("protocol", "forged/v9"), "protocol is invalid"),
+            ("authority", lambda value: value.__setitem__("authority", "TRANSFER_ALL"), "authority boundary is invalid"),
+            (
+                "delivery", lambda value: value["delivery_locations"].__setitem__(
+                    "relay-recipient", "inboxes/another-worker/recoverable-message.json"
+                ), "delivery locations are invalid",
+            ),
+            (
+                "receipt-location",
+                lambda value: value.__setitem__("transport_receipt_location", "messages/"),
+                "transport receipt location is invalid",
+            ),
+            (
+                "fingerprint", lambda value: value.__setitem__("material_fingerprint", "0" * 64),
+                "material fingerprint is invalid",
+            ),
+            (
+                "attachment-descriptor",
+                lambda value: value["attachments"][0].__setitem__("media_type", "text/html"),
+                "differs from its signed request descriptor",
+            ),
+            (
+                "attachment-size",
+                lambda value: value["attachments"][0].__setitem__(
+                    "size_bytes", self.exchange_config()["max_attachment_bytes"] + 1
+                ),
+                "must not exceed",
+            ),
+        )
+        for _name, mutate, error in semantic_tampers:
+            tampered = json.loads(original_envelope)
+            mutate(tampered)
+            tampered["envelope_sha256"] = AI_HUMAN.exchange_envelope_sha256(tampered)
+            envelope_path.write_text(
+                json.dumps(tampered, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+            )
+            with self.assertRaisesRegex(ValueError, error):
+                AI_HUMAN.exchange_load_envelope(exchange, "recoverable-message")
+        envelope_path.write_bytes(original_envelope)
+
+        queued_path = next(
+            path for path in (exchange / "messages/recoverable-message/events").iterdir()
+            if json.loads(path.read_text(encoding="utf-8"))["state"] == "QUEUED"
+        )
+        original_queued = queued_path.read_bytes()
+        invalid_actor = json.loads(original_queued)
+        invalid_actor["actor_worker_id"] = "relay-recipient"
+        invalid_actor["event_sha256"] = AI_HUMAN.exchange_record_sha256(
+            invalid_actor, "event_sha256"
+        )
+        queued_path.write_text(
+            json.dumps(invalid_actor, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        )
+        self.assertIn(
+            "QUEUED event actor must be the sender",
+            self.run_cli("exchange-audit", "--exchange", exchange, expect=1).stdout,
+        )
+        queued_path.write_bytes(original_queued)
+        delivered_path = next(
+            path for path in (exchange / "messages/recoverable-message/events").iterdir()
+            if json.loads(path.read_text(encoding="utf-8"))["state"] == "DELIVERED"
+        )
+        original_delivered = delivered_path.read_bytes()
+        invalid_time = json.loads(original_delivered)
+        invalid_time["created_utc"] = "2000-01-01T00:00:00Z"
+        invalid_time["event_sha256"] = AI_HUMAN.exchange_record_sha256(
+            invalid_time, "event_sha256"
+        )
+        delivered_path.write_text(
+            json.dumps(invalid_time, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        )
+        self.assertIn(
+            "timestamps are not chronological",
+            self.run_cli("exchange-audit", "--exchange", exchange, expect=1).stdout,
+        )
+        delivered_path.write_bytes(original_delivered)
+
         envelope = json.loads(original_envelope)
         envelope["sender_worker_id"] = "forged-sender"
         envelope["envelope_sha256"] = AI_HUMAN.exchange_envelope_sha256(envelope)
         envelope_path.write_text(json.dumps(envelope, indent=2, sort_keys=True) + "\n", encoding="utf-8")
         forged = self.run_cli("exchange-audit", "--exchange", exchange, expect=1)
-        self.assertIn("forged or missing", forged.stdout)
+        self.assertIn("material fingerprint is invalid", forged.stdout)
         envelope_path.write_bytes(original_envelope)
         join_path = exchange / "join-receipts/relay-sender.json"
         original_join = join_path.read_bytes()
@@ -3590,6 +4711,31 @@ class LifecycleTests(unittest.TestCase):
         forged_proof = self.run_cli("exchange-audit", "--exchange", exchange, expect=1)
         self.assertIn("another configuration", forged_proof.stdout)
         join_path.write_bytes(original_join)
+
+        valid_key_hash = hashlib.sha256(valid["idempotency_key"].encode("utf-8")).hexdigest()
+        valid_index_path = exchange / "indexes" / (valid_key_hash + ".json")
+        original_index = valid_index_path.read_bytes()
+        forged_index = json.loads(original_index)
+        forged_index["message_id"] = "another-message"
+        forged_index["index_sha256"] = AI_HUMAN.exchange_record_sha256(
+            forged_index, "index_sha256"
+        )
+        valid_index_path.write_text(
+            json.dumps(forged_index, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        )
+        self.assertIn(
+            "idempotency index differs from its exact request",
+            self.run_cli("exchange-audit", "--exchange", exchange, expect=1).stdout,
+        )
+        self.assertIn(
+            "idempotency index differs from its exact request",
+            self.run_cli(
+                "exchange-send", sender["path"], "--exchange", exchange,
+                "--session-id", sender["session"], "--expected-state-hash", sender["state"],
+                "--request", valid_path, expect=1,
+            ).stderr,
+        )
+        valid_index_path.write_bytes(original_index)
 
         replay = self.exchange_request("replay-other-id", ["relay-recipient"])
         replay["idempotency_key"] = valid["idempotency_key"]
@@ -3617,14 +4763,29 @@ class LifecycleTests(unittest.TestCase):
             conversation_id="status-conversation",
         )
         status_two_path = self.write_json_fixture("status-two.json", status_two)
-        self.assertIn(
-            "no-material-change STATUS is silent",
-            self.run_cli(
-                "exchange-send", sender["path"], "--exchange", exchange,
-                "--session-id", sender["session"], "--expected-state-hash", sender["state"],
-                "--request", status_two_path, expect=1,
-            ).stderr,
+        before_quiet_messages = len(list((exchange / "messages").iterdir()))
+        before_quiet_journal = len(list((exchange / "journal").iterdir()))
+        quiet = self.run_cli(
+            "exchange-send", sender["path"], "--exchange", exchange,
+            "--session-id", sender["session"], "--expected-state-hash", sender["state"],
+            "--request", status_two_path,
         )
+        self.assertIn("SEND: QUIET", quiet.stdout)
+        self.assertIn("message created: NO", quiet.stdout)
+        self.assertEqual(len(list((exchange / "messages").iterdir())), before_quiet_messages)
+        self.assertEqual(len(list((exchange / "journal").iterdir())), before_quiet_journal)
+        status_changed = self.exchange_request(
+            "status-changed", ["relay-recipient"], message_type="STATUS",
+            conversation_id="status-conversation",
+            tool_boundaries=["Different material tool boundary"],
+        )
+        status_changed_path = self.write_json_fixture("status-changed.json", status_changed)
+        changed = self.run_cli(
+            "exchange-send", sender["path"], "--exchange", exchange,
+            "--session-id", sender["session"], "--expected-state-hash", sender["state"],
+            "--request", status_changed_path,
+        )
+        self.assertIn("SEND: PASS", changed.stdout)
 
         # Reproduce a relay crash after immutable event commit but before journal/index/inbox repair.
         (exchange / "inboxes/relay-recipient/status-one.json").unlink()
@@ -3654,6 +4815,21 @@ class LifecycleTests(unittest.TestCase):
             "--session-id", recipient["session"], "--expected-state-hash", recipient["state"],
         )
         self.assertIn("ACK: IDEMPOTENT", retry_ack.stdout)
+        local_ack_path = recipient["path"] / ".ai-human/exchange/received/recoverable-message.json"
+        original_local_ack = local_ack_path.read_bytes()
+        forged_local_ack = json.loads(original_local_ack)
+        forged_local_ack["transport_state"] = "DELIVERED"
+        forged_local_ack["record_sha256"] = AI_HUMAN.exchange_record_sha256(
+            forged_local_ack, "record_sha256"
+        )
+        local_ack_path.write_text(
+            json.dumps(forged_local_ack, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        )
+        self.assertIn(
+            "acknowledgement receipt semantics are invalid",
+            self.run_cli("validate", recipient["path"], expect=1).stdout,
+        )
+        local_ack_path.write_bytes(original_local_ack)
 
         self.run_cli(
             "exchange-directory-status", "relay-recipient", "PAUSED", "--exchange", exchange,
@@ -3665,8 +4841,46 @@ class LifecycleTests(unittest.TestCase):
             "--owner", "Mission Owner", "--reason", "Restore tested access",
         )
         self.assertIn(
-            "visible messages: 2",
+            "visible messages: 3",
             self.run_cli("exchange-show", recipient["path"], "--exchange", exchange).stdout,
+        )
+
+        decision_expiry = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(minutes=5)
+        expiring_request = self.exchange_request(
+            "decision-expiry", ["relay-recipient"], conversation_id="decision-expiry",
+            expires_utc=decision_expiry.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        )
+        expiring_path = self.write_json_fixture("decision-expiry.json", expiring_request)
+        self.run_cli(
+            "exchange-send", sender["path"], "--exchange", exchange,
+            "--session-id", sender["session"], "--expected-state-hash", sender["state"],
+            "--request", expiring_path,
+        )
+        expiring_ack = self.run_cli(
+            "exchange-ack", recipient["path"], "decision-expiry", "--exchange", exchange,
+            "--session-id", recipient["session"], "--expected-state-hash", recipient["state"],
+        )
+        recipient["state"] = self.output_value(expiring_ack.stdout, "new expected-state hash")
+        real_datetime = AI_HUMAN.datetime.datetime
+
+        class FutureDateTime(real_datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return real_datetime.now(tz) + datetime.timedelta(minutes=10)
+
+        expiring_decision_args = SimpleNamespace(
+            worker=str(recipient["path"]), exchange=str(exchange), message_id="decision-expiry",
+            decision="ACCEPT", reason="Must not accept after expiry",
+            session_id=recipient["session"], expected_state_hash=recipient["state"],
+        )
+        with mock.patch.object(AI_HUMAN.datetime, "datetime", FutureDateTime), mock.patch(
+            "builtins.print"
+        ):
+            with self.assertRaisesRegex(ValueError, "expired before recipient decision"):
+                AI_HUMAN.exchange_decide(expiring_decision_args)
+        self.assertEqual(
+            AI_HUMAN.exchange_current_state(exchange, "decision-expiry", "relay-recipient"),
+            "EXPIRED",
         )
 
         cyclic_mission = {
@@ -3682,6 +4896,7 @@ class LifecycleTests(unittest.TestCase):
             "mission_id": "cyclic-mission",
             "name": "Cyclic mission",
             "purpose": "Prove cycle rejection",
+            "required_result_worker_ids": ["relay-recipient"],
             "schema": "ai-human.exchange-mission/v1",
             "source_owner_worker_id": "relay-sender",
             "status": "ACTIVE",
@@ -7057,6 +8272,127 @@ class LifecycleTests(unittest.TestCase):
         self.assertIn("RESTORE: PASS", restored.stdout)
         self.assertEqual(sha256(worker / ".ai-human/improvement/config.json"), config_hash)
         self.assertEqual(self.run_cli("validate", worker).returncode, 0)
+
+    def test_pre_v24_downgrade_reconciles_and_restores_worker_exchange_state(self):
+        exchange = self.base / "downgrade-worker-exchange"
+        config_path = self.write_json_fixture(
+            "downgrade-exchange-config.json", self.exchange_config()
+        )
+        self.run_cli(
+            "exchange-init", "--exchange", exchange, "--config", config_path,
+            "--owner", "Mission Owner",
+        )
+        workers = {}
+        for worker_id in ("downgrade-sender", "downgrade-recipient"):
+            worker = self.base / worker_id
+            self.install(worker, worker_id=worker_id)
+            session = worker_id + "-session"
+            state = self.acquire_session(worker, session)
+            entry_path = self.write_json_fixture(
+                "downgrade-entry-" + worker_id + ".json",
+                self.exchange_entry(worker, worker_id),
+            )
+            joined = self.run_cli(
+                "exchange-join", worker, "--exchange", exchange,
+                "--session-id", session, "--expected-state-hash", state,
+                "--entry", entry_path,
+            )
+            workers[worker_id] = {
+                "path": worker, "session": session,
+                "state": self.output_value(joined.stdout, "new expected-state hash"),
+            }
+        recipient = workers["downgrade-recipient"]
+        active_policy_path = self.write_json_fixture(
+            "downgrade-active-policy.json",
+            self.exchange_policy(
+                "downgrade-active-policy", "downgrade-sender", "downgrade-recipient"
+            ),
+        )
+        self.run_cli(
+            "exchange-policy-add", "--exchange", exchange, "--owner", "Mission Owner",
+            "--policy", active_policy_path,
+        )
+        expired = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=1)
+        for index in range(30):
+            policy = self.exchange_policy(
+                "historical-policy-" + str(index).zfill(2),
+                "downgrade-sender", "downgrade-recipient",
+                expires_utc=expired.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            )
+            (exchange / "policies" / (policy["policy_id"] + ".json")).write_text(
+                json.dumps(policy, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+            )
+
+        old_release = self.base / "pre-v24-release"
+        shutil.copytree(self.release, old_release)
+        refresh_release(old_release, "2.3.0")
+        blocked = self.run_cli(
+            "rollback", recipient["path"], "--version", "2.3.0",
+            "--source", old_release, expect=1,
+        )
+        self.assertIn("H-55 worker-exchange state", blocked.stderr)
+        self.run_cli(
+            "exchange-directory-status", "downgrade-recipient", "PAUSED",
+            "--exchange", exchange, "--owner", "Mission Owner",
+            "--reason", "Prepare old-runtime downgrade",
+        )
+        self.assertIn(
+            "active exchange route policy must be revoked",
+            self.run_cli(
+                "exchange-leave", recipient["path"], "--exchange", exchange,
+                "--session-id", recipient["session"],
+                "--expected-state-hash", recipient["state"], expect=1,
+            ).stderr,
+        )
+        self.run_cli(
+            "exchange-policy-revoke", "downgrade-active-policy", "--exchange", exchange,
+            "--owner", "Mission Owner",
+            "--approval-reference", "DECISIONS.md downgrade route revoke",
+            "--reason", "Old runtime must not retain an active route",
+        )
+        left = self.run_cli(
+            "exchange-leave", recipient["path"], "--exchange", exchange,
+            "--session-id", recipient["session"],
+            "--expected-state-hash", recipient["state"],
+        )
+        recipient["state"] = self.output_value(left.stdout, "new expected-state hash")
+        leave = json.loads(
+            (recipient["path"] / ".ai-human/exchange/leave.json").read_text(encoding="utf-8")
+        )
+        self.assertEqual(leave["route_policy_count"], 31)
+        self.assertRegex(leave["route_policy_inventory_sha256"], r"^[0-9a-f]{64}$")
+        self.run_cli(
+            "session-release", recipient["path"], "--session-id", recipient["session"],
+            "--expected-state-hash", recipient["state"],
+        )
+        local_before = {
+            path.relative_to(recipient["path"] / ".ai-human/exchange").as_posix(): sha256(path)
+            for path in (recipient["path"] / ".ai-human/exchange").rglob("*") if path.is_file()
+        }
+        relay_before = AI_HUMAN.tree_sha256(exchange)
+        prepared = self.run_cli(
+            "prepare-downgrade", recipient["path"], "--target-version", "2.3.0"
+        )
+        self.assertIn("DOWNGRADE PREPARATION: PASS", prepared.stdout)
+        self.assertFalse((recipient["path"] / ".ai-human/exchange").exists())
+        self.assertEqual(AI_HUMAN.tree_sha256(exchange), relay_before)
+        preparation = json.loads(
+            (recipient["path"] / ".ai-human/control/downgrade-preparation.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        archive = recipient["path"] / preparation["archive"]
+        manifest = json.loads((archive / "archive-manifest.json").read_text(encoding="utf-8"))
+        self.assertIn(".ai-human/exchange", {item["original"] for item in manifest["items"]})
+        restored = self.run_cli("restore-downgrade", recipient["path"])
+        self.assertIn("RESTORE: PASS", restored.stdout)
+        local_after = {
+            path.relative_to(recipient["path"] / ".ai-human/exchange").as_posix(): sha256(path)
+            for path in (recipient["path"] / ".ai-human/exchange").rglob("*") if path.is_file()
+        }
+        self.assertEqual(local_after, local_before)
+        self.assertEqual(AI_HUMAN.tree_sha256(exchange), relay_before)
+        self.assertEqual(self.run_cli("validate", recipient["path"]).returncode, 0)
 
 
 if __name__ == "__main__":

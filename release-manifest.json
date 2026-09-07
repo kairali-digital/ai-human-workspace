@@ -58,7 +58,7 @@
       "target": ".ai-human/system/RESOURCE-STEWARD.md"
     },
     {
-      "sha256": "c83753199efbb7a951c79dbdef4652239e9acc0ecc8a16c43e0db4fe1029e562",
+      "sha256": "e227bf6aa8614641cc0e522387f82fd47a2cf4a9cce2a19326370b4e3cde74c1",
       "source": "core/WORKER-EXCHANGE.md",
       "target": ".ai-human/system/WORKER-EXCHANGE.md"
     },
@@ -88,7 +88,7 @@
       "target": ".ai-human/VERSION"
     },
     {
-      "sha256": "073f52d61b90434f8b84c9a7ccd21e862660bf383f02039056431088c797f11c",
+      "sha256": "928e50f8b4e82e0a20fed8c7ed53348ee15f588c37a4b752fc3d75e8de9d3380",
       "source": "scripts/ai_human.py",
       "target": ".ai-human/bin/ai_human.py"
     }

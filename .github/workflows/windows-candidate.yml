@@ -37,4 +37,10 @@ jobs:
         with:
           python-version: "3.11"
       - name: Test exact candidate with synthetic data only
-        run: python .github/ci/windows_candidate.py --shard ${{ matrix.shard }}
+        # Native ACL oracles invoke Windows PowerShell via Python. Launching from
+        # pwsh leaks PowerShell 7 module paths into that intermediate process.
+        shell: powershell
+        run: |
+          Import-Module Microsoft.PowerShell.Security -ErrorAction Stop
+          Write-Output ("ACL_ORACLE_HOST " + $PSVersionTable.PSVersion.ToString())
+          python .github/ci/windows_candidate.py --shard ${{ matrix.shard }}

@@ -9780,14 +9780,22 @@ def canonical_windows_task(content, normalize_enabled=False, drop_user_id=False)
 def windows_task_missing(result):
     if result.returncode == 0:
         return False
-    detail = ((result.stdout or "") + " " + (result.stderr or "")).casefold()
-    return any(
-        marker in detail
-        for marker in (
-            "cannot find the file specified", "cannot find the task",
-            "does not exist", "not found", "system cannot find",
-        )
-    )
+    # A failed query is not proof of absence. In particular, missing services,
+    # accounts and executables must leave the orphan-recovery journal intact.
+    # Unknown/localized diagnostics fail closed until a native adapter can
+    # provide structured absence proof.
+    lines = [
+        line.strip().casefold()
+        for output in (result.stdout or "", result.stderr or "")
+        for line in output.splitlines() if line.strip()
+    ]
+    if len(lines) != 1:
+        return False
+    detail = lines[0].removeprefix("error:").strip().rstrip(".")
+    return detail in {
+        "the system cannot find the file specified",
+        "the system cannot find the task specified",
+    }
 
 
 def render_update_schedule_definition(worker, config):
@@ -9796,6 +9804,194 @@ def render_update_schedule_definition(worker, config):
         if config["platform"] == "MACOS"
         else render_windows_update_definition(worker, config)
     )
+
+
+# Apple documents `launchctl print` as diagnostic output, not a stable API.
+# Native fixtures prove this exact build only. Never broaden this allowlist
+# without repeating the loaded-command/calendar and adversarial native matrix.
+MACOS_UPDATE_READBACK_BUILDS = frozenset({("27.0.1", "26A434")})
+
+
+def require_supported_macos_update_build():
+    values = []
+    for option in ("-productVersion", "-buildVersion"):
+        result = subprocess.run(
+            ["/usr/bin/sw_vers", option], text=True, capture_output=True,
+            check=False, timeout=15,
+        )
+        if result.returncode != 0:
+            raise ValueError("cannot verify the macOS native readback build")
+        values.append(result.stdout.strip())
+    if tuple(values) not in MACOS_UPDATE_READBACK_BUILDS:
+        raise ValueError("unsupported macOS native readback build; registration refused")
+
+
+def parse_macos_launchctl_print(content, external_id, uid):
+    """Parse only the observed, tab-indented diagnostic grammar; never guess."""
+    if not isinstance(content, str) or len(content) > 65536:
+        raise ValueError("invalid macOS native readback size")
+    if any(ord(char) < 32 and char not in "\n\t" for char in content):
+        raise ValueError("macOS native readback contains control characters")
+    lines = [line for line in content.split("\n") if line]
+    header = "gui/" + str(uid) + "/" + external_id + " = {"
+    if not lines or lines[0] != header:
+        raise ValueError("macOS native readback has the wrong service header")
+    position = 1
+
+    def block(depth):
+        nonlocal position
+        result = {}
+        while position < len(lines):
+            line = lines[position]
+            position += 1
+            if line == "\t" * (depth - 1) + "}":
+                return result
+            if not line.startswith("\t" * depth) or line.startswith("\t" * (depth + 1)):
+                raise ValueError("macOS native readback indentation differs")
+            entry = line[depth:]
+            match = re.fullmatch(r"(.+?) (?:=|=>) (.+)", entry)
+            if not match:
+                raise ValueError("macOS native readback field is malformed")
+            key, value = match.groups()
+            if key in result:
+                raise ValueError("macOS native readback has a duplicate field")
+            if value == "{" and depth == 1 and key == "arguments":
+                arguments = []
+                while position < len(lines) and lines[position] != "\t}":
+                    argument = lines[position]
+                    position += 1
+                    if not argument.startswith("\t\t") or argument.startswith("\t\t\t"):
+                        raise ValueError("macOS native argument readback is malformed")
+                    arguments.append(argument[2:])
+                if position == len(lines):
+                    raise ValueError("macOS native argument readback is incomplete")
+                position += 1
+                result[key] = arguments
+            else:
+                if depth >= 6:
+                    raise ValueError("macOS native readback is too deeply nested")
+                result[key] = block(depth + 1) if value == "{" else value
+        raise ValueError("macOS native readback is incomplete")
+
+    result = block(1)
+    if position != len(lines):
+        raise ValueError("macOS native readback has trailing output")
+    return result
+
+
+def verify_macos_loaded_definition(content, definition, target, uid):
+    """Verify loaded execution semantics, not merely the on-disk plist hash."""
+    required_definition = {
+        "Label", "LowPriorityIO", "ProcessType", "ProgramArguments",
+        "StandardErrorPath", "StandardOutPath", "StartCalendarInterval",
+    }
+    if set(definition) != required_definition or (
+        definition["LowPriorityIO"] is not True or definition["ProcessType"] != "Background"
+    ):
+        raise ValueError("macOS update definition contains unsupported settings")
+    arguments = definition["ProgramArguments"]
+    if not isinstance(arguments, list) or not arguments or any(
+        not isinstance(item, str) or not item or any(ord(char) < 32 for char in item)
+        for item in arguments
+    ):
+        raise ValueError("macOS update arguments cannot be verified")
+    label = definition["Label"]
+    value = parse_macos_launchctl_print(content, label, uid)
+    required = {
+        "active count", "path", "type", "state", "program", "arguments",
+        "stdout path", "stderr path", "default environment", "environment",
+        "domain", "asid", "minimum runtime", "exit timeout", "runs", "last exit code",
+        "event triggers", "event channels", "spawn type", "jetsam priority",
+        "jetsam memory limit (active)", "jetsam memory limit (inactive)",
+        "jetsamproperties category", "jetsam thread limit", "cpumon",
+        "sanitizer flags", "properties",
+    }
+    runtime_fields = {
+        "inherited environment", "pid", "immediate reason", "forks", "execs",
+        "initialized", "trampolined", "started suspended", "proxy started suspended",
+        "checked allocations", "checked allocations reason", "checked allocations flags",
+        "resource coalition", "jetsam coalition",
+    }
+    if not required <= set(value) or set(value) - required - runtime_fields:
+        raise ValueError("macOS native readback contains missing or unsupported fields")
+    structured = {
+        "arguments", "default environment", "environment", "inherited environment",
+        "event triggers", "event channels", "resource coalition", "jetsam coalition",
+    }
+    if any(not isinstance(item, str) for key, item in value.items() if key not in structured):
+        raise ValueError("macOS native scalar readback contains unsupported structure")
+    expected = {
+        "path": str(Path(target).resolve()), "type": "LaunchAgent",
+        "program": arguments[0], "arguments": arguments,
+        "stdout path": definition["StandardOutPath"],
+        "stderr path": definition["StandardErrorPath"],
+        "minimum runtime": "10", "exit timeout": "5",
+        "spawn type": "background (5)",
+        "jetsam priority": "40",
+        "jetsam memory limit (active)": "(unlimited)",
+        "jetsam memory limit (inactive)": "(unlimited)",
+        "jetsamproperties category": "daemon", "jetsam thread limit": "32",
+        "cpumon": "default", "sanitizer flags": "0x0",
+        "properties": "low priority i/o | inferred program",
+        "environment": {"OSLogRateLimit": "64", "XPC_SERVICE_NAME": label},
+        "default environment": {"PATH": "/usr/bin:/bin:/usr/sbin:/sbin"},
+    }
+    if any(value[key] != item for key, item in expected.items()):
+        raise ValueError("macOS loaded command, arguments or execution settings differ")
+    inherited = value.get("inherited environment", {})
+    if not isinstance(inherited, dict) or any(
+        not isinstance(item, str) for item in inherited.values()
+    ):
+        raise ValueError("macOS inherited environment readback is malformed")
+    if not re.fullmatch(r"gui/" + str(uid) + r" \[\d+\]", str(value["domain"])):
+        raise ValueError("macOS loaded service domain differs")
+    if value["state"] not in {"not running", "running", "xpcproxy"}:
+        raise ValueError("macOS loaded service has an unsupported state")
+    for coalition in ("resource coalition", "jetsam coalition"):
+        if coalition in value:
+            record = value[coalition]
+            if not isinstance(record, dict) or set(record) != {
+                "ID", "type", "state", "active count", "name"
+            } or record["name"] != label or record["type"] != coalition.split()[0]:
+                raise ValueError("macOS loaded coalition readback differs")
+    triggers = value["event triggers"]
+    if not isinstance(triggers, dict) or len(triggers) != 1:
+        raise ValueError("macOS loaded schedule requires exactly one trigger")
+    name, trigger = next(iter(triggers.items()))
+    if not re.fullmatch(re.escape(label) + r"\.\d+", name):
+        raise ValueError("macOS loaded trigger identity differs")
+    calendar = definition["StartCalendarInterval"]
+    if not isinstance(calendar, dict) or set(calendar) not in (
+        {"Hour", "Minute", "Weekday"}, {"Hour", "Minute", "Day"},
+    ) or any(type(item) is not int for item in calendar.values()):
+        raise ValueError("macOS update calendar is not one weekly or monthly occurrence")
+    expected_trigger = {
+        "keepalive": "0", "service": label,
+        "stream": "com.apple.launchd.calendarinterval",
+        "monitor": "com.apple.UserEventAgent-Aqua",
+        "descriptor": {'"' + key + '"': str(item) for key, item in calendar.items()},
+    }
+    if trigger != expected_trigger:
+        raise ValueError("macOS loaded calendar or trigger settings differ")
+    channels = value["event channels"]
+    if not isinstance(channels, dict) or set(channels) != {'"com.apple.launchd.calendarinterval"'}:
+        raise ValueError("macOS loaded service contains extra event channels")
+    channel = next(iter(channels.values()))
+    if not isinstance(channel, dict) or set(channel) != {
+        "port", "active", "managed", "reset", "hide", "watching"
+    } or channel["managed"] != "1" or channel["hide"] != "0" or not re.fullmatch(
+        r"0x[0-9a-f]+", str(channel["port"])
+    ) or any(channel[key] not in {"0", "1"} for key in ("active", "reset", "watching")):
+        raise ValueError("macOS loaded calendar channel differs")
+    return True
+
+
+def macos_update_service_missing(result, external_id, uid):
+    if result.returncode != 113 or (result.stdout or "").strip():
+        return False
+    expected = 'Could not find service "' + external_id + '" in domain for user gui: ' + str(uid)
+    lines = (result.stderr or "").strip().splitlines()
+    return lines in ([expected], ["Bad request.", expected])
 
 
 class NativeUpdateAdapter:
@@ -9854,6 +10050,8 @@ class NativeUpdateAdapter:
         return sid.casefold()
 
     def install(self, definition_path):
+        if self.config["platform"] == "MACOS":
+            require_supported_macos_update_build()
         if self.observed_timezone_id() != self.config["native_timezone_id"]:
             raise ValueError("native operating-system time zone differs from owner confirmation")
         if self.config["platform"] == "MACOS":
@@ -9888,19 +10086,7 @@ class NativeUpdateAdapter:
     def pause(self):
         if self.config["platform"] == "MACOS":
             target = self._macos_target()
-            result = subprocess.run(
-                ["/bin/launchctl", "bootout", "gui/" + str(os.getuid()),
-                 str(target)],
-                text=True, capture_output=True, check=False, timeout=15,
-            )
-            detail = ((result.stdout or "") + " " + (result.stderr or "")).casefold()
-            if result.returncode != 0 and not any(
-                marker in detail
-                for marker in (
-                    "could not find specified service", "no such process", "not found"
-                )
-            ):
-                raise ValueError("native update schedule pause failed")
+            self._macos_bootout()
             # A booted-out LaunchAgent plist is loaded again at login.  Removing
             # the managed copy makes PAUSED persistent; resume recreates it from
             # the private, hash-verified definition.
@@ -9927,16 +10113,7 @@ class NativeUpdateAdapter:
     def remove(self):
         if self.config["platform"] == "MACOS":
             target = self._macos_target()
-            result = subprocess.run(
-                ["/bin/launchctl", "bootout", "gui/" + str(os.getuid()), str(target)],
-                text=True, capture_output=True, check=False, timeout=15,
-            )
-            detail = ((result.stdout or "") + " " + (result.stderr or "")).casefold()
-            if result.returncode != 0 and not any(
-                marker in detail
-                for marker in ("could not find specified service", "no such process", "not found")
-            ):
-                raise ValueError("native update schedule removal failed")
+            self._macos_bootout()
             target.unlink(missing_ok=True)
             return
         result = subprocess.run(
@@ -9946,8 +10123,23 @@ class NativeUpdateAdapter:
         if result.returncode != 0 and not windows_task_missing(result):
             raise ValueError("native update schedule removal failed")
 
+    def _macos_bootout(self):
+        service = "gui/" + str(os.getuid()) + "/" + self.external_id
+        result = subprocess.run(
+            ["/bin/launchctl", "bootout", service],
+            text=True, capture_output=True, check=False, timeout=15,
+        )
+        if result.returncode != 0:
+            absent = subprocess.run(
+                ["/bin/launchctl", "print", service],
+                text=True, capture_output=True, check=False, timeout=15,
+            )
+            if not macos_update_service_missing(absent, self.external_id, os.getuid()):
+                raise ValueError("cannot verify native update schedule pause or removal")
+
     def query(self, definition_path):
         if self.config["platform"] == "MACOS":
+            require_supported_macos_update_build()
             target = self._macos_target()
             result = subprocess.run(
                 ["/bin/launchctl", "print", "gui/" + str(os.getuid()) + "/" + self.external_id],
@@ -9956,11 +10148,7 @@ class NativeUpdateAdapter:
             if not target.is_file():
                 if result.returncode == 0:
                     raise ValueError("native update task remains loaded without its definition")
-                detail = ((result.stdout or "") + " " + (result.stderr or "")).casefold()
-                if not any(
-                    marker in detail
-                    for marker in ("could not find service", "could not find specified service", "not found")
-                ):
+                if not macos_update_service_missing(result, self.external_id, os.getuid()):
                     raise ValueError("cannot verify native update schedule removal")
                 return {
                     "status": (
@@ -9972,17 +10160,17 @@ class NativeUpdateAdapter:
                     ),
                 }
             if result.returncode != 0:
-                detail = ((result.stdout or "") + " " + (result.stderr or "")).casefold()
-                if not any(
-                    marker in detail
-                    for marker in (
-                        "could not find service", "could not find specified service",
-                        "not found",
-                    )
-                ):
-                    raise ValueError("cannot verify the macOS update schedule")
+                raise ValueError("macOS update definition remains login-persistent without loaded proof")
             expected = sha256(definition_path)
             definition_ok = sha256(target) == expected
+            if result.returncode == 0 and definition_ok:
+                try:
+                    verify_macos_loaded_definition(
+                        result.stdout, plistlib.loads(Path(definition_path).read_bytes()),
+                        target, os.getuid(),
+                    )
+                except (ValueError, plistlib.InvalidFileException):
+                    definition_ok = False
             return {
                 "status": "ACTIVE" if result.returncode == 0 else "PAUSED",
                 "definition_sha256": expected if definition_ok else None,
@@ -10031,13 +10219,7 @@ class NativeUpdateAdapter:
         )
         if target.exists() or result.returncode == 0:
             return {"status": "ACTIVE", "definition_sha256": None}
-        detail = ((result.stdout or "") + " " + (result.stderr or "")).casefold()
-        if not any(
-            marker in detail
-            for marker in (
-                "could not find service", "could not find specified service", "not found"
-            )
-        ):
+        if not macos_update_service_missing(result, self.external_id, os.getuid()):
             raise ValueError("cannot verify native update schedule removal")
         return {"status": "REMOVED", "definition_sha256": None}
 
@@ -10050,10 +10232,7 @@ def native_update_adapter(worker, config):
             + " native schedule rendering is simulated on this host; real registration refused"
         )
     if actual == "MACOS":
-        raise ValueError(
-            "macOS LaunchAgent rendering is simulated; exact loaded command and calendar "
-            "readback is unavailable, so real registration is refused"
-        )
+        require_supported_macos_update_build()
     return NativeUpdateAdapter(worker, config)
 
 

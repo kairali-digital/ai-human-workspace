@@ -9273,7 +9273,127 @@ class LifecycleTests(unittest.TestCase):
         ):
             AI_HUMAN.recover_update_schedule_internal(worker.resolve())
 
-    def test_macos_native_adapter_is_fail_closed_and_pause_is_persistent(self):
+    def test_windows_native_absence_requires_an_exact_task_missing_diagnostic(self):
+        adapter = AI_HUMAN.NativeUpdateAdapter(self.base, {
+            "platform": "WINDOWS", "schedule_id": "synthetic-absence-test",
+        })
+        missing = SimpleNamespace(
+            returncode=1, stdout="", stderr="ERROR: The system cannot find the file specified.\r\n"
+        )
+        with mock.patch.object(AI_HUMAN.subprocess, "run", return_value=missing):
+            self.assertEqual(adapter.query(self.base / "unused.xml"), {
+                "status": "REMOVED", "definition_sha256": None,
+            })
+            adapter.remove()
+        for detail in (
+            "Task Scheduler service not found",
+            "The specified account does not exist",
+            "schtasks.exe not found",
+            "ERROR: The system cannot find the network path specified.",
+            "ERROR: The system cannot find the file specified.\nAccess is denied.",
+        ):
+            with self.subTest(diagnostic=detail), mock.patch.object(
+                AI_HUMAN.subprocess, "run", return_value=SimpleNamespace(
+                    returncode=1, stdout="", stderr=detail,
+                ),
+            ):
+                with self.assertRaisesRegex(ValueError, "cannot verify"):
+                    adapter.query(self.base / "unused.xml")
+                with self.assertRaisesRegex(ValueError, "removal failed"):
+                    adapter.remove()
+
+    def test_macos_loaded_definition_rejects_native_trigger_and_command_drift(self):
+        fixture = json.loads((ROOT / "tests/fixtures/macos-launchctl-27.0.1.json").read_text(encoding="utf-8"))
+        cases = {item["name"]: item["loaded"] for item in fixture["cases"]}
+        definition = {
+            "Label": "com.aihuman.update.synthetic", "LowPriorityIO": True,
+            "ProcessType": "Background",
+            "ProgramArguments": ["/usr/bin/true", "/synthetic/Space & Worker", "--config-sha256", "a" * 64],
+            "StandardErrorPath": "/synthetic/native-probe/fixture.err.log",
+            "StandardOutPath": "/synthetic/native-probe/fixture.out.log",
+            "StartCalendarInterval": {"Hour": 2, "Minute": 30, "Weekday": 0},
+        }
+        for name in ("weekly", "monthly"):
+            expected = dict(definition)
+            if name == "monthly":
+                expected["StartCalendarInterval"] = {"Hour": 2, "Minute": 30, "Day": 28}
+            self.assertTrue(AI_HUMAN.verify_macos_loaded_definition(
+                cases[name], expected, "/synthetic/native-probe/" + name + ".plist", 1000
+            ))
+        for name in ("runatload", "keepalive", "duplicate-calendar", "extra-interval", "altered-argv"):
+            with self.subTest(native_fixture=name), self.assertRaises(ValueError):
+                AI_HUMAN.verify_macos_loaded_definition(
+                    cases[name], definition, "/synthetic/native-probe/" + name + ".plist", 1000
+                )
+        original = cases["weekly"]
+        # The observed RunAtLoad sample also supplies the running-process shape.
+        # Removing only its unwanted flag gives a synthetic normal running job.
+        running = cases["runatload"].replace("runatload | ", "")
+        self.assertTrue(AI_HUMAN.verify_macos_loaded_definition(
+            running, definition, "/synthetic/native-probe/runatload.plist", 1000
+        ))
+        for changed in (
+            original.replace("\tprogram = /usr/bin/true", "\tprogram = /usr/bin/false"),
+            original.replace("\tprogram = /usr/bin/true", "\tprogram = /usr/bin/true\n\tprogram = /usr/bin/true"),
+            original.replace('"Weekday" => 0', '"Weekday" => 1'),
+            original.replace('"Minute" => 30', '"Minute" => 30\n\t\t\t\t"Month" => 1'),
+            original.replace('"Minute" => 30', '"Minute" => 30\n\t\t\t\t"Minute" => 30'),
+            original.replace("\tactive count = 0", "\tactive count = 0\n\tunexpected setting = 1"),
+            original.replace("\t\t\tkeepalive = 0", "\t\t\tkeepalive = 1"),
+            original.replace("\t\t\tkeepalive = 0", "\t\t\tkeepalive = 0\n\t\t\tunknown = 1"),
+            original.replace("\t\t\twatching = 1", "\t\t\twatching = 1\n\t\t\tunknown = 1"),
+            original.replace("\targuments = {", " arguments = {"),
+            original + "unexpected output\n",
+            original.removesuffix("}\n"),
+            original.replace("gui/1000/", "gui/999/", 1),
+        ):
+            with self.subTest(drift=changed[:100]), self.assertRaises(ValueError):
+                AI_HUMAN.verify_macos_loaded_definition(
+                    changed, definition, "/synthetic/native-probe/weekly.plist", 1000
+                )
+
+    def test_macos_query_checks_loaded_semantics_even_when_disk_hashes_match(self):
+        fixture = json.loads((ROOT / "tests/fixtures/macos-launchctl-27.0.1.json").read_text(encoding="utf-8"))
+        original = fixture["cases"][0]["loaded"]
+        worker = self.base / "query-worker"
+        worker.mkdir()
+        config = {"platform": "MACOS", "schedule_id": "synthetic-query", "status": "ENABLED"}
+        adapter = AI_HUMAN.NativeUpdateAdapter(worker, config)
+        definition = {
+            "Label": adapter.external_id, "LowPriorityIO": True, "ProcessType": "Background",
+            "ProgramArguments": ["/usr/bin/true", "/synthetic/Space & Worker", "--config-sha256", "a" * 64],
+            "StandardErrorPath": "/synthetic/native-probe/fixture.err.log",
+            "StandardOutPath": "/synthetic/native-probe/fixture.out.log",
+            "StartCalendarInterval": {"Hour": 2, "Minute": 30, "Weekday": 0},
+        }
+        private = worker / "definition.plist"
+        target = worker / "loaded.plist"
+        private.write_bytes(AI_HUMAN.plistlib.dumps(definition))
+        target.write_bytes(private.read_bytes())
+        original = original.replace("com.aihuman.update.synthetic", adapter.external_id).replace(
+            "/synthetic/native-probe/weekly.plist", str(target.resolve())
+        ).replace("gui/1000", "gui/" + str(os.getuid()))
+        with (
+            mock.patch.object(AI_HUMAN, "require_supported_macos_update_build"),
+            mock.patch.object(adapter, "_macos_target", return_value=target),
+            mock.patch.object(AI_HUMAN.subprocess, "run", return_value=SimpleNamespace(
+                returncode=0, stdout=original, stderr="",
+            )),
+        ):
+            self.assertEqual(adapter.query(private), {
+                "status": "ACTIVE", "definition_sha256": sha256(private),
+            })
+        changed = original.replace("\tprogram = /usr/bin/true", "\tprogram = /usr/bin/false")
+        with (
+            mock.patch.object(AI_HUMAN, "require_supported_macos_update_build"),
+            mock.patch.object(adapter, "_macos_target", return_value=target),
+            mock.patch.object(AI_HUMAN.subprocess, "run", return_value=SimpleNamespace(
+                returncode=0, stdout=changed, stderr="",
+            )),
+        ):
+            self.assertIsNone(adapter.query(private)["definition_sha256"])
+
+    def test_macos_native_adapter_rejects_untested_build_and_pause_is_persistent(self):
         worker = self.base / "mac-native-render-only"
         self.install(worker)
         registry = {}
@@ -9287,8 +9407,16 @@ class LifecycleTests(unittest.TestCase):
             AI_HUMAN.update_schedule_configure(self.schedule_args(worker))
         config = AI_HUMAN.update_schedule_config(worker.resolve(), required=True)
         with mock.patch.object(AI_HUMAN.sys, "platform", "darwin"):
-            with self.assertRaisesRegex(ValueError, "exact loaded command and calendar"):
-                AI_HUMAN.native_update_adapter(worker.resolve(), config)
+            for version, build in (("27.0.1", "26A434"), ("27.0.2", "26A434"), ("27.0.1", "unknown")):
+                with mock.patch.object(AI_HUMAN.subprocess, "run", side_effect=[
+                    SimpleNamespace(returncode=0, stdout=version),
+                    SimpleNamespace(returncode=0, stdout=build),
+                ]):
+                    if (version, build) == ("27.0.1", "26A434"):
+                        self.assertIsInstance(AI_HUMAN.native_update_adapter(worker.resolve(), config), AI_HUMAN.NativeUpdateAdapter)
+                    else:
+                        with self.assertRaisesRegex(ValueError, "unsupported macOS native readback build"):
+                            AI_HUMAN.native_update_adapter(worker.resolve(), config)
 
         definition = worker / ".ai-human/update-schedule/definitions/mac-test.plist"
         definition.parent.mkdir(parents=True, exist_ok=True)
@@ -9296,9 +9424,15 @@ class LifecycleTests(unittest.TestCase):
         fake_home = self.base / "mac-home"
         (fake_home / "Library/LaunchAgents").mkdir(parents=True)
         adapter = AI_HUMAN.NativeUpdateAdapter(worker.resolve(), config)
-        missing = SimpleNamespace(returncode=1, stdout="", stderr="could not find service")
+        missing = SimpleNamespace(
+            returncode=113, stdout="", stderr=(
+                'Bad request.\nCould not find service "' + adapter.external_id
+                + '" in domain for user gui: ' + str(os.getuid()) + '\n'
+            ),
+        )
         success = SimpleNamespace(returncode=0, stdout="", stderr="")
         with (
+            mock.patch.object(AI_HUMAN, "require_supported_macos_update_build"),
             mock.patch.object(AI_HUMAN.Path, "home", return_value=fake_home),
             mock.patch.object(adapter, "observed_timezone_id", return_value="Asia/Kolkata"),
             mock.patch.object(
@@ -9322,6 +9456,29 @@ class LifecycleTests(unittest.TestCase):
                 paused_adapter.query(definition),
                 {"status": "PAUSED", "definition_sha256": AI_HUMAN.sha256(definition)},
             )
+        with (
+            mock.patch.object(AI_HUMAN.Path, "home", return_value=fake_home),
+            mock.patch.object(AI_HUMAN.subprocess, "run", side_effect=[
+                SimpleNamespace(returncode=3, stdout="", stderr="Boot-out failed: No such process"),
+                missing, missing,
+            ]) as native,
+        ):
+            paused_adapter.remove()
+            self.assertEqual(paused_adapter.query_removed(definition), {
+                "status": "REMOVED", "definition_sha256": None,
+            })
+            self.assertEqual(native.call_args_list[0].args[0], [
+                "/bin/launchctl", "bootout", "gui/" + str(os.getuid()) + "/" + adapter.external_id,
+            ])
+        for ambiguous in (
+            SimpleNamespace(returncode=113, stdout="", stderr="service not found"),
+            SimpleNamespace(returncode=113, stdout="", stderr=missing.stderr.replace(adapter.external_id, "another-job")),
+            SimpleNamespace(returncode=1, stdout="", stderr=missing.stderr),
+            SimpleNamespace(returncode=113, stdout="", stderr=missing.stderr + "Access denied\n"),
+        ):
+            self.assertFalse(AI_HUMAN.macos_update_service_missing(
+                ambiguous, adapter.external_id, os.getuid()
+            ))
 
     def test_native_schedule_retries_are_owner_bounded_and_v2_reports_fail_closed(self):
         worker = self.base / "native-retry-worker"

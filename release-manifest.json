@@ -8,7 +8,7 @@
   },
   "managed_files": [
     {
-      "sha256": "de9a11b62beecb2959cbe02dccb27edb9bbde355ef9a6bb02be9d06e1961e648",
+      "sha256": "48401f8ccf6fd09c308fddfeee85b2da82da6fd9ed319ae66cbc05514da0bfe0",
       "source": "core/CHIEF-OF-STAFF-AND-MEMORY.md",
       "target": ".ai-human/system/CHIEF-OF-STAFF-AND-MEMORY.md"
     },
@@ -98,7 +98,7 @@
       "target": ".ai-human/VERSION"
     },
     {
-      "sha256": "827bad01c2a2c6ffce3e85b3bbb705a6ada3c45ee1566981060b432baf504ade",
+      "sha256": "7ac940131ad6ac684c6772558fe448cf4258879be15dd2236a1c9a2053c1147d",
       "source": "scripts/ai_human.py",
       "target": ".ai-human/bin/ai_human.py"
     }

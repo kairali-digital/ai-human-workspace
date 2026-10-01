@@ -4622,9 +4622,250 @@ def h53_stage_path(worker, target_relative):
     return target.with_name("." + target.name + ".h53-stage")
 
 
-def h53_write_stage(stage, data):
+_WINDOWS_PRIVATE_API = None
+
+
+class _WindowsPrivateFileAPI:
+    """Lazily initialized: importing this module performs no Windows API calls."""
+
+    def __init__(self):
+        import ctypes
+        import msvcrt
+        from ctypes import wintypes
+
+        self.c = ctypes
+        self.w = wintypes
+        self.msvcrt = msvcrt
+        self.kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+        self.advapi = ctypes.WinDLL("advapi32", use_last_error=True)
+        P = ctypes.c_void_p
+        PD = ctypes.POINTER(wintypes.DWORD)
+        PP = ctypes.POINTER(P)
+
+        class SECURITY_ATTRIBUTES(ctypes.Structure):
+            _fields_ = [("length", wintypes.DWORD), ("descriptor", P),
+                        ("inherit", wintypes.BOOL)]
+
+        class ACL_SIZE_INFORMATION(ctypes.Structure):
+            _fields_ = [("count", wintypes.DWORD), ("used", wintypes.DWORD),
+                        ("free", wintypes.DWORD)]
+
+        class ACCESS_ALLOWED_ACE(ctypes.Structure):
+            _fields_ = [("type", wintypes.BYTE), ("flags", wintypes.BYTE),
+                        ("size", wintypes.WORD), ("mask", wintypes.DWORD),
+                        ("sid_start", wintypes.DWORD)]
+
+        class BY_HANDLE_FILE_INFORMATION(ctypes.Structure):
+            _fields_ = [
+                ("attributes", wintypes.DWORD), ("creation", wintypes.FILETIME),
+                ("access", wintypes.FILETIME), ("write", wintypes.FILETIME),
+                ("volume", wintypes.DWORD), ("size_high", wintypes.DWORD),
+                ("size_low", wintypes.DWORD), ("links", wintypes.DWORD),
+                ("index_high", wintypes.DWORD), ("index_low", wintypes.DWORD),
+            ]
+
+        self.SA = SECURITY_ATTRIBUTES
+        self.ACL_INFO = ACL_SIZE_INFORMATION
+        self.ACE = ACCESS_ALLOWED_ACE
+        self.FILE_INFO = BY_HANDLE_FILE_INFORMATION
+        self.invalid_handle = P(-1).value
+
+        def bind(dll, name, result, arguments):
+            function = getattr(dll, name)
+            function.restype = result
+            function.argtypes = arguments
+            return function
+
+        self.close = bind(self.kernel, "CloseHandle", wintypes.BOOL, [wintypes.HANDLE])
+        self.free = bind(self.kernel, "LocalFree", P, [P])
+        self.process = bind(self.kernel, "GetCurrentProcess", wintypes.HANDLE, [])
+        self.thread = bind(self.kernel, "GetCurrentThread", wintypes.HANDLE, [])
+        self.open_process_token = bind(self.advapi, "OpenProcessToken", wintypes.BOOL,
+                                       [wintypes.HANDLE, wintypes.DWORD, PP])
+        self.open_thread_token = bind(self.advapi, "OpenThreadToken", wintypes.BOOL,
+                                      [wintypes.HANDLE, wintypes.DWORD, wintypes.BOOL, PP])
+        self.token_info = bind(self.advapi, "GetTokenInformation", wintypes.BOOL,
+                               [wintypes.HANDLE, ctypes.c_int, P, wintypes.DWORD, PD])
+        self.sid_string = bind(self.advapi, "ConvertSidToStringSidW", wintypes.BOOL,
+                               [P, PP])
+        self.make_descriptor = bind(
+            self.advapi, "ConvertStringSecurityDescriptorToSecurityDescriptorW", wintypes.BOOL,
+            [wintypes.LPCWSTR, wintypes.DWORD, PP, PD],
+        )
+        self.create_file = bind(
+            self.kernel, "CreateFileW", wintypes.HANDLE,
+            [wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD,
+             ctypes.POINTER(SECURITY_ATTRIBUTES), wintypes.DWORD, wintypes.DWORD,
+             wintypes.HANDLE],
+        )
+        self.file_info = bind(self.kernel, "GetFileInformationByHandle", wintypes.BOOL,
+                              [wintypes.HANDLE, ctypes.POINTER(BY_HANDLE_FILE_INFORMATION)])
+        self.volume_info = bind(
+            self.kernel, "GetVolumeInformationByHandleW", wintypes.BOOL,
+            [wintypes.HANDLE, wintypes.LPWSTR, wintypes.DWORD, PD, PD, PD,
+             wintypes.LPWSTR, wintypes.DWORD],
+        )
+        self.security_info = bind(
+            self.advapi, "GetSecurityInfo", wintypes.DWORD,
+            [wintypes.HANDLE, ctypes.c_int, wintypes.DWORD, PP, PP, PP, PP, PP],
+        )
+        self.descriptor_control = bind(
+            self.advapi, "GetSecurityDescriptorControl", wintypes.BOOL,
+            [P, ctypes.POINTER(wintypes.WORD), PD],
+        )
+        self.acl_info = bind(self.advapi, "GetAclInformation", wintypes.BOOL,
+                             [P, P, wintypes.DWORD, ctypes.c_int])
+        self.get_ace = bind(self.advapi, "GetAce", wintypes.BOOL,
+                            [P, wintypes.DWORD, PP])
+
+    def check(self, result):
+        if not result:
+            raise self.c.WinError(self.c.get_last_error())
+
+    def sid_text(self, sid):
+        result = self.c.c_void_p()
+        self.check(self.sid_string(sid, self.c.byref(result)))
+        try:
+            return self.c.wstring_at(result.value)
+        finally:
+            self.free(result)
+
+    def current_sid(self):
+        c = self.c
+        token = c.c_void_p()
+        # An effective thread token takes precedence over the process identity.
+        if not self.open_thread_token(self.thread(), 0x0008, True, c.byref(token)):
+            if c.get_last_error() != 1008:  # ERROR_NO_TOKEN is the only fallback.
+                raise c.WinError(c.get_last_error())
+            self.check(self.open_process_token(self.process(), 0x0008, c.byref(token)))
+        try:
+            length = self.w.DWORD()
+            if self.token_info(token, 1, None, 0, c.byref(length)):
+                raise ValueError("unexpected Windows token-query result")
+            if c.get_last_error() != 122 or length.value == 0:  # INSUFFICIENT_BUFFER
+                raise c.WinError(c.get_last_error())
+            buffer = c.create_string_buffer(length.value)
+            self.check(self.token_info(token, 1, buffer, length, c.byref(length)))
+            # TOKEN_USER starts with SID_AND_ATTRIBUTES, whose first field is PSID.
+            sid = c.cast(buffer, c.POINTER(c.c_void_p))[0]
+            return self.sid_text(sid)
+        finally:
+            self.close(token)
+
+    def verify_handle(self, handle, expected_sid):
+        """Inspect the actual object, never inferred mode bits or parent ACLs."""
+        c = self.c
+        info = self.FILE_INFO()
+        self.check(self.file_info(handle, c.byref(info)))
+        if info.attributes & (0x10 | 0x400) or info.links != 1:
+            raise ValueError("private file must be a single regular non-reparse file")
+        flags = self.w.DWORD()
+        self.check(self.volume_info(handle, None, 0, None, None, c.byref(flags), None, 0))
+        if not flags.value & 0x00000008:  # FILE_PERSISTENT_ACLS
+            raise ValueError("private file filesystem does not enforce persistent ACLs")
+        owner, dacl, descriptor = c.c_void_p(), c.c_void_p(), c.c_void_p()
+        error = self.security_info(handle, 1, 0x00000005, c.byref(owner), None,
+                                   c.byref(dacl), None, c.byref(descriptor))
+        if error:
+            raise c.WinError(error)  # GetSecurityInfo returns its own error code.
+        try:
+            if not owner.value or self.sid_text(owner) != expected_sid:
+                raise ValueError("private file owner differs from current Windows user")
+            control, revision = self.w.WORD(), self.w.DWORD()
+            self.check(self.descriptor_control(descriptor, c.byref(control), c.byref(revision)))
+            if not dacl.value or control.value & 0x1004 != 0x1004:
+                raise ValueError("private file requires a present protected non-null DACL")
+            acl = self.ACL_INFO()
+            self.check(self.acl_info(dacl, c.byref(acl), c.sizeof(acl), 2))
+            if acl.count != 1:
+                raise ValueError("private file requires exactly one owner access entry")
+            pointer = c.c_void_p()
+            self.check(self.get_ace(dacl, 0, c.byref(pointer)))
+            ace = c.cast(pointer, c.POINTER(self.ACE)).contents
+            if ace.type != 0 or ace.flags != 0 or ace.mask != 0x001F01FF:
+                raise ValueError("private file access entry is not explicit owner full control")
+            sid = pointer.value + self.ACE.sid_start.offset
+            if self.sid_text(sid) != expected_sid:
+                raise ValueError("private file grants access to another Windows principal")
+        finally:
+            self.free(descriptor)
+
+    def create(self, path):
+        c = self.c
+        sid = self.current_sid()
+        descriptor = c.c_void_p()
+        self.check(self.make_descriptor("O:" + sid + "D:P(A;;FA;;;" + sid + ")",
+                                        1, c.byref(descriptor), None))
+        handle = None
+        try:
+            attributes = self.SA(c.sizeof(self.SA), descriptor, False)
+            # GENERIC_WRITE | READ_CONTROL; no sharing; CREATE_NEW; no reparse following.
+            handle = self.create_file(os.fspath(path), 0x40020000, 0, c.byref(attributes),
+                                      1, 0x00000080 | 0x00200000, None)
+            if handle == self.invalid_handle:
+                handle = None
+                raise c.WinError(c.get_last_error())
+            self.verify_handle(handle, sid)  # Before the caller can write any content.
+            # CPython's asyncio/windows_utils.py likewise uses flag 0 for writable
+            # stdout/stderr handles; CreateFileW supplied the actual write access.
+            # Explicit setmode below avoids process-default text translation.
+            descriptor_fd = self.msvcrt.open_osfhandle(handle, 0)
+            handle = None  # Ownership moved to the CRT descriptor on success.
+            try:
+                self.msvcrt.setmode(descriptor_fd, os.O_BINARY)
+                os.set_inheritable(descriptor_fd, False)
+            except BaseException:
+                os.close(descriptor_fd)
+                raise
+            return descriptor_fd
+        finally:
+            if handle is not None:
+                self.close(handle)
+            self.free(descriptor)
+
+    def verify_path(self, path):
+        # READ_CONTROL; share read only while inspecting; OPEN_EXISTING.
+        handle = self.create_file(os.fspath(path), 0x00020000, 1, None, 3,
+                                  0x00000080 | 0x00200000, None)
+        if handle == self.invalid_handle:
+            raise self.c.WinError(self.c.get_last_error())
+        try:
+            self.verify_handle(handle, self.current_sid())
+        finally:
+            self.close(handle)
+
+
+def _windows_private_api():
+    global _WINDOWS_PRIVATE_API
+    if os.name != "nt":
+        raise RuntimeError("Windows private-file API is unavailable on this platform")
+    if _WINDOWS_PRIVATE_API is None:
+        _WINDOWS_PRIVATE_API = _WindowsPrivateFileAPI()
+    return _WINDOWS_PRIVATE_API
+
+
+def open_private_exclusive(path):
+    """Return an exclusively created descriptor; no private bytes written yet."""
+    if os.name == "nt":
+        return _windows_private_api().create(path)
     flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
-    descriptor = os.open(stage, flags, 0o600)
+    return os.open(path, flags, 0o600)
+
+
+def require_private_file(path):
+    """Refuse unknown protection without silently rewriting an existing ACL."""
+    path = Path(path)
+    info = path.lstat()
+    if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
+        raise ValueError("private file must be a single regular file")
+    if os.name == "nt":
+        _windows_private_api().verify_path(path)
+    elif stat.S_IMODE(info.st_mode) != 0o600:
+        raise ValueError("private file must have mode 0600")
+
+
+def h53_write_stage(stage, data):
+    descriptor = open_private_exclusive(stage)
     try:
         with os.fdopen(descriptor, "wb", buffering=0) as stream:
             offset = 0
@@ -4645,6 +4886,7 @@ def h53_validate_stage(stage, transaction):
     info = stage.lstat()
     if stage.is_symlink() or not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
         raise ValueError("H-53 staging path is not a single regular file")
+    require_private_file(stage)
     if info.st_size > transaction["after_size"]:
         raise ValueError("H-53 staging file exceeds the committed candidate size")
     if info.st_size == transaction["after_size"] and sha256(stage) == transaction["after_sha256"]:
@@ -4706,6 +4948,7 @@ def h53_commit(worker, lease, target_relative, value):
         raise ValueError("H-53 staging file did not reach its exact candidate bytes")
     h53_boundary("stage")
     os.replace(stage, target)
+    require_private_file(target)
     if os.name != "nt":
         directory_fd = os.open(target.parent, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
         try:
@@ -4776,6 +5019,7 @@ def h53_recover(args):
         current = h53_target_hash(target)
         stage_status = "MISSING"
     if current == transaction["after_sha256"]:
+        require_private_file(target)
         if stage_status != "MISSING":
             stage.unlink()
         if portable_key(target_relative) == portable_key(MEMORY_STORE_PATH):
@@ -16341,7 +16585,9 @@ def start_downgrade_transaction(worker, archive, manifest, receipt, intent):
         if {child.name for child in archive.iterdir()} != expected or any(child.is_symlink() for child in archive.iterdir()):
             raise ValueError("unexpected object in downgrade archive; preserve and reconcile before restoration")
     backup = worker_target(worker, archive.relative_to(worker) / "AUTOMATIONS.before.md", "downgrade automation backup")
-    restored_text = backup.read_text(encoding="utf-8")
+    # This is a byte-preserving recovery source, not normalized display text.
+    # read_text translates CRLF/mixed newlines and would invalidate its raw hash.
+    restored_text = backup.read_bytes().decode("utf-8")
     exported_text = render_downgrade_automation(restored_text, receipt["prepared_utc"], manifest)
     expected_current = restored_text if intent == "EXPORT" else exported_text
     if sha256(worker / "AUTOMATIONS.md") != hashlib.sha256(expected_current.encode()).hexdigest():
@@ -16415,7 +16661,7 @@ def read_downgrade_transaction(worker):
     backup = worker_target(worker, relative / "AUTOMATIONS.before.md", "transaction automation backup")
     if not backup.is_file() or sha256(backup) != transaction["restored_automation_sha256"]:
         raise ValueError("transaction automation backup integrity mismatch")
-    restored = backup.read_text(encoding="utf-8")
+    restored = backup.read_bytes().decode("utf-8")
     if hashlib.sha256(render_downgrade_automation(restored, receipt["prepared_utc"], manifest).encode()).hexdigest() != transaction["exported_automation_sha256"]:
         raise ValueError("transaction exported automation digest differs")
     if sha256(worker / "AUTOMATIONS.md") not in {transaction["restored_automation_sha256"], transaction["exported_automation_sha256"]}:
@@ -16470,7 +16716,7 @@ def finish_downgrade_transaction(worker, destination):
     atomic_json(archive / "archive-manifest.json", transaction["archive_manifest"])
     downgrade_boundary("archive-manifest")
     write_downgrade_transaction(worker, transaction, "AUTOMATION")
-    restored = (archive / "AUTOMATIONS.before.md").read_text(encoding="utf-8")
+    restored = (archive / "AUTOMATIONS.before.md").read_bytes().decode("utf-8")
     content = render_downgrade_automation(restored, transaction["prepared_receipt"]["prepared_utc"], transaction["archive_manifest"]) if destination == "EXPORT" else restored
     atomic_text(worker / "AUTOMATIONS.md", content)
     downgrade_boundary("automation")

@@ -407,6 +407,32 @@ class LifecycleTests(unittest.TestCase):
             worker, config, registry, observed_timezone=observed_timezone
         )
 
+    def synthetic_macos_uid(self):
+        """Supply a synthetic UID without changing the host OS or filesystem."""
+        uid = 1000
+        fixture_os = SimpleNamespace(**(vars(AI_HUMAN.os) | {"getuid": lambda: uid}))
+        patcher = mock.patch.object(AI_HUMAN, "os", fixture_os)
+        self.addCleanup(patcher.stop)
+        patcher.start()
+        return uid
+
+    def synthetic_macos_factory(self):
+        """Run the real factory with synthetic identity; this is not native proof."""
+        native_factory = AI_HUMAN.native_update_adapter
+
+        def factory(worker, config):
+            # Scope identity overrides to the factory. Filesystem operations in
+            # the lifecycle and pathlib must retain the real host's behavior.
+            fixture_os = SimpleNamespace(**(vars(AI_HUMAN.os) | {"name": "posix"}))
+            fixture_sys = SimpleNamespace(**(vars(AI_HUMAN.sys) | {"platform": "darwin"}))
+            with (
+                mock.patch.object(AI_HUMAN, "os", fixture_os),
+                mock.patch.object(AI_HUMAN, "sys", fixture_sys),
+            ):
+                return native_factory(worker, config)
+
+        return factory
+
     def write_json_fixture(self, name, value):
         path = self.base / name
         path.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n", encoding="utf-8")
@@ -925,6 +951,30 @@ class LifecycleTests(unittest.TestCase):
                     for root in roots:
                         self.assertEqual(AI_HUMAN.tree_sha256(worker / root), original[root])
                     self.run_cli("validate", worker)
+
+    def test_downgrade_crlf_recovery_preserves_bytes_in_both_directions(self):
+        worker = self.downgrade_crash_worker()
+        automation = worker / "AUTOMATIONS.md"
+        before = automation.read_bytes().replace(b"\r\n", b"\n").replace(b"\n", b"\r\n")
+        automation.write_bytes(before)
+        roots = [root for root in AI_HUMAN.downgrade_private_roots() if (worker / root).exists()]
+        original = {root: AI_HUMAN.tree_sha256(worker / root) for root in roots}
+        for restore in (False, True):
+            for mode in ("RESUME", "RESTORE_PREVIOUS"):
+                for boundary in ("journal", "automation"):
+                    with self.subTest(restore=restore, mode=mode, boundary=boundary):
+                        if restore:
+                            self.run_cli("prepare-downgrade", worker, "--target-version", "2.3.0")
+                        self.terminate_downgrade_at(worker, boundary, restore=restore)
+                        self.assertTrue(AI_HUMAN.downgrade_transaction_path(worker).exists())
+                        self.run_cli("recover-downgrade", worker, "--mode", mode)
+                        self.assertIn("NO_PENDING_TRANSACTION", self.run_cli("recover-downgrade", worker, "--mode", mode).stdout)
+                        if AI_HUMAN.downgrade_preparation_receipt(worker).exists():
+                            self.run_cli("restore-downgrade", worker)
+                        self.assertEqual(automation.read_bytes(), before)
+                        for root in roots:
+                            self.assertEqual(AI_HUMAN.tree_sha256(worker / root), original[root])
+                        self.run_cli("validate", worker)
 
     def test_downgrade_transaction_refuses_tamper_other_worker_and_unrelated_changes(self):
         worker = self.downgrade_crash_worker()
@@ -9481,7 +9531,10 @@ class LifecycleTests(unittest.TestCase):
         stage = AI_HUMAN.h53_stage_path(worker, AI_HUMAN.MEMORY_STORE_PATH)
         self.assertTrue(journal.is_file())
         self.assertTrue(stage.is_file())
-        self.assertEqual(stat.S_IMODE(stage.stat().st_mode), 0o600)
+        if os.name == "nt":
+            AI_HUMAN.require_private_file(stage)
+        else:
+            self.assertEqual(stat.S_IMODE(stage.stat().st_mode), 0o600)
         self.assertNotIn("synthetic-policy", journal.read_text(encoding="utf-8"))
         blocked = self.run_cli("validate", worker, expect=1)
         self.assertIn("h53-recover", blocked.stdout)
@@ -9501,6 +9554,102 @@ class LifecycleTests(unittest.TestCase):
         )
         self.assertIn("unexpected H-53 private entry", revoke.stderr)
         self.assertEqual(AI_HUMAN.memory_store(worker)["config"]["status"], "ENABLED")
+
+    def h53_privacy_crash_fixture(self, label, boundary):
+        worker = self.memory_fixture(label, label)
+        request = self.write_json_fixture(
+            label + ".json",
+            self.memory_request(
+                source_locator="EVIDENCE_LOG.md",
+                source_sha256=sha256(worker / "EVIDENCE_LOG.md"),
+            ),
+        )
+        args = SimpleNamespace(
+            worker=worker, session_id="memory-session",
+            expected_state_hash=AI_HUMAN.controlled_state_hash(worker),
+            request=request, source_file="EVIDENCE_LOG.md",
+        )
+        target = worker / AI_HUMAN.MEMORY_STORE_PATH
+        before = target.read_bytes()
+
+        def crash(selected):
+            if selected == boundary:
+                raise RuntimeError("synthetic private-stage crash")
+
+        def partial_write(stage, data):
+            with os.fdopen(AI_HUMAN.open_private_exclusive(stage), "wb") as stream:
+                stream.write(data[:max(1, len(data) // 2)])
+                stream.flush()
+                os.fsync(stream.fileno())
+            raise RuntimeError("synthetic private-stage crash")
+
+        patched_name = "h53_write_stage" if boundary == "partial" else "h53_boundary"
+        effect = partial_write if boundary == "partial" else crash
+        with mock.patch.object(AI_HUMAN, patched_name, side_effect=effect):
+            with self.assertRaisesRegex(RuntimeError, "synthetic private-stage crash"):
+                AI_HUMAN.memory_record(args)
+        stage = AI_HUMAN.h53_stage_path(worker, AI_HUMAN.MEMORY_STORE_PATH)
+        journal = worker / AI_HUMAN.H53_TX_PATH
+        self.assertTrue(journal.is_file())
+        return worker, stage, target, journal, before
+
+    def test_h53_private_stage_partial_stage_and_replace_crashes_recover(self):
+        for boundary in ("partial", "stage", "replace"):
+            with self.subTest(boundary=boundary):
+                worker, stage, target, journal, before = self.h53_privacy_crash_fixture(
+                    "private-crash-" + boundary, boundary,
+                )
+                protected = target if boundary == "replace" else stage
+                AI_HUMAN.require_private_file(protected)
+                if boundary != "replace":
+                    self.assertEqual(target.read_bytes(), before)
+                recovered = self.run_cli(
+                    "h53-recover", worker, "--session-id", "memory-session",
+                    "--expected-state-hash", AI_HUMAN.controlled_state_hash(worker),
+                )
+                expected = "NO_CHANGE" if boundary == "partial" else "COMMITTED"
+                self.assertIn(expected, recovered.stdout)
+                self.assertFalse(stage.exists())
+                self.assertFalse(journal.exists())
+                AI_HUMAN.require_private_file(target)
+                records = AI_HUMAN.memory_store(worker)["records"]
+                if boundary == "partial":
+                    self.assertEqual(target.read_bytes(), before)
+                    self.assertNotIn("fact-one", records)
+                else:
+                    self.assertIn("fact-one", records)
+                self.run_cli("validate", worker)
+
+    def test_h53_recovery_refuses_broad_stage_without_mutating_transaction(self):
+        worker, stage, target, journal, before = self.h53_privacy_crash_fixture(
+            "private-stage-tamper", "stage",
+        )
+        if os.name == "nt":
+            # The only ACL mutation is this synthetic staged file.
+            program = r"""
+            $ErrorActionPreference = 'Stop'
+            $a = Get-Acl -LiteralPath $env:AIH_PRIVATE_PROBE_PATH
+            $world = [System.Security.Principal.SecurityIdentifier]::new('S-1-1-0')
+            $a.AddAccessRule([System.Security.AccessControl.FileSystemAccessRule]::new(
+                $world, 'Read', 'Allow'))
+            Set-Acl -LiteralPath $env:AIH_PRIVATE_PROBE_PATH -AclObject $a
+            """
+            changed = subprocess.run(
+                ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", program],
+                env=dict(os.environ, AIH_PRIVATE_PROBE_PATH=str(stage)),
+                capture_output=True, text=True, check=False, timeout=30,
+            )
+            self.assertEqual(changed.returncode, 0, changed.stderr)
+        else:
+            stage.chmod(0o644)
+        retained = {path: path.read_bytes() for path in (stage, target, journal)}
+        rejected = self.run_cli(
+            "h53-recover", worker, "--session-id", "memory-session",
+            "--expected-state-hash", AI_HUMAN.controlled_state_hash(worker), expect=1,
+        )
+        self.assertIn("private file", rejected.stderr)
+        self.assertEqual(target.read_bytes(), before)
+        self.assertEqual(retained, {path: path.read_bytes() for path in retained})
 
     def test_h53_quiet_brief_prunes_expired_history_durably_and_bounds_state(self):
         chief = self.chief_fixture()
@@ -9698,9 +9847,9 @@ class LifecycleTests(unittest.TestCase):
         archive = worker / receipt["archive"]
         manifest = AI_HUMAN.read_json(archive / "archive-manifest.json")
         roots = {item["original"] for item in manifest["items"]}
-        self.assertIn(str(AI_HUMAN.MEMORY_ROOT), roots)
-        self.assertNotIn(str(AI_HUMAN.IMPROVEMENT_ROOT), roots)
-        self.assertNotIn(str(AI_HUMAN.AUTONOMY_ROOT), roots)
+        self.assertIn(AI_HUMAN.MEMORY_ROOT.as_posix(), roots)
+        self.assertNotIn(AI_HUMAN.IMPROVEMENT_ROOT.as_posix(), roots)
+        self.assertNotIn(AI_HUMAN.AUTONOMY_ROOT.as_posix(), roots)
         self.assertFalse((worker / AI_HUMAN.MEMORY_ROOT).exists())
         self.assertEqual(compatible_before, AI_HUMAN.tree_sha256(worker / AI_HUMAN.IMPROVEMENT_ROOT))
         self.assertIn(improvement_row, (worker / "AUTOMATIONS.md").read_text(encoding="utf-8").splitlines())
@@ -9855,6 +10004,34 @@ class LifecycleTests(unittest.TestCase):
         self.run_cli("prepare-downgrade", worker, "--target-version", "2.4.0")
         self.run_cli("restore-downgrade", worker)
         self.run_cli("validate", worker)
+
+    def test_downgrade_preserves_exact_automation_line_endings_and_rejects_tamper(self):
+        for ending in ("LF", "CRLF", "MIXED"):
+            with self.subTest(ending=ending):
+                worker = self.base / ("downgrade-newlines-" + ending.lower())
+                self.install(worker)
+                automation = worker / "AUTOMATIONS.md"
+                before = automation.read_bytes().replace(b"\r\n", b"\n")
+                before += "\nOwner note: synthetic caf\u00e9 context.\n".encode("utf-8")
+                if ending == "CRLF":
+                    before = before.replace(b"\n", b"\r\n")
+                elif ending == "MIXED":
+                    before = before.replace(b"\n", b"\r\n", 3)
+                automation.write_bytes(before)
+                self.run_cli("prepare-downgrade", worker, "--target-version", "2.3.0")
+                receipt = AI_HUMAN.read_json(AI_HUMAN.downgrade_preparation_receipt(worker))
+                backup = worker / receipt["archive"] / "AUTOMATIONS.before.md"
+                self.assertEqual(backup.read_bytes(), before)
+                exported = automation.read_bytes()
+                automation.write_bytes(exported + b"unapproved change\n")
+                denied = self.run_cli("restore-downgrade", worker, expect=1)
+                self.assertIn("visible automation state changed", denied.stderr)
+                self.assertEqual(automation.read_bytes(), exported + b"unapproved change\n")
+                self.assertFalse(AI_HUMAN.downgrade_transaction_path(worker).exists())
+                automation.write_bytes(exported)
+                self.run_cli("restore-downgrade", worker)
+                self.assertEqual(automation.read_bytes(), before)
+                self.run_cli("validate", worker)
 
     def test_pre_v24_downgrade_has_a_recoverable_private_state_export_path(self):
         worker = self.base / "downgrade-export-worker"
@@ -10894,7 +11071,15 @@ class LifecycleTests(unittest.TestCase):
 
     def test_macos_loaded_definition_rejects_native_trigger_and_command_drift(self):
         fixture = json.loads((ROOT / "tests/fixtures/macos-launchctl-27.0.1.json").read_text(encoding="utf-8"))
-        cases = {item["name"]: item["loaded"] for item in fixture["cases"]}
+        # The verifier resolves only the definition target using host paths.
+        # Normalize that synthetic field while preserving the native grammar.
+        cases = {}
+        for item in fixture["cases"]:
+            target = "/synthetic/native-probe/" + item["name"] + ".plist"
+            cases[item["name"]] = item["loaded"].replace(
+                "\tpath = " + target + "\n",
+                "\tpath = " + str(Path(target).resolve()) + "\n", 1,
+            )
         definition = {
             "Label": "com.aihuman.update.synthetic", "LowPriorityIO": True,
             "ProcessType": "Background",
@@ -10957,6 +11142,7 @@ class LifecycleTests(unittest.TestCase):
                 )
 
     def test_macos_query_checks_loaded_semantics_even_when_disk_hashes_match(self):
+        uid = self.synthetic_macos_uid()
         fixture = json.loads((ROOT / "tests/fixtures/macos-launchctl-27.0.1.json").read_text(encoding="utf-8"))
         original = fixture["cases"][0]["loaded"]
         worker = self.base / "query-worker"
@@ -10976,7 +11162,7 @@ class LifecycleTests(unittest.TestCase):
         target.write_bytes(private.read_bytes())
         original = original.replace("com.aihuman.update.synthetic", adapter.external_id).replace(
             "/synthetic/native-probe/weekly.plist", str(target.resolve())
-        ).replace("gui/1000", "gui/" + str(os.getuid()))
+        ).replace("gui/1000", "gui/" + str(uid))
         with (
             mock.patch.object(AI_HUMAN, "require_supported_macos_update_build"),
             mock.patch.object(adapter, "_macos_target", return_value=target),
@@ -10998,6 +11184,7 @@ class LifecycleTests(unittest.TestCase):
             self.assertIsNone(adapter.query(private)["definition_sha256"])
 
     def test_macos_os_or_timezone_drift_allows_exact_schedule_safety_cleanup_only(self):
+        uid = self.synthetic_macos_uid()
         for drift, action in (
             (drift, action) for drift in ("OS", "TIMEZONE")
             for action in ("PAUSE", "REMOVE", "RECOVER", "RECOVER_CRASH")
@@ -11021,7 +11208,7 @@ class LifecycleTests(unittest.TestCase):
                 definition = worker / native["definition_path"]
                 target = worker / "synthetic-native.plist"
                 target.write_bytes(definition.read_bytes())
-                service = "gui/" + str(os.getuid()) + "/" + native["external_id"]
+                service = "gui/" + str(uid) + "/" + native["external_id"]
                 loaded = True
                 calls = []
                 activation_error = "unsupported macOS" if drift == "OS" else "time zone differs"
@@ -11044,12 +11231,12 @@ class LifecycleTests(unittest.TestCase):
                         stdout="unsupported active format" if loaded else "",
                         stderr="" if loaded else (
                             'Bad request.\nCould not find service "' + native["external_id"]
-                            + '" in domain for user gui: ' + str(os.getuid()) + '\n'
+                            + '" in domain for user gui: ' + str(uid) + '\n'
                         ),
                     )
 
                 with (
-                    mock.patch.object(AI_HUMAN.sys, "platform", "darwin"),
+                    mock.patch.object(AI_HUMAN, "native_update_adapter", side_effect=self.synthetic_macos_factory()),
                     mock.patch.object(AI_HUMAN.NativeUpdateAdapter, "_macos_target", return_value=target),
                     mock.patch.object(AI_HUMAN.NativeUpdateAdapter, "observed_timezone_id", return_value="Changed/Zone"),
                     mock.patch.object(AI_HUMAN.subprocess, "run", side_effect=upgraded_os),
@@ -11268,6 +11455,7 @@ class LifecycleTests(unittest.TestCase):
             native_call.assert_not_called()
 
     def test_macos_cleanup_keeps_timezone_read_and_absence_errors_closed(self):
+        self.synthetic_macos_uid()
         worker = self.base / "cleanup-readback-failure"
         config = {
             "platform": "MACOS", "schedule_id": "synthetic-cleanup-readback",
@@ -11329,6 +11517,7 @@ class LifecycleTests(unittest.TestCase):
             native.assert_not_called()
 
     def test_macos_native_adapter_rejects_untested_build_and_pause_is_persistent(self):
+        uid = self.synthetic_macos_uid()
         worker = self.base / "mac-native-render-only"
         self.install(worker)
         registry = {}
@@ -11341,7 +11530,7 @@ class LifecycleTests(unittest.TestCase):
         ):
             AI_HUMAN.update_schedule_configure(self.schedule_args(worker))
         config = AI_HUMAN.update_schedule_config(worker.resolve(), required=True)
-        with mock.patch.object(AI_HUMAN.sys, "platform", "darwin"):
+        with mock.patch.object(AI_HUMAN, "native_update_adapter", side_effect=self.synthetic_macos_factory()):
             for version, build in (("27.0.1", "26A434"), ("27.0.2", "26A434"), ("27.0.1", "unknown")):
                 with mock.patch.object(AI_HUMAN.subprocess, "run", side_effect=[
                     SimpleNamespace(returncode=0, stdout=version),
@@ -11362,7 +11551,7 @@ class LifecycleTests(unittest.TestCase):
         missing = SimpleNamespace(
             returncode=113, stdout="", stderr=(
                 'Bad request.\nCould not find service "' + adapter.external_id
-                + '" in domain for user gui: ' + str(os.getuid()) + '\n'
+                + '" in domain for user gui: ' + str(uid) + '\n'
             ),
         )
         success = SimpleNamespace(returncode=0, stdout="", stderr="")
@@ -11403,7 +11592,7 @@ class LifecycleTests(unittest.TestCase):
                 "status": "REMOVED", "definition_sha256": None,
             })
             self.assertEqual(native.call_args_list[0].args[0], [
-                "/bin/launchctl", "bootout", "gui/" + str(os.getuid()) + "/" + adapter.external_id,
+                "/bin/launchctl", "bootout", "gui/" + str(uid) + "/" + adapter.external_id,
             ])
         for ambiguous in (
             SimpleNamespace(returncode=113, stdout="", stderr="service not found"),
@@ -11412,7 +11601,7 @@ class LifecycleTests(unittest.TestCase):
             SimpleNamespace(returncode=113, stdout="", stderr=missing.stderr + "Access denied\n"),
         ):
             self.assertFalse(AI_HUMAN.macos_update_service_missing(
-                ambiguous, adapter.external_id, os.getuid()
+                ambiguous, adapter.external_id, uid
             ))
 
     def test_native_schedule_retries_are_owner_bounded_and_v2_reports_fail_closed(self):

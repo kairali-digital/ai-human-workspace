@@ -2,7 +2,7 @@
 
 All notable changes are recorded here in plain language.
 
-## [Unreleased] — local candidate; not approved for installation or rollout
+## [2.5.0] — unreleased local candidate; not approved for installation or rollout
 
 - Add an adaptive work governor that can lower the effective action batch while
   retaining the hard maximum of 25; stored files and datasets are not action counts.

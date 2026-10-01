@@ -9522,11 +9522,48 @@ def native_update_external_id(config):
 def native_runner_arguments(worker, config):
     return [
         config["python_executable"],
+        "-I",
         str(worker / ".ai-human/bin/ai_human.py"),
         "update-schedule-tick", str(worker),
         "--schedule-id", config["schedule_id"],
         "--config-sha256", update_schedule_config_sha256(config),
     ]
+
+
+def verify_native_update_runtime(worker, executable, timezone):
+    """Prove the chosen isolated interpreter imports the actual installed runner."""
+    runner = worker_target(worker, ".ai-human/bin/ai_human.py", "native update runner")
+    manifest = read_json(worker_target(worker, ".ai-human/release-manifest.json", "installed manifest"))
+    records = [
+        item for item in manifest["managed_files"]
+        if item.get("target") == ".ai-human/bin/ai_human.py"
+    ]
+    if len(records) != 1 or sha256(runner) != records[0]["sha256"]:
+        raise ValueError("native update runner differs from the installed managed hash")
+    probe = (
+        "import json,runpy,sys; from zoneinfo import ZoneInfo; "
+        "runpy.run_path(sys.argv[1],run_name='_aihuman_runtime_probe'); "
+        "ZoneInfo(sys.argv[2]); "
+        "print(json.dumps({'isolated':sys.flags.isolated,"
+        "'ignore_environment':sys.flags.ignore_environment,"
+        "'no_user_site':sys.flags.no_user_site,'timezone':sys.argv[2]}))"
+    )
+    result = subprocess.run(
+        [str(executable), "-I", "-B", "-c", probe, str(runner), timezone],
+        text=True, capture_output=True, check=False, timeout=30,
+    )
+    try:
+        proof = json.loads(result.stdout) if result.returncode == 0 else None
+    except (ValueError, TypeError):
+        proof = None
+    if proof != {
+        "isolated": 1, "ignore_environment": 1, "no_user_site": 1, "timezone": timezone,
+    }:
+        raise ValueError(
+            "isolated updater runtime or time-zone data is unavailable; verify the chosen "
+            "Python interpreter and its pinned timezone prerequisite outside user-only "
+            "site-packages before enabling or resuming a schedule"
+        )
 
 
 def render_macos_update_definition(worker, config):
@@ -9947,6 +9984,8 @@ def verify_macos_loaded_definition(content, definition, target, uid):
         not isinstance(item, str) for item in inherited.values()
     ):
         raise ValueError("macOS inherited environment readback is malformed")
+    if any(key.startswith("PYTHON") for key in inherited) and arguments[1:2] != ["-I"]:
+        raise ValueError("macOS loaded Python environment requires an isolated interpreter")
     if not re.fullmatch(r"gui/" + str(uid) + r" \[\d+\]", str(value["domain"])):
         raise ValueError("macOS loaded service domain differs")
     if value["state"] not in {"not running", "running", "xpcproxy"}:
@@ -10243,10 +10282,11 @@ class MacOSUpdateCleanupAdapter(NativeUpdateAdapter):
         definition = plistlib.loads(definition_path.read_bytes())
         arguments = definition.get("ProgramArguments")
         expected = native_runner_arguments(self.worker, self.config)
+        legacy_expected = expected[:1] + expected[2:]
         if (
             definition.get("Label") != self.external_id
-            or not isinstance(arguments, list) or len(arguments) != len(expected)
-            or arguments[:-1] != expected[:-1]
+            or not isinstance(arguments, list) or not arguments
+            or arguments[:-1] not in (expected[:-1], legacy_expected[:-1])
             or not SHA256_HEX.fullmatch(str(arguments[-1]))
         ):
             raise ValueError("native cleanup definition belongs to another worker or task")
@@ -15864,6 +15904,7 @@ def update_schedule_configure(args):
     first_run = calculate_next_update_occurrence(draft, now_local)
     draft["not_before_local"] = first_run.isoformat()
     config = validate_update_schedule_config(draft)
+    verify_native_update_runtime(worker, executable, timezone)
     definition_relative = update_schedule_definition_path(config)
     definition_path = update_schedule_target(
         worker, definition_relative, "native update schedule definition"
@@ -16005,6 +16046,8 @@ def update_schedule_control(args):
         now_local = datetime.datetime.now(ZoneInfo(updated["timezone"]))
         updated["not_before_local"] = next_update_occurrence(updated, now_local).isoformat()
     updated = validate_update_schedule_config(updated)
+    if args.action == "RESUME":
+        verify_native_update_runtime(worker, updated["python_executable"], updated["timezone"])
     transaction = begin_update_schedule_transaction(
         worker, args.action, updated, definition_relative
     )

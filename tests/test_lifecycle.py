@@ -9302,6 +9302,43 @@ class LifecycleTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "removal failed"):
                     adapter.remove()
 
+    def test_native_python_runtime_isolated_from_inherited_environment_and_checks_timezone(self):
+        worker = self.base / "isolated-runtime"
+        self.install(worker)
+        config = {"python_executable": sys.executable, "schedule_id": "synthetic-isolation"}
+        command = AI_HUMAN.native_runner_arguments(worker.resolve(), config)
+        self.assertEqual(command[:3], [
+            sys.executable, "-I", str(worker.resolve() / ".ai-human/bin/ai_human.py"),
+        ])
+        poison = self.base / "synthetic-python-path"
+        poison.mkdir()
+        (poison / "argparse.py").write_text("raise RuntimeError('untrusted module search path')\n", encoding="utf-8")
+        poisoned_environment = dict(os.environ)
+        poisoned_environment.update(
+            PYTHONHOME=str(self.base / "missing-python-home"), PYTHONPATH=str(poison),
+            PYTHONUSERBASE=str(poison), PYTHONINSPECT="1",
+        )
+        # Only this child receives the synthetic variables; host settings and
+        # the parent process environment are never changed.
+        result = subprocess.run(
+            command[:3] + ["--help"], env=poisoned_environment,
+            capture_output=True, text=True, timeout=30, check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("update-schedule-tick", result.stdout)
+        AI_HUMAN.verify_native_update_runtime(worker.resolve(), sys.executable, "Asia/Kolkata")
+        with (
+            mock.patch.object(AI_HUMAN.subprocess, "run", return_value=SimpleNamespace(
+                returncode=1, stdout="", stderr="isolated timezone package unavailable",
+            )),
+            mock.patch.object(AI_HUMAN, "native_update_adapter") as native,
+        ):
+            with self.assertRaisesRegex(ValueError, "timezone prerequisite outside user-only"):
+                AI_HUMAN.update_schedule_configure(self.schedule_args(worker))
+            native.assert_not_called()
+        self.assertEqual(AI_HUMAN.update_schedule_config(worker.resolve())["status"], "DISABLED")
+        self.assertFalse((worker / AI_HUMAN.UPDATE_SCHEDULE_TRANSACTION_PATH).exists())
+
     def test_macos_loaded_definition_rejects_native_trigger_and_command_drift(self):
         fixture = json.loads((ROOT / "tests/fixtures/macos-launchctl-27.0.1.json").read_text(encoding="utf-8"))
         cases = {item["name"]: item["loaded"] for item in fixture["cases"]}
@@ -9326,6 +9363,20 @@ class LifecycleTests(unittest.TestCase):
                     cases[name], definition, "/synthetic/native-probe/" + name + ".plist", 1000
                 )
         original = cases["weekly"]
+        inherited_python = original.replace(
+            "\tdefault environment = {",
+            "\tinherited environment = {\n\t\tPYTHONHOME => /synthetic/missing-python-home\n\t}\n\n\tdefault environment = {",
+        )
+        with self.assertRaisesRegex(ValueError, "requires an isolated interpreter"):
+            AI_HUMAN.verify_macos_loaded_definition(
+                inherited_python, definition, "/synthetic/native-probe/weekly.plist", 1000
+            )
+        isolated_definition = dict(definition)
+        isolated_definition["ProgramArguments"] = definition["ProgramArguments"][:1] + ["-I"] + definition["ProgramArguments"][1:]
+        isolated_readback = inherited_python.replace("\t\t/usr/bin/true\n", "\t\t/usr/bin/true\n\t\t-I\n")
+        self.assertTrue(AI_HUMAN.verify_macos_loaded_definition(
+            isolated_readback, isolated_definition, "/synthetic/native-probe/weekly.plist", 1000
+        ))
         # The observed RunAtLoad sample also supplies the running-process shape.
         # Removing only its unwanted flag gives a synthetic normal running job.
         running = cases["runatload"].replace("runatload | ", "")

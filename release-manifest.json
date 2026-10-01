@@ -98,7 +98,7 @@
       "target": ".ai-human/VERSION"
     },
     {
-      "sha256": "4373ebf22b8de370eadc82b12d867e6f5f88bcbcde49daee17063eb82732d3bb",
+      "sha256": "7cb67a4762f9b10497008cf9ed67ac97129e7ddd74be093870b62c6263893f32",
       "source": "scripts/ai_human.py",
       "target": ".ai-human/bin/ai_human.py"
     }

@@ -10268,12 +10268,12 @@ class NativeUpdateAdapter:
 
 
 class MacOSUpdateCleanupAdapter(NativeUpdateAdapter):
-    """An OS upgrade never grants activation, but must not strand an owned job."""
+    """OS or timezone drift cannot grant activation or strand an owned job."""
 
     cleanup_only = True
 
     def install(self, definition_path):
-        raise UnsupportedMacOSUpdateBuild("unsupported macOS build permits cleanup only")
+        raise ValueError("unconfirmed macOS runtime permits cleanup only")
 
     def verify_cleanup_definition(self, definition_path, expected_sha256):
         definition_path = Path(definition_path)
@@ -10307,7 +10307,7 @@ class MacOSUpdateCleanupAdapter(NativeUpdateAdapter):
         if self.query_removed(definition_path) != {
             "status": "REMOVED", "definition_sha256": None,
         }:
-            raise ValueError("unsupported macOS build cannot verify an active native task")
+            raise ValueError("cleanup-only macOS adapter cannot verify an active native task")
         return {
             "status": "PAUSED" if self.config.get("status") == "PAUSED" else "REMOVED",
             "definition_sha256": (
@@ -10330,11 +10330,19 @@ def native_update_adapter(worker, config):
 
 def native_update_cleanup_adapter(worker, config):
     try:
-        return native_update_adapter(worker, config)
+        adapter = native_update_adapter(worker, config)
     except UnsupportedMacOSUpdateBuild:
         # Only the normal factory's exact Mac build refusal permits this path.
         # Wrong-host, permission and other failures retain their original denial.
         return MacOSUpdateCleanupAdapter(worker, config)
+    if (
+        config["platform"] == "MACOS"
+        and adapter.observed_timezone_id() != config["native_timezone_id"]
+    ):
+        # A confirmed zone mismatch permits exact-target deactivation only.
+        # Failure to read the timezone still raises; no compatibility is implied.
+        return MacOSUpdateCleanupAdapter(worker, config)
+    return adapter
 
 
 def query_removed_native(adapter, definition_path):
@@ -15716,7 +15724,7 @@ def recover_update_schedule_internal(worker):
             if old_config["status"] == "ENABLED":
                 # Rebase the existing journal after restoring its exact before
                 # image. A crash during these writes remains recoverable against
-                # the same private backup; no unknown-build activation occurs.
+                # the same private backup; no unconfirmed-runtime activation occurs.
                 paused = dict(old_config)
                 paused.update(status="PAUSED", config_version=old_config["config_version"] + 1,
                               updated_utc=now_utc())

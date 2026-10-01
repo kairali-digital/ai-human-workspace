@@ -9444,10 +9444,13 @@ class LifecycleTests(unittest.TestCase):
         ):
             self.assertIsNone(adapter.query(private)["definition_sha256"])
 
-    def test_macos_os_upgrade_allows_exact_schedule_safety_cleanup_only(self):
-        for action in ("PAUSE", "REMOVE", "RECOVER", "RECOVER_CRASH"):
-            with self.subTest(action=action):
-                worker = self.base / ("os-upgrade-" + action.lower())
+    def test_macos_os_or_timezone_drift_allows_exact_schedule_safety_cleanup_only(self):
+        for drift, action in (
+            (drift, action) for drift in ("OS", "TIMEZONE")
+            for action in ("PAUSE", "REMOVE", "RECOVER", "RECOVER_CRASH")
+        ):
+            with self.subTest(drift=drift, action=action):
+                worker = self.base / (drift.lower() + "-drift-" + action.lower())
                 self.install(worker)
                 with (
                     mock.patch.object(AI_HUMAN, "native_update_adapter", side_effect=self.fake_native_factory({})),
@@ -9468,12 +9471,16 @@ class LifecycleTests(unittest.TestCase):
                 service = "gui/" + str(os.getuid()) + "/" + native["external_id"]
                 loaded = True
                 calls = []
+                activation_error = "unsupported macOS" if drift == "OS" else "time zone differs"
 
                 def upgraded_os(command, **kwargs):
                     nonlocal loaded
                     calls.append(command)
                     if command[0] == "/usr/bin/sw_vers":
-                        return SimpleNamespace(returncode=0, stdout="UNTESTED", stderr="")
+                        version = {"-productVersion": "27.0.1", "-buildVersion": "26A434"}
+                        return SimpleNamespace(
+                            returncode=0, stdout="UNTESTED" if drift == "OS" else version[command[1]], stderr="",
+                        )
                     self.assertEqual(command, ["/bin/launchctl", command[1], service])
                     if command[1] == "bootout":
                         loaded = False
@@ -9497,7 +9504,7 @@ class LifecycleTests(unittest.TestCase):
                 ):
                     if action == "PAUSE":
                         with mock.patch.object(AI_HUMAN, "download_release") as download:
-                            with self.assertRaisesRegex(ValueError, "unsupported macOS"):
+                            with self.assertRaisesRegex(ValueError, activation_error):
                                 AI_HUMAN.update_schedule_tick_internal(
                                     worker.resolve(), config["schedule_id"],
                                     AI_HUMAN.update_schedule_config_sha256(config),
@@ -9527,17 +9534,46 @@ class LifecycleTests(unittest.TestCase):
                     self.assertEqual(updated["status"], "REMOVED" if action == "REMOVE" else "PAUSED")
                     self.assertFalse((worker / AI_HUMAN.UPDATE_SCHEDULE_TRANSACTION_PATH).exists())
                     AI_HUMAN.verify_update_schedule_native_readback(worker.resolve(), updated)
-                    with self.assertRaisesRegex(ValueError, "unsupported macOS"):
-                        AI_HUMAN.native_update_adapter(worker.resolve(), updated)
-                    with self.assertRaisesRegex(ValueError, "unsupported macOS"):
+                    if drift == "OS":
+                        with self.assertRaisesRegex(ValueError, "unsupported macOS"):
+                            AI_HUMAN.native_update_adapter(worker.resolve(), updated)
+                    with self.assertRaisesRegex(ValueError, activation_error):
                         AI_HUMAN.NativeUpdateAdapter(worker.resolve(), updated).install(definition)
                     if action == "PAUSE":
-                        with self.assertRaisesRegex(ValueError, "unsupported macOS"):
+                        with self.assertRaisesRegex(ValueError, activation_error):
                             AI_HUMAN.update_schedule_control(SimpleNamespace(
                                 worker=str(worker), action="RESUME", approval_reference="must stay off",
                             ))
                 self.assertTrue(any(command[1] == "bootout" for command in calls))
                 self.assertFalse(any(command[1] == "bootstrap" for command in calls))
+
+    def test_macos_cleanup_keeps_timezone_read_and_absence_errors_closed(self):
+        worker = self.base / "cleanup-readback-failure"
+        config = {
+            "platform": "MACOS", "schedule_id": "synthetic-cleanup-readback",
+            "native_timezone_id": "Asia/Kolkata", "status": "PAUSED",
+        }
+        adapter = AI_HUMAN.NativeUpdateAdapter(worker, config)
+        with (
+            mock.patch.object(AI_HUMAN, "native_update_adapter", return_value=adapter),
+            mock.patch.object(adapter, "observed_timezone_id", side_effect=ValueError("timezone unreadable")),
+        ):
+            with self.assertRaisesRegex(ValueError, "timezone unreadable"):
+                AI_HUMAN.native_update_cleanup_adapter(worker, config)
+        with (
+            mock.patch.object(AI_HUMAN, "native_update_adapter", return_value=adapter),
+            mock.patch.object(adapter, "observed_timezone_id", return_value="Changed/Zone"),
+        ):
+            cleanup = AI_HUMAN.native_update_cleanup_adapter(worker, config)
+        self.assertTrue(cleanup.cleanup_only)
+        with (
+            mock.patch.object(cleanup, "_macos_target", return_value=worker / "absent.plist"),
+            mock.patch.object(AI_HUMAN.subprocess, "run", return_value=SimpleNamespace(
+                returncode=113, stdout="", stderr="Could not find service: access denied",
+            )),
+        ):
+            with self.assertRaisesRegex(ValueError, "cannot verify native update schedule removal"):
+                cleanup.query(worker / "private.plist")
 
     def test_macos_cleanup_rejects_unbound_changed_and_other_worker_definitions(self):
         worker = self.base / "cleanup-binding"

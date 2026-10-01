@@ -111,8 +111,9 @@ does not claim retroactive erasure of a recipient's records.
 
 All H-53 writes require the current worker lease, expected controlled-state hash and
 worker operation mutex. Each mutation changes one atomically replaced private JSON
-file. A digest-only journal names one reserved, mode-0600 staging path and records the
-exact byte count, before/after hashes, worker identity, writer and unrelated-state
+file. A digest-only journal names one reserved owner-private staging path (mode 0600
+on POSIX; a verified protected current-user DACL on Windows) and records the exact
+byte count, before/after hashes, worker identity, writer and unrelated-state
 hash; it never duplicates private content. Unknown files or links in the private roots
 fail closed. `h53-recover` can accept only the exact complete stage, committed bytes or
 previous bytes, removes an exact partial stage and refuses unrelated drift. Index repair

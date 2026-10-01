@@ -26,6 +26,8 @@ All notable changes are recorded here in plain language.
   an explicit approved checkpoint when a task remains live.
 - Preserve exact LF, CRLF and mixed-newline automation bytes through downgrade
   export, restoration and interrupted recovery; reject changed visible state.
+- Create H-53 memory/Chief staging files with owner-only Windows access controls
+  before writing content; verify protection again during commit and recovery.
 
 All new capabilities remain off by default. Automatic release eligibility is still off.
 Final same-byte audits, independent recovery copies, platform checks and exact-candidate

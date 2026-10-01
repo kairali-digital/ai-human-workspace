@@ -9531,7 +9531,10 @@ class LifecycleTests(unittest.TestCase):
         stage = AI_HUMAN.h53_stage_path(worker, AI_HUMAN.MEMORY_STORE_PATH)
         self.assertTrue(journal.is_file())
         self.assertTrue(stage.is_file())
-        self.assertEqual(stat.S_IMODE(stage.stat().st_mode), 0o600)
+        if os.name == "nt":
+            AI_HUMAN.require_private_file(stage)
+        else:
+            self.assertEqual(stat.S_IMODE(stage.stat().st_mode), 0o600)
         self.assertNotIn("synthetic-policy", journal.read_text(encoding="utf-8"))
         blocked = self.run_cli("validate", worker, expect=1)
         self.assertIn("h53-recover", blocked.stdout)
@@ -9551,6 +9554,102 @@ class LifecycleTests(unittest.TestCase):
         )
         self.assertIn("unexpected H-53 private entry", revoke.stderr)
         self.assertEqual(AI_HUMAN.memory_store(worker)["config"]["status"], "ENABLED")
+
+    def h53_privacy_crash_fixture(self, label, boundary):
+        worker = self.memory_fixture(label, label)
+        request = self.write_json_fixture(
+            label + ".json",
+            self.memory_request(
+                source_locator="EVIDENCE_LOG.md",
+                source_sha256=sha256(worker / "EVIDENCE_LOG.md"),
+            ),
+        )
+        args = SimpleNamespace(
+            worker=worker, session_id="memory-session",
+            expected_state_hash=AI_HUMAN.controlled_state_hash(worker),
+            request=request, source_file="EVIDENCE_LOG.md",
+        )
+        target = worker / AI_HUMAN.MEMORY_STORE_PATH
+        before = target.read_bytes()
+
+        def crash(selected):
+            if selected == boundary:
+                raise RuntimeError("synthetic private-stage crash")
+
+        def partial_write(stage, data):
+            with os.fdopen(AI_HUMAN.open_private_exclusive(stage), "wb") as stream:
+                stream.write(data[:max(1, len(data) // 2)])
+                stream.flush()
+                os.fsync(stream.fileno())
+            raise RuntimeError("synthetic private-stage crash")
+
+        patched_name = "h53_write_stage" if boundary == "partial" else "h53_boundary"
+        effect = partial_write if boundary == "partial" else crash
+        with mock.patch.object(AI_HUMAN, patched_name, side_effect=effect):
+            with self.assertRaisesRegex(RuntimeError, "synthetic private-stage crash"):
+                AI_HUMAN.memory_record(args)
+        stage = AI_HUMAN.h53_stage_path(worker, AI_HUMAN.MEMORY_STORE_PATH)
+        journal = worker / AI_HUMAN.H53_TX_PATH
+        self.assertTrue(journal.is_file())
+        return worker, stage, target, journal, before
+
+    def test_h53_private_stage_partial_stage_and_replace_crashes_recover(self):
+        for boundary in ("partial", "stage", "replace"):
+            with self.subTest(boundary=boundary):
+                worker, stage, target, journal, before = self.h53_privacy_crash_fixture(
+                    "private-crash-" + boundary, boundary,
+                )
+                protected = target if boundary == "replace" else stage
+                AI_HUMAN.require_private_file(protected)
+                if boundary != "replace":
+                    self.assertEqual(target.read_bytes(), before)
+                recovered = self.run_cli(
+                    "h53-recover", worker, "--session-id", "memory-session",
+                    "--expected-state-hash", AI_HUMAN.controlled_state_hash(worker),
+                )
+                expected = "NO_CHANGE" if boundary == "partial" else "COMMITTED"
+                self.assertIn(expected, recovered.stdout)
+                self.assertFalse(stage.exists())
+                self.assertFalse(journal.exists())
+                AI_HUMAN.require_private_file(target)
+                records = AI_HUMAN.memory_store(worker)["records"]
+                if boundary == "partial":
+                    self.assertEqual(target.read_bytes(), before)
+                    self.assertNotIn("fact-one", records)
+                else:
+                    self.assertIn("fact-one", records)
+                self.run_cli("validate", worker)
+
+    def test_h53_recovery_refuses_broad_stage_without_mutating_transaction(self):
+        worker, stage, target, journal, before = self.h53_privacy_crash_fixture(
+            "private-stage-tamper", "stage",
+        )
+        if os.name == "nt":
+            # The only ACL mutation is this synthetic staged file.
+            program = r"""
+            $ErrorActionPreference = 'Stop'
+            $a = Get-Acl -LiteralPath $env:AIH_PRIVATE_PROBE_PATH
+            $world = [System.Security.Principal.SecurityIdentifier]::new('S-1-1-0')
+            $a.AddAccessRule([System.Security.AccessControl.FileSystemAccessRule]::new(
+                $world, 'Read', 'Allow'))
+            Set-Acl -LiteralPath $env:AIH_PRIVATE_PROBE_PATH -AclObject $a
+            """
+            changed = subprocess.run(
+                ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", program],
+                env=dict(os.environ, AIH_PRIVATE_PROBE_PATH=str(stage)),
+                capture_output=True, text=True, check=False, timeout=30,
+            )
+            self.assertEqual(changed.returncode, 0, changed.stderr)
+        else:
+            stage.chmod(0o644)
+        retained = {path: path.read_bytes() for path in (stage, target, journal)}
+        rejected = self.run_cli(
+            "h53-recover", worker, "--session-id", "memory-session",
+            "--expected-state-hash", AI_HUMAN.controlled_state_hash(worker), expect=1,
+        )
+        self.assertIn("private file", rejected.stderr)
+        self.assertEqual(target.read_bytes(), before)
+        self.assertEqual(retained, {path: path.read_bytes() for path in retained})
 
     def test_h53_quiet_brief_prunes_expired_history_durably_and_bounds_state(self):
         chief = self.chief_fixture()

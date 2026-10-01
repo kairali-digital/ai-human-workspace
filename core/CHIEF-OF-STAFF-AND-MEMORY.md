@@ -86,6 +86,23 @@ brief advances a hash-bound checkpoint by one bounded batch and leaves the remai
 for the next brief; a durable monotonic sequence keeps same-second and retention-evicted
 briefs ordered without truncating or corrupting pending changes.
 
+The owner configures a positive fleet capacity independently of the execution batch
+cap. Each intake or memory mutation remains a separate authorized operation. Memory
+retains its existing 250-record bound, and each H-53 state file remains bounded to
+4 MiB; a size refusal preserves the previous state. Revoked-ID history is bounded by
+that storage limit, not by the number of actions allowed in one batch.
+
+New briefs are explicit `CHANGED_ITEMS_PAGE` views, not full portfolio listings. Their
+selected changes and explicitly requested handoff sources together respect the current
+adaptive cap, never above 25. Worker metadata, fact-change metadata, exceptions and
+owner-next effects describe only that selection. Removed keys are explicit; obsolete
+keys drain before new additions. Each page reports its remaining change count. A
+selected subject's complete current contradiction group stays intact, with at most the
+existing 250 memory-record references; those references are evidence, not 250 actions.
+Old v1 brief history remains readable. The checkpoint index is bounded by the configured
+fleet plus memory capacity across prior/current generations and by the same 4 MiB file
+limit. Nothing here raises the batch ceiling or grants a new approval or write authority.
+
 H-55 route revocation prevents future retrieval and intake. Previously accepted local
 metadata is retained until the Chief owner uses REVOKE or FORGET; transport revocation
 does not claim retroactive erasure of a recipient's records.

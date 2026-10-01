@@ -147,11 +147,19 @@ held. If the process stops, a persistent transaction journal blocks ordinary wor
 pre-transaction release. A deliberate rollback also reads the named trusted release;
 mutable backup bytes cannot redefine an old version.
 
-Before a v2.4+ worker rolls back below v2.4, `prepare-downgrade` provides the governed
-exit the compatibility check requires. It first requires no live task or writer and no
-external schedule that could still run, then moves incompatible private state to
-a hash-inventoried `.ai-human/downgrade-exports/` archive. After updating back to v2.4+
-the archive can be restored with `restore-downgrade`.
+Before crossing a v2.4 or v2.5 private-state boundary, `prepare-downgrade` provides
+the governed export required by rollback. It requires an idle task/writer checkpoint,
+resolved governor/context/handoff work, and verified removal of schedules and routes
+belonging to the exported features. Only incompatible roots move to a hash-inventoried
+`.ai-human/downgrade-exports/` archive; compatible v2.4 improvement/autonomy state stays
+in place when targeting v2.4. Direct rollback also refuses live tasks or writers.
+
+`restore-downgrade` requires an installed runtime supporting every archived root:
+v2.5 for the new memory, Chief, exchange, map, governor, continuity, resource and
+native-update state; v2.4 for legacy archives. Upgrade first, then restore. Historical
+receipts are not rewritten. Conflicting automation edits or unexpected archive files
+are preserved and must be reconciled, never overwritten. Interrupted export/restore
+uses `recover-downgrade` to resume or restore the previous state.
 
 ## Fleet isolation
 

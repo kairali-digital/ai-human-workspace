@@ -27,7 +27,15 @@ from unittest import mock
 ROOT = Path(__file__).resolve().parents[1]
 CLI = ROOT / "scripts/ai_human.py"
 CURRENT_VERSION = (ROOT / "core/VERSION").read_text(encoding="utf-8").strip()
-TEST_UPGRADE_VERSION = "2.4.1"
+
+
+def next_test_patch_version(version):
+    """Keep synthetic upgrade fixtures newer than the release under test."""
+    major, minor, patch = map(int, version.split("."))
+    return f"{major}.{minor}.{patch + 1}"
+
+
+TEST_UPGRADE_VERSION = next_test_patch_version(CURRENT_VERSION)
 SPEC = importlib.util.spec_from_file_location("ai_human_lifecycle", CLI)
 AI_HUMAN = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(AI_HUMAN)
@@ -137,6 +145,20 @@ class FakeNativeUpdateAdapter:
 
 
 class LifecycleTests(unittest.TestCase):
+    def test_synthetic_upgrade_version_tracks_current_release(self):
+        for current, expected in (
+            ("2.4.0", "2.4.1"),
+            ("2.5.0", "2.5.1"),
+            ("2.5.9", "2.5.10"),
+            ("3.0.0", "3.0.1"),
+        ):
+            with self.subTest(current=current):
+                upgraded = next_test_patch_version(current)
+                self.assertEqual(upgraded, expected)
+                self.assertGreater(AI_HUMAN.version_tuple(upgraded), AI_HUMAN.version_tuple(current))
+        self.assertEqual(TEST_UPGRADE_VERSION, next_test_patch_version(CURRENT_VERSION))
+        self.assertGreater(AI_HUMAN.version_tuple(TEST_UPGRADE_VERSION), AI_HUMAN.version_tuple(CURRENT_VERSION))
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix="ai-human-test-")
         self.base = Path(self.temp.name)
@@ -395,6 +417,18 @@ class LifecycleTests(unittest.TestCase):
             "session-acquire", worker, "--session-id", session_id, "--actor", "Mission Owner"
         )
         return self.output_value(acquired.stdout, "expected-state hash")
+
+    def checkpoint_fixture_baseline(self, worker, hashes):
+        """Finish only fixture capture, not the subsequent lifecycle assertion."""
+        artifact = worker / "FIXTURE-BASELINE.json"
+        AI_HUMAN.atomic_json(artifact, {"schema": "test.private-state-baseline/v1", "files": hashes})
+        self.assertEqual(AI_HUMAN.read_json(artifact)["files"], hashes)
+        self.run_cli("task-complete", worker, "--task-id", AI_HUMAN.live_task_id(worker),
+                     "--artifact", artifact.name,
+                     "--outcome", "Captured the synthetic private-state baseline for lifecycle testing",
+                     "--verification", "Read back the complete file/hash inventory; update and rollback assertions have not run yet",
+                     "--undo", "Remove the disposable fixture after test receipts are collected")
+        self.assertEqual(hashes, {relative: sha256(worker / relative) for relative in hashes})
 
     def map_fixture(self):
         worker = self.base / "personal-worker"
@@ -3247,6 +3281,7 @@ class LifecycleTests(unittest.TestCase):
             for root in roots for path in (worker / ".ai-human" / root).rglob("*")
             if path.is_file()
         }
+        self.checkpoint_fixture_baseline(worker, before)
         new_release = self.base / "h51-new-release"
         shutil.copytree(self.release, new_release)
         refresh_release(new_release, TEST_UPGRADE_VERSION)
@@ -5099,6 +5134,7 @@ class LifecycleTests(unittest.TestCase):
             path.relative_to(worker["path"]).as_posix(): sha256(path)
             for path in (worker["path"] / ".ai-human/exchange").rglob("*") if path.is_file()
         }
+        self.checkpoint_fixture_baseline(worker["path"], before)
         new_release = self.base / "exchange-next-release"
         shutil.copytree(self.release, new_release)
         refresh_release(new_release, TEST_UPGRADE_VERSION)
@@ -9616,6 +9652,180 @@ class LifecycleTests(unittest.TestCase):
         self.run_cli("restore-downgrade", worker)
         self.assertEqual(sha256(worker / AI_HUMAN.MEMORY_STORE_PATH), before)
         self.assertEqual(self.run_cli("validate", worker).returncode, 0)
+
+    def test_pre_v25_downgrade_exports_new_roots_and_refuses_unsupported_restore(self):
+        worker = self.memory_fixture("memory-version-boundary", "memory-version-boundary")
+        self.memory_record_cli(worker, self.memory_request())
+        memory_before = AI_HUMAN.tree_sha256(worker / AI_HUMAN.MEMORY_ROOT)
+        self.run_cli(
+            "improvement-choice", worker, "ENABLE", "--session-id", "memory-session",
+            "--expected-state-hash", AI_HUMAN.controlled_state_hash(worker),
+            "--timezone", "Asia/Kolkata", "--local-time", "09:00",
+            "--source", "COMPLETED_LEDGER", "--research", "DISABLED",
+            "--freshness-days", "30", "--retention-days", "365",
+        )
+        compatible_before = AI_HUMAN.tree_sha256(worker / AI_HUMAN.IMPROVEMENT_ROOT)
+        improvement_row = next(line for line in (worker / "AUTOMATIONS.md").read_text().splitlines()
+                               if line.startswith("| USER-QUARTERLY-IMPROVEMENT-001 |"))
+        self.run_cli("session-release", worker, "--session-id", "memory-session",
+                     "--expected-state-hash", AI_HUMAN.controlled_state_hash(worker))
+        old = self.base / "synthetic-v240-boundary"
+        shutil.copytree(self.release, old)
+        refresh_release(old, "2.4.0")  # Portable boundary fixture; actual old-CLI proof is separate.
+        denied = self.run_cli("rollback", worker, "--version", "2.4.0", "--source", old, expect=1)
+        self.assertIn("orphan state", denied.stderr)
+        self.assertEqual(memory_before, AI_HUMAN.tree_sha256(worker / AI_HUMAN.MEMORY_ROOT))
+        self.run_cli("prepare-downgrade", worker, "--target-version", "2.4.0")
+        receipt = AI_HUMAN.read_json(AI_HUMAN.downgrade_preparation_receipt(worker))
+        archive = worker / receipt["archive"]
+        manifest = AI_HUMAN.read_json(archive / "archive-manifest.json")
+        roots = {item["original"] for item in manifest["items"]}
+        self.assertIn(str(AI_HUMAN.MEMORY_ROOT), roots)
+        self.assertNotIn(str(AI_HUMAN.IMPROVEMENT_ROOT), roots)
+        self.assertNotIn(str(AI_HUMAN.AUTONOMY_ROOT), roots)
+        self.assertFalse((worker / AI_HUMAN.MEMORY_ROOT).exists())
+        self.assertEqual(compatible_before, AI_HUMAN.tree_sha256(worker / AI_HUMAN.IMPROVEMENT_ROOT))
+        self.assertIn(improvement_row, (worker / "AUTOMATIONS.md").read_text().splitlines())
+        self.run_cli("rollback", worker, "--version", "2.4.0", "--source", old)
+        before = {p.relative_to(worker).as_posix(): sha256(p) for p in worker.rglob("*") if p.is_file()}
+        denied = self.run_cli("restore-downgrade", worker, expect=1)
+        self.assertIn("v2.5.0 or later", denied.stderr)
+        self.assertEqual(before, {p.relative_to(worker).as_posix(): sha256(p) for p in worker.rglob("*") if p.is_file()})
+        self.assertEqual(memory_before, AI_HUMAN.tree_sha256(archive / "memory"))
+        self.run_cli("update", worker, "--source", self.release, "--at-checkpoint")
+        self.run_cli("restore-downgrade", worker)
+        self.assertEqual(memory_before, AI_HUMAN.tree_sha256(worker / AI_HUMAN.MEMORY_ROOT))
+        self.assertEqual(compatible_before, AI_HUMAN.tree_sha256(worker / AI_HUMAN.IMPROVEMENT_ROOT))
+        self.run_cli("validate", worker)
+
+    def test_rollback_requires_idle_task_and_writer_checkpoint(self):
+        for active in ("task", "writer"):
+            with self.subTest(active=active):
+                worker = self.base / ("rollback-checkpoint-" + active)
+                self.install(worker)
+                if active == "task":
+                    self.run_cli("task-start", worker, "--task-id", "ROLLBACK-GUARD-001",
+                                 "--title", "Verify rollback checkpoint refusal")
+                else:
+                    self.run_cli("session-acquire", worker, "--session-id", "rollback-writer", "--actor", "User One")
+                before = {p.relative_to(worker).as_posix(): sha256(p) for p in worker.rglob("*") if p.is_file()}
+                result = self.run_cli("rollback", worker, "--version", CURRENT_VERSION, "--source", self.release, expect=1)
+                self.assertIn("checkpoint", result.stderr)
+                self.assertEqual(before, {p.relative_to(worker).as_posix(): sha256(p) for p in worker.rglob("*") if p.is_file()})
+
+    def test_downgrade_inventory_includes_every_new_private_control_root(self):
+        self.assertEqual(set(AI_HUMAN.downgrade_private_roots()), {
+            AI_HUMAN.IMPROVEMENT_ROOT, AI_HUMAN.AUTONOMY_ROOT, AI_HUMAN.GOVERNOR_ROOT,
+            AI_HUMAN.CONTINUITY_ROOT, AI_HUMAN.RESOURCE_ROOT, AI_HUMAN.PERSONAL_ROOT,
+            AI_HUMAN.EXCHANGE_LOCAL_ROOT, AI_HUMAN.UPDATE_SCHEDULE_ROOT,
+            AI_HUMAN.MEMORY_ROOT, AI_HUMAN.CHIEF_ROOT,
+        })
+
+    def test_downgrade_refuses_to_export_an_open_governor_plan(self):
+        worker = self.base / "downgrade-open-governor"
+        self.install(worker)
+        state = self.acquire_session(worker)
+        policy = self.write_json_fixture("downgrade-policy.json", self.governor_policy())
+        self.run_cli("governor-configure", worker, "--session-id", "governor-session",
+                     "--expected-state-hash", state, "--policy", policy)
+        request = self.write_json_fixture("downgrade-plan.json", self.governor_request("downgrade-plan"))
+        self.run_cli("governor-plan", worker, "--session-id", "governor-session",
+                     "--expected-state-hash", AI_HUMAN.controlled_state_hash(worker), "--request", request)
+        self.run_cli("session-release", worker, "--session-id", "governor-session",
+                     "--expected-state-hash", AI_HUMAN.controlled_state_hash(worker))
+        before = {p.relative_to(worker).as_posix(): sha256(p) for p in worker.rglob("*") if p.is_file()}
+        denied = self.run_cli("prepare-downgrade", worker, "--target-version", "2.4.0", expect=1)
+        self.assertIn("outstanding governor plan", denied.stderr)
+        self.assertEqual(before, {p.relative_to(worker).as_posix(): sha256(p) for p in worker.rglob("*") if p.is_file()})
+
+    def test_downgrade_restore_rejects_backdated_root_and_extra_archive_before_journaling(self):
+        worker = self.memory_fixture("archive-boundary", "archive-boundary")
+        self.memory_record_cli(worker, self.memory_request())
+        self.run_cli("session-release", worker, "--session-id", "memory-session",
+                     "--expected-state-hash", AI_HUMAN.controlled_state_hash(worker))
+        self.run_cli("prepare-downgrade", worker, "--target-version", "2.3.0")
+        receipt_path = AI_HUMAN.downgrade_preparation_receipt(worker)
+        receipt = AI_HUMAN.read_json(receipt_path)
+        archive = worker / receipt["archive"]
+        manifest_path = archive / "archive-manifest.json"
+        manifest = AI_HUMAN.read_json(manifest_path)
+        extra = archive / "unexpected.txt"
+        extra.write_text("preserve unexpected evidence", encoding="utf-8")
+        denied = self.run_cli("restore-downgrade", worker, expect=1)
+        self.assertIn("unexpected object", denied.stderr)
+        self.assertFalse(AI_HUMAN.downgrade_transaction_path(worker).exists())
+        extra.rename(self.base / "preserved-extra.txt")
+        AI_HUMAN.atomic_json(receipt_path, dict(receipt, from_version="2.4.0"))
+        AI_HUMAN.atomic_json(manifest_path, dict(manifest, from_version="2.4.0"))
+        denied = self.run_cli("restore-downgrade", worker, expect=1)
+        self.assertIn("newer than its originating version", denied.stderr)
+        self.assertFalse(AI_HUMAN.downgrade_transaction_path(worker).exists())
+        self.assertFalse((worker / AI_HUMAN.MEMORY_ROOT).exists())
+        AI_HUMAN.atomic_json(receipt_path, receipt)
+        AI_HUMAN.atomic_json(manifest_path, manifest)
+        self.run_cli("restore-downgrade", worker)
+        self.run_cli("validate", worker)
+
+    def test_downgrade_handoff_guard_requires_exact_timely_local_acknowledgement(self):
+        # Unit boundary matrix; record parsing is exercised by the handoff suite.
+        now = datetime.datetime.now(datetime.timezone.utc)
+        stamp = lambda minutes: (now + datetime.timedelta(minutes=minutes)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        packet = {"handoff_id": "boundary-handoff", "packet_sha256": "a" * 64,
+                  "created_utc": stamp(-10), "expires_utc": stamp(10),
+                  "intended_recipient_worker_id": "local", "intended_recipient_identity_sha256": "b" * 64,
+                  "intended_recipient_task_id": "BOUNDARY-001", "intended_recipient_state_sha256": "c" * 64}
+        ack = {"handoff_id": packet["handoff_id"], "packet_sha256": packet["packet_sha256"],
+               "recipient_worker_id": "local", "recipient_identity_sha256": "b" * 64,
+               "recipient_task_id": "BOUNDARY-001", "recipient_state_sha256": "c" * 64,
+               "accepted_utc": stamp(-1)}
+        with mock.patch.multiple(AI_HUMAN,
+                governor_plan_records=mock.Mock(return_value=[]),
+                governor_outcome_records=mock.Mock(return_value=[]),
+                governor_policy=mock.Mock(return_value=None),
+                context_checkpoint_latch=mock.Mock(return_value=None),
+                installed_worker_id=mock.Mock(return_value="local"),
+                handoff_packets=mock.Mock(return_value=[packet]),
+                handoff_acknowledgements=mock.Mock(return_value=[ack])):
+            AI_HUMAN.verify_downgrade_controls_reconciled(self.base)
+            for key, invalid in (("accepted_utc", stamp(-11)), ("accepted_utc", stamp(11)),
+                                 ("accepted_utc", stamp(1)), ("packet_sha256", "d" * 64),
+                                 ("recipient_identity_sha256", "e" * 64)):
+                with self.subTest(key=key, invalid=invalid):
+                    original = ack[key]
+                    ack[key] = invalid
+                    with self.assertRaisesRegex(ValueError, "unresolved unexpired handoff"):
+                        AI_HUMAN.verify_downgrade_controls_reconciled(self.base)
+                    ack[key] = original
+            packet["intended_recipient_worker_id"] = ack["recipient_worker_id"] = "remote"
+            with self.assertRaisesRegex(ValueError, "unresolved unexpired handoff"):
+                AI_HUMAN.verify_downgrade_controls_reconciled(self.base)
+            packet["expires_utc"] = stamp(-1)
+            AI_HUMAN.verify_downgrade_controls_reconciled(self.base)
+            AI_HUMAN.context_checkpoint_latch.return_value = {"directive": "CHECKPOINT_NOW"}
+            with self.assertRaisesRegex(ValueError, "required context checkpoint"):
+                AI_HUMAN.verify_downgrade_controls_reconciled(self.base)
+
+    def test_preexisting_orphan_state_cannot_create_an_unrecoverable_export_journal(self):
+        current = self.release
+        older = self.base / "synthetic-orphaned-v240"
+        shutil.copytree(current, older)
+        refresh_release(older, "2.4.0")
+        self.release = older
+        worker = self.memory_fixture("orphan-recovery", "orphan-recovery")
+        self.release = current
+        self.memory_record_cli(worker, self.memory_request())
+        self.run_cli("session-release", worker, "--session-id", "memory-session",
+                     "--expected-state-hash", AI_HUMAN.controlled_state_hash(worker))
+        before = {p.relative_to(worker).as_posix(): sha256(p) for p in worker.rglob("*") if p.is_file()}
+        denied = self.run_cli("prepare-downgrade", worker, "--target-version", "2.3.0", expect=1)
+        self.assertIn("newer than its originating version", denied.stderr)
+        self.assertEqual(before, {p.relative_to(worker).as_posix(): sha256(p) for p in worker.rglob("*") if p.is_file()})
+        self.assertFalse(AI_HUMAN.downgrade_transaction_path(worker).exists())
+        self.assertFalse((worker / ".ai-human/downgrade-exports").exists())
+        self.run_cli("update", worker, "--source", current, "--at-checkpoint")
+        self.run_cli("prepare-downgrade", worker, "--target-version", "2.4.0")
+        self.run_cli("restore-downgrade", worker)
+        self.run_cli("validate", worker)
 
     def test_pre_v24_downgrade_has_a_recoverable_private_state_export_path(self):
         worker = self.base / "downgrade-export-worker"

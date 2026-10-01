@@ -20,6 +20,9 @@ All notable changes are recorded here in plain language.
   Mac registration is restricted to the tested OS build; real Windows proof is pending.
 - Add canonical receipt tree proofs without rewriting historical receipts, and preserve
   the new private state through governed downgrade export and recovery.
+- Bind downgrade exports to the private features understood by the target version;
+  v2.5 memory and coordination state cannot be restored into v2.4. Preserve legacy
+  archive bytes and compatible state, and refuse rollback during active work.
 
 All new capabilities remain off by default. Automatic release eligibility is still off.
 Final same-byte audits, independent recovery copies, platform checks and exact-candidate

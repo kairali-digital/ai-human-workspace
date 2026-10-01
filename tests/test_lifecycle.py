@@ -8924,6 +8924,175 @@ class LifecycleTests(unittest.TestCase):
         self.assertEqual(records["global-one"]["status"], "SUPERSEDED")
         self.assertEqual(records["global-two"]["status"], "ACTIVE")
 
+    def chief_memory_record(self, chief, identifier, **changes):
+        if AI_HUMAN.memory_store(chief, required=False) is None:
+            config = self.write_json_fixture("chief-memory-config.json", {
+                "approval_reference": "Owner enabled bounded curated global records",
+                "owner": "Mission Owner", "retention_days": 90,
+                "schema": "ai-human.memory-config-request/v1",
+            })
+            with mock.patch("builtins.print"):
+                AI_HUMAN.memory_configure(SimpleNamespace(
+                    worker=chief, session_id="chief-session", action="ENABLE", request=config,
+                    expected_state_hash=AI_HUMAN.controlled_state_hash(chief),
+                ))
+        request = self.memory_request(
+            identifier, scope="GLOBAL_SHARED", access_class="COMPANY_SHARED",
+            source_sha256=sha256(chief / "EVIDENCE_LOG.md"), **changes,
+        )
+        path = self.write_json_fixture(identifier + "-record.json", request)
+        with mock.patch("builtins.print"):
+            AI_HUMAN.memory_record(SimpleNamespace(
+                worker=chief, session_id="chief-session", request=path,
+                expected_state_hash=AI_HUMAN.controlled_state_hash(chief),
+                source_file="EVIDENCE_LOG.md",
+            ))
+
+    def chief_brief_page(self, chief):
+        with mock.patch("builtins.print"):
+            AI_HUMAN.chief_brief(SimpleNamespace(
+                worker=chief, session_id="chief-session", handoff_bindings=None,
+                expected_state_hash=AI_HUMAN.controlled_state_hash(chief),
+            ))
+        state = AI_HUMAN.chief_state(chief)
+        return max(state["briefs"].values(), key=lambda item: item["sequence"])
+
+    def test_h53_fleet_capacity_is_independent_of_batch_and_mixed_pages_drain(self):
+        chief = self.chief_fixture("chief-fleet-26", "chief-fleet-26", batch_cap=1, max_workers=26)
+        snapshots = []
+        for index in range(27):
+            source = self.base / f"fleet-{index:02d}"
+            self.install(source, worker_id=f"fleet-{index:02d}")
+            snapshot = self.export_portfolio_snapshot(source, chief, status="WAITING_OWNER")
+            snapshots.append((source, snapshot))
+            if index == 26:
+                before = (chief / AI_HUMAN.CHIEF_STATE_PATH).read_bytes()
+                refused = self.chief_upsert(chief, snapshot, source, expect=1)
+                self.assertIn("approved worker limit", refused.stderr)
+                self.assertEqual((chief / AI_HUMAN.CHIEF_STATE_PATH).read_bytes(), before)
+            else:
+                self.chief_upsert(chief, snapshot, source)
+            if index == 24:
+                self.assertEqual(len(AI_HUMAN.chief_state(chief)["portfolio"]), 25)
+        self.assertEqual(len(AI_HUMAN.chief_state(chief)["portfolio"]), 26)
+        for index in range(26):
+            self.chief_memory_record(chief, f"global-{index:02d}", subject=f"subject-{index:02d}")
+        seen = set()
+        for index in range(52):
+            page = self.chief_brief_page(chief)
+            self.assertEqual(page["view"], "CHANGED_ITEMS_PAGE")
+            self.assertEqual(len(page["changed"]), 1)
+            self.assertFalse(seen.intersection(page["changed"]))
+            seen.update(page["changed"])
+            self.assertEqual(page["remaining_changes"], 51 - index)
+            represented = {"worker:" + item["worker_id"] for item in page["project_map"]}
+            represented.update("fact:" + item["fact_id"] for item in page["fact_changes"])
+            represented.update(page["removed"])
+            self.assertEqual(represented, set(page["changed"]))
+            self.assertLessEqual(len(page["exceptions"]), 1)
+            self.assertLessEqual(len(page["owner_next"]), 1)
+        self.assertEqual(len(AI_HUMAN.chief_state(chief)["last_material"]["items"]), 52)
+        quiet = self.run_cli(
+            "chief-brief", chief, "--session-id", "chief-session",
+            "--expected-state-hash", AI_HUMAN.controlled_state_hash(chief),
+        )
+        self.assertIn("NO_CHANGE", quiet.stdout)
+        # Each privacy operation is one action even though the retained revocation
+        # artifact can outgrow the per-action ceiling.
+        for index in range(26):
+            with mock.patch("builtins.print"):
+                AI_HUMAN.chief_portfolio_control(SimpleNamespace(
+                    worker=chief, session_id="chief-session", action="REVOKE",
+                    item=f"fleet-{index:02d}", approval_reference=None,
+                    expected_state_hash=AI_HUMAN.controlled_state_hash(chief),
+                ))
+            state = AI_HUMAN.chief_state(chief)
+            self.assertEqual(state["briefs"], {})
+            self.assertEqual(state["last_material"], {})
+        self.assertEqual(len(state["revoked_worker_ids"]), 26)
+        self.assertEqual(state["portfolio"], {})
+        refused = self.chief_upsert(chief, snapshots[0][1], snapshots[0][0], expect=1)
+        self.assertIn("revoked", refused.stderr)
+
+    def test_h53_contradiction_artifacts_keep_more_than_25_references_and_removals(self):
+        chief = self.chief_fixture("chief-many-facts", "chief-many-facts", batch_cap=1, max_workers=1)
+        for index in range(26):
+            self.chief_memory_record(
+                chief, f"claim-{index:02d}", subject="same-subject",
+                text=f"The synthetic value is {index}", source_owner=f"owner-{index:02d}",
+            )
+        expected_ids = [f"claim-{index:02d}" for index in range(26)]
+        for _ in range(26):
+            page = self.chief_brief_page(chief)
+            self.assertEqual(len(page["changed"]), 1)
+            self.assertEqual(page["contradictions"][0]["fact_ids"], expected_ids)
+            self.assertEqual(len(page["contradictions"][0]["fact_owners"]), 26)
+        with mock.patch("builtins.print"):
+            AI_HUMAN.memory_control(SimpleNamespace(
+                worker=chief, session_id="chief-session", action="RETRACT", item="claim-00",
+                expected_state_hash=AI_HUMAN.controlled_state_hash(chief),
+            ))
+        page = self.chief_brief_page(chief)
+        self.assertEqual(page["removed"], ["fact:claim-00"])
+        self.assertEqual(page["changed"], ["fact:claim-00"])
+        self.assertEqual(page["contradictions"][0]["fact_ids"], expected_ids[1:])
+        self.assertEqual(page["fact_changes"], [])
+        with mock.patch("builtins.print"):
+            AI_HUMAN.memory_control(SimpleNamespace(
+                worker=chief, session_id="chief-session", action="FORGET", item="claim-01",
+                expected_state_hash=AI_HUMAN.controlled_state_hash(chief),
+            ))
+        state = AI_HUMAN.chief_state(chief)
+        self.assertEqual(state["briefs"], {})
+        self.assertEqual(state["last_material"], {})
+
+    def test_h53_storage_capacity_preserves_memory_and_action_safety_bounds(self):
+        chief = self.chief_fixture("chief-storage-bounds", "chief-storage-bounds", batch_cap=1, max_workers=100000)
+        self.assertEqual(AI_HUMAN.map_batch_cap(chief), 1)
+        for invalid in (0, -1, True, "26"):
+            request = self.write_json_fixture("invalid-chief-capacity.json", {
+                "approval_reference": "Owner designated a read-only Chief",
+                "max_workers": invalid, "owner": "Mission Owner", "retention_days": 30,
+                "schema": "ai-human.chief-config-request/v1",
+            })
+            with self.assertRaisesRegex(ValueError, "positive owner-configured integer"):
+                AI_HUMAN.chief_configure(SimpleNamespace(
+                    worker=chief, session_id="chief-session", action="ENABLE", request=request,
+                    expected_state_hash=AI_HUMAN.controlled_state_hash(chief),
+                ))
+        self.chief_memory_record(chief, "bounded-000")
+        data = AI_HUMAN.memory_store(chief)
+        original = data["records"]["bounded-000"]
+        # Construct a validated full-store fixture, not a 250-action execution batch.
+        for index in range(1, 250):
+            record = json.loads(json.dumps(original))
+            record["id"] = f"bounded-{index:03d}"
+            AI_HUMAN.h53_seal(record)
+            data["records"][record["id"]] = record
+        AI_HUMAN.memory_prepare_store(data)
+        AI_HUMAN.atomic_json(chief / AI_HUMAN.MEMORY_STORE_PATH, data)
+        with mock.patch("builtins.print"):
+            AI_HUMAN.refresh_lease_state(chief, AI_HUMAN.read_lease(chief))
+        self.assertEqual(len(AI_HUMAN.memory_store(chief)["records"]), 250)
+        before = (chief / AI_HUMAN.MEMORY_STORE_PATH).read_bytes()
+        with self.assertRaisesRegex(ValueError, "capacity"):
+            self.chief_memory_record(chief, "bounded-250")
+        self.assertEqual((chief / AI_HUMAN.MEMORY_STORE_PATH).read_bytes(), before)
+        page = self.chief_brief_page(chief)
+        self.assertEqual(len(page["changed"]), 1)
+        legacy = json.loads(json.dumps(page))
+        for field in ("fact_changes", "remaining_changes", "removed", "view"):
+            del legacy[field]
+        legacy["schema"] = "ai-human.chief-brief/v1"
+        AI_HUMAN.h53_seal(legacy, field="brief_sha256")
+        AI_HUMAN.validate_chief_brief(legacy, AI_HUMAN.chief_state(chief)["config"])
+        forged = json.loads(json.dumps(page))
+        forged["changed"] = [f"fact:bounded-{index:03d}" for index in range(26)]
+        AI_HUMAN.h53_seal(forged, field="brief_sha256")
+        with self.assertRaisesRegex(ValueError, "safety ceiling"):
+            AI_HUMAN.validate_chief_brief(forged, AI_HUMAN.chief_state(chief)["config"])
+        self.assertEqual(AI_HUMAN.BATCH_CAP, 25)
+
     def test_h53_index_rebuild_accepts_only_derived_index_damage(self):
         worker = self.memory_fixture("memory-rebuild", "memory-rebuild")
         self.memory_record_cli(worker, self.memory_request())
@@ -9102,7 +9271,7 @@ class LifecycleTests(unittest.TestCase):
         self.assertIn("personal context", revoked.stderr)
 
     def test_h53_nested_brief_authority_and_privacy_removal_are_enforced(self):
-        chief = self.chief_fixture()
+        chief = self.chief_fixture(batch_cap=1)
         blocked = self.base / "blocked-source"
         target = self.base / "brief-target"
         self.install(blocked, worker_id="blocked-source")
@@ -9135,6 +9304,11 @@ class LifecycleTests(unittest.TestCase):
         self.assertNotIn("NO_CHANGE", repeated.stdout)
         self.assertIn("H55_REQUIRED", repeated.stdout)
         state = AI_HUMAN.chief_state(chief)
+        latest = max(state["briefs"].values(), key=lambda item: item["sequence"])
+        self.assertEqual(latest["changed"], [])
+        self.assertEqual(latest["remaining_changes"], 1)
+        self.assertEqual([item["worker_id"] for item in latest["project_map"]], ["blocked-source"])
+        self.assertEqual(len(latest["handoff_proposals"]), 1)
         brief = json.loads(json.dumps(next(iter(state["briefs"].values()))))
         brief["handoff_proposals"][0]["activation"] = "SENT"
         AI_HUMAN.h53_seal(brief, field="brief_sha256")
@@ -9223,16 +9397,28 @@ class LifecycleTests(unittest.TestCase):
         self.assertIn("NO_CHANGE", quiet.stdout)
         self.assertNotIn(old["id"], AI_HUMAN.chief_state(chief)["briefs"])
         lease = AI_HUMAN.read_lease(chief)
+        before_state = (chief / AI_HUMAN.CHIEF_STATE_PATH).read_bytes()
+        before_lease = dict(lease)
+        before_hash = AI_HUMAN.controlled_state_hash(chief)
         oversized = {"private": "x" * (4 * 1024 * 1024)}
         with self.assertRaisesRegex(ValueError, "four-megabyte"):
             AI_HUMAN.h53_commit(chief, lease, AI_HUMAN.CHIEF_STATE_PATH, oversized)
         self.assertFalse((chief / AI_HUMAN.H53_TX_PATH).exists())
+        self.assertEqual((chief / AI_HUMAN.CHIEF_STATE_PATH).read_bytes(), before_state)
+        self.assertEqual(AI_HUMAN.read_lease(chief), before_lease)
+        self.assertEqual(AI_HUMAN.controlled_state_hash(chief), before_hash)
 
     def test_h53_chief_batches_more_than_twenty_five_material_changes_without_corruption(self):
         chief = self.chief_fixture(
-            "chief-cap-one", "chief-cap-one", batch_cap=1, max_workers=1
+            "chief-cap-one", "chief-cap-one", batch_cap=1, max_workers=26
         )
-        material = {"fact:item-" + str(index): hashlib.sha256(str(index).encode()).hexdigest() for index in range(26)}
+        material = {"worker:item-" + str(index): hashlib.sha256(str(index).encode()).hexdigest() for index in range(26)}
+        project_map = [{
+            "current_task_id": "synthetic-task", "fresh_until_utc": "2099-01-01T00:00:00Z",
+            "next_action": "Review synthetic work", "owner": "Mission Owner",
+            "purpose": "Verify bounded checkpoint progress", "status": "ACTIVE",
+            "worker_id": "item-" + str(index),
+        } for index in range(26)]
         args = SimpleNamespace(
             worker=chief, session_id="chief-session",
             expected_state_hash=AI_HUMAN.controlled_state_hash(chief), handoff_bindings=None,
@@ -9241,7 +9427,7 @@ class LifecycleTests(unittest.TestCase):
         for processed in range(1, 27):
             args.expected_state_hash = AI_HUMAN.controlled_state_hash(chief)
             with (
-                mock.patch.object(AI_HUMAN, "chief_material", return_value=(material, [], [])),
+                mock.patch.object(AI_HUMAN, "chief_material", return_value=(material, project_map, [])),
                 mock.patch.object(AI_HUMAN, "now_utc", return_value=fixed_time),
                 mock.patch("builtins.print"),
             ):
@@ -9249,12 +9435,12 @@ class LifecycleTests(unittest.TestCase):
             state = AI_HUMAN.chief_state(chief)
             self.assertEqual(len(state["last_material"]["items"]), processed)
         for index in range(2):
-            material["fact:item-" + str(index)] = hashlib.sha256(
+            material["worker:item-" + str(index)] = hashlib.sha256(
                 ("changed-" + str(index)).encode()
             ).hexdigest()
             args.expected_state_hash = AI_HUMAN.controlled_state_hash(chief)
             with (
-                mock.patch.object(AI_HUMAN, "chief_material", return_value=(material, [], [])),
+                mock.patch.object(AI_HUMAN, "chief_material", return_value=(material, project_map, [])),
                 mock.patch.object(AI_HUMAN, "now_utc", return_value=fixed_time),
                 mock.patch("builtins.print"),
             ):

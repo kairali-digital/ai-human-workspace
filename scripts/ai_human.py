@@ -3774,6 +3774,7 @@ WORK_MAP_KINDS = {"SKILL", "WORKER_OR_BOT", "PROJECT", "LEARNING", "PROCESS_FIX"
 # The Chief is a separate, read-only coordinator: it receives explicit metadata
 # snapshots and curated facts, never arbitrary paths into another worker.
 MEMORY_ROOT = Path(".ai-human/memory")
+MEMORY_RECORD_LIMIT = 250
 MEMORY_STORE_PATH = MEMORY_ROOT / "store.json"
 MEMORY_INDEX_PATH = MEMORY_ROOT / "index.json"
 PORTFOLIO_EXPORTS_PATH = MEMORY_ROOT / "portfolio-exports.json"
@@ -4854,7 +4855,7 @@ def memory_store(worker, required=True, allow_stale_index=False):
     if updated < created:
         raise ValueError("memory update precedes creation")
     records = data["records"]
-    if not isinstance(records, dict) or len(records) > 250:
+    if not isinstance(records, dict) or len(records) > MEMORY_RECORD_LIMIT:
         raise ValueError("memory record capacity exceeds its bounded store")
     record_fields = {
         "access_class", "approval_reference", "confidence", "id", "kind", "provenance",
@@ -5040,7 +5041,7 @@ def memory_record(args):
         read_governor_input(args.request, "memory record request")
     )
     identifier = map_id(request["id"])
-    if identifier in data["records"] or len(data["records"]) >= 250:
+    if identifier in data["records"] or len(data["records"]) >= MEMORY_RECORD_LIMIT:
         raise ValueError("memory ID already exists or store capacity was reached")
     if request["kind"] not in MEMORY_KINDS or request["scope"] not in MEMORY_SCOPES:
         raise ValueError("memory kind or scope is invalid")
@@ -5080,23 +5081,7 @@ def memory_record(args):
         if request["confidence"] not in {"OWNER_STATED", "SOURCE_CONFIRMED"}:
             raise ValueError("global publication requires confirmed evidence")
         map_text(request["approval_reference"], "global publication approval")
-        current_global = sum(
-            record["scope"] == "GLOBAL_SHARED" and record["status"] in {"ACTIVE", "DISPUTED"}
-            for record in data["records"].values()
-        )
-        chief = chief_state(worker, required=False)
-        portfolio_count = len(chief["portfolio"]) if chief and chief["config"]["status"] != "REVOKED" else 0
-        replacement = data["records"].get(candidate_supersedes) if candidate_supersedes else None
-        adds_current = not (
-            replacement
-            and replacement["scope"] == "GLOBAL_SHARED"
-            and replacement["status"] in {"ACTIVE", "DISPUTED"}
-        )
-        if current_global + portfolio_count + int(adds_current) > map_batch_cap(worker):
-            raise ValueError(
-                "combined Chief portfolio and global truth reached the effective batch cap; "
-                "resolve or archive material first"
-            )
+        chief_state(worker, required=False)  # Preserve adjacent-store integrity checking, not a shared action budget.
     elif request["access_class"] == "COMPANY_SHARED":
         raise ValueError("worker-local memory cannot grant company-wide access")
     supersedes = candidate_supersedes
@@ -5345,12 +5330,16 @@ def validate_chief_item(item, worker_id=None):
 
 
 def validate_chief_brief(brief, config):
-    require_exact_fields(brief, {
+    fields = {
         "brief_sha256", "changed", "contradictions", "exceptions", "handoff_proposals",
         "id", "material_sha256", "owner_next", "project_map", "recorded_utc", "schema",
         "sequence",
-    }, "Chief brief")
-    if brief["schema"] != "ai-human.chief-brief/v1" or not re.fullmatch(r"brief-[a-z0-9-]+", str(brief["id"])):
+    }
+    paged = isinstance(brief, dict) and brief.get("schema") == "ai-human.chief-brief/v2"
+    if paged:
+        fields.update({"fact_changes", "remaining_changes", "removed", "view"})
+    require_exact_fields(brief, fields, "Chief brief")
+    if brief["schema"] not in {"ai-human.chief-brief/v1", "ai-human.chief-brief/v2"} or not re.fullmatch(r"brief-[a-z0-9-]+", str(brief["id"])):
         raise ValueError("Chief brief ID or schema differs")
     h53_verify_seal(brief, "Chief brief", field="brief_sha256")
     map_recorded(brief["recorded_utc"], "Chief brief time")
@@ -5385,11 +5374,11 @@ def validate_chief_brief(brief, config):
         require_exact_fields(contradiction, {"fact_ids", "fact_owners", "subject"}, "Chief contradiction")
         if (
             not isinstance(contradiction["fact_ids"], list)
-            or not 2 <= len(contradiction["fact_ids"]) <= BATCH_CAP
+            or not 2 <= len(contradiction["fact_ids"]) <= MEMORY_RECORD_LIMIT
             or len(contradiction["fact_ids"]) != len(set(contradiction["fact_ids"]))
             or any(not COMPONENT_ID.fullmatch(str(value)) for value in contradiction["fact_ids"])
             or not isinstance(contradiction["fact_owners"], list)
-            or not 1 <= len(contradiction["fact_owners"]) <= BATCH_CAP
+            or not 1 <= len(contradiction["fact_owners"]) <= MEMORY_RECORD_LIMIT
         ):
             raise ValueError("Chief contradiction references are invalid")
         map_text(contradiction["subject"], "Chief contradiction subject")
@@ -5446,6 +5435,28 @@ def validate_chief_brief(brief, config):
             raise ValueError("Chief handoff expiry exceeds its bounded lifetime")
         map_text(handoff["approval_reference"], "Chief handoff approval")
         map_text(handoff["done_condition"], "Chief handoff done condition")
+    if paged:
+        if brief["view"] != "CHANGED_ITEMS_PAGE" or type(brief["remaining_changes"]) is not int or brief["remaining_changes"] < 0:
+            raise ValueError("Chief brief page marker or remainder is invalid")
+        removed = brief["removed"]
+        if not isinstance(removed, list) or len(removed) != len(set(removed)) or not set(removed).issubset(brief["changed"]):
+            raise ValueError("Chief removed-item index is invalid")
+        if not isinstance(brief["fact_changes"], list) or len(brief["fact_changes"]) > BATCH_CAP:
+            raise ValueError("Chief fact changes exceed the safety ceiling")
+        represented = {"worker:" + worker_id for worker_id in seen_workers}
+        for fact in brief["fact_changes"]:
+            require_exact_fields(fact, {"fact_id", "source_owner", "status", "subject"}, "Chief fact change")
+            fact_id = map_id(fact["fact_id"])
+            key = "fact:" + fact_id
+            if key in represented or fact["status"] not in {"ACTIVE", "DISPUTED"}:
+                raise ValueError("Chief fact change is duplicated or not current")
+            map_text(fact["source_owner"], "Chief fact owner")
+            map_text(fact["subject"], "Chief fact subject")
+            represented.add(key)
+        binding_keys = {"worker:" + item["from_worker_id"] for item in brief["handoff_proposals"]}
+        page_keys = set(brief["changed"]) | binding_keys
+        if len(page_keys) > BATCH_CAP or represented.intersection(removed) or represented | set(removed) != page_keys:
+            raise ValueError("Chief page omits or adds items beyond its bounded selection")
     if contains_secret_material(brief):
         raise ValueError("Chief brief contains possible secret material")
 
@@ -5472,8 +5483,8 @@ def chief_state(worker, required=True):
     }, "Chief configuration")
     if config["status"] not in {"ENABLED", "PAUSED", "REVOKED"} or config["read_only"] is not True or config["external_effects"] is not False or config["self_approval"] is not False:
         raise ValueError("Chief authority boundary differs from read-only configuration")
-    if type(config["max_workers"]) is not int or not 1 <= config["max_workers"] <= BATCH_CAP:
-        raise ValueError("Chief portfolio limit exceeds the safety ceiling")
+    if type(config["max_workers"]) is not int or config["max_workers"] < 1:
+        raise ValueError("Chief portfolio limit must be a positive owner-configured integer")
     if type(config["retention_days"]) is not int or not 1 <= config["retention_days"] <= 365:
         raise ValueError("Chief brief retention must be 1..365 days")
     map_text(config["owner"], "Chief owner")
@@ -5485,7 +5496,7 @@ def chief_state(worker, required=True):
         raise ValueError("Chief portfolio exceeds its approved limit")
     for worker_id, item in data["portfolio"].items():
         validate_chief_item(item, worker_id)
-    if not isinstance(data["revoked_worker_ids"], list) or len(data["revoked_worker_ids"]) > BATCH_CAP or len(data["revoked_worker_ids"]) != len(set(data["revoked_worker_ids"])):
+    if not isinstance(data["revoked_worker_ids"], list) or len(data["revoked_worker_ids"]) != len(set(data["revoked_worker_ids"])):
         raise ValueError("Chief revocation list is invalid")
     if any(not SAFE_ID.fullmatch(str(value)) for value in data["revoked_worker_ids"]):
         raise ValueError("Chief revoked worker ID is invalid")
@@ -5504,8 +5515,10 @@ def chief_state(worker, required=True):
     if data["last_material"]:
         require_exact_fields(data["last_material"], {"items", "material_sha256"}, "Chief last material")
         items = data["last_material"]["items"]
-        if not isinstance(items, dict) or len(items) > BATCH_CAP * 2:
-            raise ValueError("Chief last-material item index exceeds the safety ceiling")
+        # A partial page checkpoint may contain both a prior and a current
+        # generation until the corresponding removals have been presented.
+        if not isinstance(items, dict) or len(items) > 2 * (config["max_workers"] + MEMORY_RECORD_LIMIT):
+            raise ValueError("Chief last-material item index exceeds its bounded generations")
         if any(
             not re.fullmatch(r"(?:worker|fact):[A-Za-z0-9._-]+", str(key))
             or not SHA256_HEX.fullmatch(str(value)) for key, value in items.items()
@@ -5573,12 +5586,8 @@ def chief_configure(args):
         }, "Chief configuration request")
         if request["schema"] != "ai-human.chief-config-request/v1" or request["owner"] != lease["actor"]:
             raise ValueError("Chief configuration requires the current owner")
-        effective_cap = map_batch_cap(worker)
-        if type(request["max_workers"]) is not int or not 1 <= request["max_workers"] <= effective_cap:
-            raise ValueError(
-                "Chief portfolio limit must be within the current effective batch cap of "
-                + str(effective_cap)
-            )
+        if type(request["max_workers"]) is not int or request["max_workers"] < 1:
+            raise ValueError("Chief portfolio limit must be a positive owner-configured integer")
         if type(request["retention_days"]) is not int or not 1 <= request["retention_days"] <= 365:
             raise ValueError("Chief retention must be 1..365 days")
         map_text(request["approval_reference"], "Chief approval reference")
@@ -6015,16 +6024,7 @@ def chief_portfolio_apply(worker, lease, snapshot, source_worker, exchange_polic
         return
     if not existing and len(data["portfolio"]) >= data["config"]["max_workers"]:
         raise ValueError("Chief portfolio reached its approved worker limit")
-    memory = memory_store(worker, required=False)
-    current_global = sum(
-        record["scope"] == "GLOBAL_SHARED" and record["status"] in {"ACTIVE", "DISPUTED"}
-        for record in memory["records"].values()
-    ) if memory and memory["config"]["status"] != "REVOKED" else 0
-    prospective_workers = len(data["portfolio"]) + (0 if existing else 1)
-    if current_global + prospective_workers > map_batch_cap(worker):
-        raise ValueError(
-            "combined Chief portfolio and global truth exceeds the effective batch cap"
-        )
+    memory_store(worker, required=False)  # Storage records do not consume this intake's action budget.
     if existing and parse_recorded_utc(item["source_recorded_utc"], "portfolio source time") < parse_recorded_utc(existing["source_recorded_utc"], "current portfolio source time"):
         raise ValueError("portfolio snapshot is older than current state")
     data["portfolio"][source_id] = item
@@ -6047,8 +6047,6 @@ def chief_portfolio_control(args):
     if args.action == "REVOKE":
         data["portfolio"].pop(worker_id, None)
         if worker_id not in data["revoked_worker_ids"]:
-            if len(data["revoked_worker_ids"]) >= BATCH_CAP:
-                raise ValueError("Chief revocation list reached the safety ceiling")
             data["revoked_worker_ids"].append(worker_id)
     elif args.action == "ALLOW":
         if not args.approval_reference:
@@ -6139,17 +6137,12 @@ def chief_brief(args):
         return
     previous = data["last_material"].get("items", {})
     all_changed = sorted(
-        key for key in set(previous) | set(material) if previous.get(key) != material.get(key)
+        (key for key in set(previous) | set(material) if previous.get(key) != material.get(key)),
+        # Drain obsolete keys before additions so repeated source changes cannot
+        # grow the checkpoint indefinitely while removals wait behind new facts.
+        key=lambda key: (key in material, key),
     )
     effective_cap = map_batch_cap(worker)
-    changed = all_changed[:effective_cap]
-    checkpoint = dict(previous)
-    for key in changed:
-        if key in material:
-            checkpoint[key] = material[key]
-        else:
-            checkpoint.pop(key, None)
-    checkpoint_sha = canonical_json_sha256(checkpoint)
     exceptions = []
     owner_next = []
     handoffs = []
@@ -6171,7 +6164,7 @@ def chief_brief(args):
             target_item = data["portfolio"].get(target_id)
             now = parse_recorded_utc(now_utc(), "Chief handoff creation time")
             expiry = parse_recorded_utc(binding["expires_utc"], "Chief handoff expiry")
-            if not source_item or source_item["status"] != "BLOCKED":
+            if not source_item or source_item["status"] != "BLOCKED" or parse_recorded_utc(source_item["fresh_until_utc"], "Chief handoff source freshness") <= now:
                 raise ValueError("Chief handoff source is not a current blocked portfolio item")
             if not target_item or target_id in data["revoked_worker_ids"] or target_item["status"] in {"RETIRED", "PAUSED"} or parse_recorded_utc(target_item["fresh_until_utc"], "Chief handoff target freshness") <= now:
                 raise ValueError("Chief handoff target is unavailable, revoked or stale")
@@ -6179,6 +6172,41 @@ def chief_brief(args):
                 raise ValueError("Chief handoff binding expiry must be within seven days")
             map_text(binding["approval_reference"], "Chief handoff approval")
             bindings[source_id] = binding
+    # Explicit handoff sources consume page slots even when their material is
+    # unchanged. Never silently lose a requested proposal behind pagination.
+    binding_keys = {"worker:" + worker_id for worker_id in bindings}
+    changed = sorted(
+        [key for key in all_changed if key in binding_keys]
+        + [key for key in all_changed if key not in binding_keys][:effective_cap - len(binding_keys)]
+    )
+    page_keys = set(changed) | binding_keys
+    removed = [key for key in changed if key not in material]
+    checkpoint = dict(previous)
+    for key in changed:
+        if key in material:
+            checkpoint[key] = material[key]
+        else:
+            checkpoint.pop(key, None)
+    checkpoint_sha = canonical_json_sha256(checkpoint)
+    project_map = [item for item in project_map if "worker:" + item["worker_id"] in page_keys]
+    fact_changes = []
+    changed_subjects = set()
+    memory = memory_store(worker, required=False)
+    records = memory["records"] if memory and memory["config"]["status"] == "ENABLED" else {}
+    for key in changed:
+        if not key.startswith("fact:"):
+            continue
+        record = records.get(key.removeprefix("fact:"))
+        if record is not None:
+            changed_subjects.add(record["subject"])
+            if key in material:
+                fact_changes.append({
+                    "fact_id": record["id"], "source_owner": record["source_owner"],
+                    "status": record["status"], "subject": record["subject"],
+                })
+    contradictions = [
+        item for item in contradictions if item["subject"] in changed_subjects
+    ]
     for item in project_map:
         if item["status"] in {"BLOCKED", "WAITING_OWNER", "STALE", "RETIRED"}:
             exceptions.append({"status": item["status"], "worker_id": item["worker_id"]})
@@ -6210,9 +6238,12 @@ def chief_brief(args):
         "exceptions": exceptions, "handoff_proposals": handoffs, "id": brief_id,
         "material_sha256": checkpoint_sha, "owner_next": owner_next,
         "project_map": project_map, "recorded_utc": timestamp,
-        "schema": "ai-human.chief-brief/v1", "sequence": sequence,
+        "schema": "ai-human.chief-brief/v2", "sequence": sequence,
+        "fact_changes": fact_changes, "removed": removed,
+        "remaining_changes": len(all_changed) - len(changed), "view": "CHANGED_ITEMS_PAGE",
     }
     h53_seal(brief, field="brief_sha256")
+    validate_chief_brief(brief, data["config"])
     if len(data["briefs"]) >= BATCH_CAP:
         oldest = min(data["briefs"], key=lambda key: data["briefs"][key]["sequence"])
         del data["briefs"][oldest]

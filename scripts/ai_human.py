@@ -10180,7 +10180,7 @@ class NativeUpdateAdapter:
             if not macos_update_service_missing(absent, self.external_id, os.getuid()):
                 raise ValueError("cannot verify native update schedule pause or removal")
 
-    def query(self, definition_path):
+    def query(self, definition_path, *, raw_absence=False, require_current_user=False):
         if self.config["platform"] == "MACOS":
             require_supported_macos_update_build()
             target = self._macos_target()
@@ -10224,6 +10224,8 @@ class NativeUpdateAdapter:
         )
         if result.returncode != 0:
             if windows_task_missing(result):
+                if not raw_absence and self.config.get("status") == "PAUSED":
+                    return {"status": "PAUSED", "definition_sha256": sha256(Path(definition_path))}
                 return {"status": "REMOVED", "definition_sha256": None}
             raise ValueError("cannot verify the Windows update schedule")
         definition_path = Path(definition_path)
@@ -10238,7 +10240,11 @@ class NativeUpdateAdapter:
         expected_user = expected_semantics["user_id"]
         principal_ok = actual_user == expected_user
         drop_actual_user = False
-        if expected_user is None and actual_user is not None:
+        if require_current_user:
+            principal_ok = actual_user is not None and actual_user.casefold() == self._windows_current_sid()
+            principal_ok = principal_ok and (expected_user is None or actual_user == expected_user)
+            drop_actual_user = principal_ok and expected_user is None
+        elif expected_user is None and actual_user is not None:
             principal_ok = actual_user.casefold() == self._windows_current_sid()
             drop_actual_user = principal_ok
         definition_ok = principal_ok and canonical_windows_task(
@@ -10254,7 +10260,7 @@ class NativeUpdateAdapter:
     def query_removed(self, definition_path):
         """Read raw absence without treating an intentionally absent paused plist as PAUSED."""
         if self.config["platform"] != "MACOS":
-            return self.query(definition_path)
+            return self.query(definition_path, raw_absence=True)
         target = self._macos_target()
         result = subprocess.run(
             ["/bin/launchctl", "print", "gui/" + str(os.getuid()) + "/" + self.external_id],
@@ -10265,6 +10271,67 @@ class NativeUpdateAdapter:
         if not macos_update_service_missing(result, self.external_id, os.getuid()):
             raise ValueError("cannot verify native update schedule removal")
         return {"status": "REMOVED", "definition_sha256": None}
+
+
+class WindowsUpdateCleanupAdapter(NativeUpdateAdapter):
+    """Stop an exactly owned task after zone drift, without enabling any task."""
+
+    cleanup_only = True
+
+    def install(self, definition_path):
+        raise ValueError("unconfirmed Windows timezone permits cleanup only")
+
+    def verify_cleanup_definition(self, definition_path, expected_sha256):
+        definition_path = Path(definition_path)
+        if sha256(definition_path) != expected_sha256:
+            raise ValueError("native cleanup definition differs from stored proof")
+        semantics = windows_task_semantics(definition_path.read_bytes())
+        prefix = "AI-Human managed update " + self.config["schedule_id"] + " "
+        config_hash = semantics["description"].removeprefix(prefix)
+        arguments = native_runner_arguments(self.worker, self.config)
+        arguments[-1] = config_hash
+        legacy_arguments = arguments[:1] + arguments[2:]
+        if (
+            not semantics["description"].startswith(prefix)
+            or not SHA256_HEX.fullmatch(config_hash)
+            or semantics["action_command"] != arguments[0]
+            or semantics["action_arguments"] not in (
+                subprocess.list2cmdline(arguments[1:]), subprocess.list2cmdline(legacy_arguments[1:]),
+            )
+        ):
+            raise ValueError("native cleanup definition belongs to another worker or task")
+        observed = self.query_removed(definition_path)
+        if observed != {"status": "REMOVED", "definition_sha256": None} and (
+            observed["status"] not in {"ACTIVE", "PAUSED"}
+            or observed["definition_sha256"] != expected_sha256
+        ):
+            raise ValueError("Windows cleanup requires exact task XML and current-user principal")
+        self._cleanup_binding = (definition_path, expected_sha256)
+
+    def remove(self):
+        binding = getattr(self, "_cleanup_binding", None)
+        if binding is None:
+            raise ValueError("native cleanup requires an exact owned definition")
+        self.verify_cleanup_definition(*binding)
+        super().remove()
+        if self.query_removed(binding[0]) != {"status": "REMOVED", "definition_sha256": None}:
+            raise ValueError("Windows cleanup task removal did not verify")
+
+    def pause(self):
+        # Keep the private definition but remove the native task. Recovery can
+        # preserve a paused state without registering a recurrence in a new zone.
+        self.remove()
+
+    def query_removed(self, definition_path):
+        return super().query(definition_path, raw_absence=True, require_current_user=True)
+
+    def query(self, definition_path):
+        observed = self.query_removed(definition_path)
+        if observed["status"] == "ACTIVE":
+            raise ValueError("cleanup-only Windows adapter cannot verify an active native task")
+        if observed["status"] == "REMOVED" and self.config.get("status") == "PAUSED":
+            return {"status": "PAUSED", "definition_sha256": sha256(Path(definition_path))}
+        return observed
 
 
 class MacOSUpdateCleanupAdapter(NativeUpdateAdapter):
@@ -10335,13 +10402,11 @@ def native_update_cleanup_adapter(worker, config):
         # Only the normal factory's exact Mac build refusal permits this path.
         # Wrong-host, permission and other failures retain their original denial.
         return MacOSUpdateCleanupAdapter(worker, config)
-    if (
-        config["platform"] == "MACOS"
-        and adapter.observed_timezone_id() != config["native_timezone_id"]
-    ):
+    if adapter.observed_timezone_id() != config["native_timezone_id"]:
         # A confirmed zone mismatch permits exact-target deactivation only.
         # Failure to read the timezone still raises; no compatibility is implied.
-        return MacOSUpdateCleanupAdapter(worker, config)
+        cleanup = MacOSUpdateCleanupAdapter if config["platform"] == "MACOS" else WindowsUpdateCleanupAdapter
+        return cleanup(worker, config)
     return adapter
 
 

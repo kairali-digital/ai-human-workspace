@@ -9547,6 +9547,173 @@ class LifecycleTests(unittest.TestCase):
                 self.assertTrue(any(command[1] == "bootout" for command in calls))
                 self.assertFalse(any(command[1] == "bootstrap" for command in calls))
 
+    def test_windows_timezone_drift_allows_exact_task_safety_cleanup_only(self):
+        # Every native response, including this SID, is synthetic. No Windows
+        # service is contacted, and the host-platform factory is explicitly mocked.
+        sid = "S-1-5-21-111-222-333-1001"
+        namespace = {"t": "http://schemas.microsoft.com/windows/2004/02/mit/task"}
+        for action in ("PAUSE", "REMOVE", "RECOVER", "RECOVER_CRASH"):
+            with self.subTest(action=action):
+                worker = self.base / ("windows-zone-drift-" + action.lower())
+                self.install(worker)
+                with (
+                    mock.patch.object(AI_HUMAN, "native_update_adapter", side_effect=self.fake_native_factory({})),
+                    mock.patch("builtins.print"),
+                ):
+                    AI_HUMAN.update_schedule_configure(self.schedule_args(
+                        worker, platform="WINDOWS", native_timezone_id="India Standard Time",
+                    ))
+                    if action.startswith("RECOVER"):
+                        with mock.patch.object(AI_HUMAN, "commit_update_schedule_local", side_effect=SystemExit("interrupted edit")):
+                            with self.assertRaisesRegex(SystemExit, "interrupted edit"):
+                                AI_HUMAN.update_schedule_configure(self.schedule_args(
+                                    worker, command="update-schedule-edit", local_time="03:15",
+                                    platform="WINDOWS", native_timezone_id="India Standard Time",
+                                ))
+                config = AI_HUMAN.update_schedule_config(worker.resolve(), required=True)
+                native = AI_HUMAN.native_update_schedule(worker.resolve(), required=True, config=config)
+                definition = worker / native["definition_path"]
+                root = AI_HUMAN.ET.fromstring(definition.read_bytes())
+                principal = root.find("t:Principals/t:Principal", namespace)
+                AI_HUMAN.ET.SubElement(principal, "{" + namespace["t"] + "}UserId").text = sid
+                loaded_xml = AI_HUMAN.ET.tostring(root, encoding="unicode")
+                calls = []
+
+                def synthetic_windows(command, **kwargs):
+                    nonlocal loaded_xml
+                    calls.append(command)
+                    if command == ["tzutil.exe", "/g"]:
+                        return SimpleNamespace(returncode=0, stdout="Changed Synthetic Time", stderr="")
+                    if command == ["whoami.exe", "/user", "/fo", "csv", "/nh"]:
+                        return SimpleNamespace(returncode=0, stdout='"synthetic\\owner","' + sid + '"\r\n', stderr="")
+                    self.assertEqual(command[:4], ["schtasks.exe", command[1], "/TN", native["external_id"]])
+                    if command[1] == "/Delete":
+                        self.assertEqual(command[4:], ["/F"])
+                        loaded_xml = None
+                        return SimpleNamespace(returncode=0, stdout="SUCCESS", stderr="")
+                    self.assertEqual(command[1:], ["/Query", "/TN", native["external_id"], "/XML"])
+                    return SimpleNamespace(
+                        returncode=0 if loaded_xml is not None else 1,
+                        stdout=loaded_xml or "",
+                        stderr="" if loaded_xml is not None else "ERROR: The system cannot find the task specified.",
+                    )
+
+                with (
+                    mock.patch.object(AI_HUMAN, "native_update_adapter", side_effect=AI_HUMAN.NativeUpdateAdapter),
+                    mock.patch.object(AI_HUMAN.subprocess, "run", side_effect=synthetic_windows),
+                    mock.patch("builtins.print"),
+                ):
+                    if action == "PAUSE":
+                        with mock.patch.object(AI_HUMAN, "download_release") as download:
+                            with self.assertRaisesRegex(ValueError, "time zone differs"):
+                                AI_HUMAN.update_schedule_tick_internal(
+                                    worker.resolve(), config["schedule_id"], AI_HUMAN.update_schedule_config_sha256(config),
+                                )
+                            download.assert_not_called()
+                    if action.startswith("RECOVER"):
+                        if action == "RECOVER_CRASH":
+                            original_apply = AI_HUMAN.apply_update_schedule_local_target
+
+                            def interrupt_safety_pause(path, content):
+                                original_apply(path, content)
+                                if Path(path) == worker.resolve() / AI_HUMAN.UPDATE_SCHEDULE_CONFIG_PATH:
+                                    raise SystemExit("interrupted Windows safety pause")
+
+                            with mock.patch.object(AI_HUMAN, "apply_update_schedule_local_target", side_effect=interrupt_safety_pause):
+                                with self.assertRaisesRegex(SystemExit, "interrupted Windows safety pause"):
+                                    AI_HUMAN.recover_update_schedule_internal(worker.resolve())
+                        AI_HUMAN.recover_update_schedule_internal(worker.resolve())
+                    else:
+                        AI_HUMAN.update_schedule_control(SimpleNamespace(
+                            worker=str(worker), action=action, approval_reference="owner synthetic safety cleanup",
+                        ))
+                    self.assertIsNone(loaded_xml)
+                    updated = AI_HUMAN.update_schedule_config(worker.resolve(), required=True)
+                    self.assertEqual(updated["status"], "REMOVED" if action == "REMOVE" else "PAUSED")
+                    self.assertEqual(AI_HUMAN.install_metadata(worker)["automatic_updates"], "DISABLED")
+                    self.assertFalse((worker / AI_HUMAN.UPDATE_SCHEDULE_TRANSACTION_PATH).exists())
+                    AI_HUMAN.verify_update_schedule_native_readback(worker.resolve(), updated)
+                    with self.assertRaisesRegex(ValueError, "time zone differs"):
+                        AI_HUMAN.NativeUpdateAdapter(worker.resolve(), updated).install(definition)
+                    if action == "PAUSE":
+                        with self.assertRaisesRegex(ValueError, "time zone differs"):
+                            AI_HUMAN.update_schedule_control(SimpleNamespace(
+                                worker=str(worker), action="RESUME", approval_reference="must remain paused",
+                            ))
+                        # Returning to the confirmed timezone still recognizes a
+                        # safely absent paused task without recreating it.
+                        with mock.patch.object(AI_HUMAN.NativeUpdateAdapter, "observed_timezone_id", return_value="India Standard Time"):
+                            AI_HUMAN.verify_update_schedule_native_readback(worker.resolve(), updated)
+                self.assertTrue(any(command[1] == "/Delete" for command in calls))
+                self.assertTrue(any(command[0] == "whoami.exe" for command in calls))
+                self.assertFalse(any(command[1] in {"/Create", "/Change"} for command in calls))
+
+    def test_windows_cleanup_rejects_unowned_principal_xml_and_false_absence(self):
+        worker = self.base / "synthetic-windows-cleanup-guards"
+        self.install(worker)
+        with (
+            mock.patch.object(AI_HUMAN, "native_update_adapter", side_effect=self.fake_native_factory({})),
+            mock.patch("builtins.print"),
+        ):
+            AI_HUMAN.update_schedule_configure(self.schedule_args(
+                worker, platform="WINDOWS", native_timezone_id="India Standard Time",
+            ))
+        config = AI_HUMAN.update_schedule_config(worker.resolve(), required=True)
+        native = AI_HUMAN.native_update_schedule(worker.resolve(), required=True, config=config)
+        definition = worker / native["definition_path"]
+        namespace = {"t": "http://schemas.microsoft.com/windows/2004/02/mit/task"}
+        sid = "S-1-5-21-111-222-333-1001"  # Synthetic fixture, never an inferred host identity.
+        for case in ("UNBOUND", "OTHER_SID", "MISSING_SID", "UNREADABLE_SID", "CHANGED_COMMAND", "CHANGED_TRIGGER", "ABSENCE_ERROR", "DELETE_LIES"):
+            with self.subTest(case=case):
+                adapter = AI_HUMAN.WindowsUpdateCleanupAdapter(worker.resolve(), config)
+                root = AI_HUMAN.ET.fromstring(definition.read_bytes())
+                if case != "MISSING_SID":
+                    principal = root.find("t:Principals/t:Principal", namespace)
+                    AI_HUMAN.ET.SubElement(principal, "{" + namespace["t"] + "}UserId").text = (
+                        "S-1-5-21-111-222-333-1002" if case == "OTHER_SID" else sid
+                    )
+                if case == "CHANGED_COMMAND":
+                    root.find("t:Actions/t:Exec/t:Command", namespace).text = "C:\\synthetic\\other.exe"
+                if case == "CHANGED_TRIGGER":
+                    root.find("t:Triggers/t:CalendarTrigger/t:StartBoundary", namespace).text = "2030-01-01T04:00:00"
+                loaded_xml = AI_HUMAN.ET.tostring(root, encoding="unicode")
+                calls = []
+
+                def synthetic_windows(command, **kwargs):
+                    calls.append(command)
+                    if command == ["whoami.exe", "/user", "/fo", "csv", "/nh"]:
+                        return SimpleNamespace(
+                            returncode=0, stdout='"synthetic\\owner","' + ("unknown" if case == "UNREADABLE_SID" else sid) + '"', stderr="",
+                        )
+                    self.assertEqual(command[:4], ["schtasks.exe", command[1], "/TN", native["external_id"]])
+                    if command[1] == "/Delete":
+                        self.assertEqual(case, "DELETE_LIES")
+                        self.assertEqual(command[4:], ["/F"])
+                        return SimpleNamespace(returncode=0, stdout="SUCCESS", stderr="")
+                    self.assertEqual(command[1:], ["/Query", "/TN", native["external_id"], "/XML"])
+                    return SimpleNamespace(
+                        returncode=1 if case == "ABSENCE_ERROR" else 0,
+                        stdout="" if case == "ABSENCE_ERROR" else loaded_xml,
+                        stderr="Task Scheduler service not found" if case == "ABSENCE_ERROR" else "",
+                    )
+
+                with mock.patch.object(AI_HUMAN.subprocess, "run", side_effect=synthetic_windows):
+                    with self.assertRaises(ValueError):
+                        if case != "UNBOUND":
+                            adapter.verify_cleanup_definition(definition, native["definition_sha256"])
+                        adapter.remove()
+                self.assertEqual(sum(command[1] == "/Delete" for command in calls), 1 if case == "DELETE_LIES" else 0)
+                self.assertFalse(any(command[1] in {"/Create", "/Change"} for command in calls))
+        other_definition = worker / "synthetic-other-worker.xml"
+        other_definition.write_bytes(AI_HUMAN.render_windows_update_definition(self.base / "other-worker", config))
+        adapter = AI_HUMAN.WindowsUpdateCleanupAdapter(worker.resolve(), config)
+        with mock.patch.object(AI_HUMAN.subprocess, "run") as native_call:
+            with self.assertRaisesRegex(ValueError, "another worker or task"):
+                adapter.verify_cleanup_definition(other_definition, sha256(other_definition))
+            with self.assertRaisesRegex(ValueError, "differs from stored proof"):
+                adapter.verify_cleanup_definition(definition, "0" * 64)
+            native_call.assert_not_called()
+
     def test_macos_cleanup_keeps_timezone_read_and_absence_errors_closed(self):
         worker = self.base / "cleanup-readback-failure"
         config = {

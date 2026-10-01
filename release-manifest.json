@@ -8,12 +8,17 @@
   },
   "managed_files": [
     {
+      "sha256": "7ee6bcd6d781f96ddbade0caeffdda3d19594332c6e14382beff9948129f91a3",
+      "source": "core/CHIEF-OF-STAFF-AND-MEMORY.md",
+      "target": ".ai-human/system/CHIEF-OF-STAFF-AND-MEMORY.md"
+    },
+    {
       "sha256": "b84027255425034610759053c0bdef8a9e30a863f6368205f7f8f7d6cac7ef9c",
       "source": "core/PERSONAL-CONTEXT-RADAR.md",
       "target": ".ai-human/system/PERSONAL-CONTEXT-RADAR.md"
     },
     {
-      "sha256": "7710688aa8ef67315c130a7108c15c18f20046a5566a8475112e559966787bfd",
+      "sha256": "5993ea1004b7f4038f72582e98c252ca08e70a8f6c4add25a960d19e9b73f1b6",
       "source": "core/AI-HUMAN.md",
       "target": ".ai-human/system/AI-HUMAN.md"
     },
@@ -93,7 +98,7 @@
       "target": ".ai-human/VERSION"
     },
     {
-      "sha256": "dcf3806a546695b69ef20298bbcac571b77be4f55d6c0b81da466f85448f79fd",
+      "sha256": "682d73717a21a1db7725069ca5fd19972069300114b94cf6559febbcc63ff6d2",
       "source": "scripts/ai_human.py",
       "target": ".ai-human/bin/ai_human.py"
     }
@@ -130,6 +135,8 @@
     ".ai-human/personal/",
     ".ai-human/exchange/",
     ".ai-human/update-schedule/",
+    ".ai-human/memory/",
+    ".ai-human/chief/",
     ".ai-human/backups/",
     ".ai-human/downgrade-exports/",
     ".ai-human/version-report.json",

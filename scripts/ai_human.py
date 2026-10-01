@@ -142,6 +142,8 @@ CONTEXT_NEW_WORK_COMMANDS = {
     "autonomy-skill-install", "resource-snapshot", "resource-plan",
     "work-map-discover", "work-map-record", "radar-run",
     "exchange-send", "exchange-mission-create",
+    "memory-record", "portfolio-snapshot", "portfolio-export-artifact",
+    "chief-portfolio-upsert", "chief-portfolio-import-exchange", "chief-brief",
 }
 HANDOFF_REQUEST_FIELDS = {
     "active_gates", "approval_boundaries", "done_condition", "expires_utc",
@@ -332,6 +334,9 @@ MODE_GUARDED_COMMANDS = {
     "exchange-result", "exchange-mission-create", "exchange-integrate",
     "update-schedule-configure", "update-schedule-edit",
     "update-schedule-legacy-disable", "update-pilot-approve",
+    "memory-configure", "memory-record", "memory-control", "memory-rebuild",
+    "chief-configure", "portfolio-snapshot", "portfolio-export-artifact",
+    "chief-portfolio-upsert", "chief-portfolio-import-exchange", "chief-portfolio-control", "chief-brief",
 }
 COORDINATION_STATE_FILES = (
     "MASTER_CURSOR.md", "OPEN_REGISTER.md", "TODAY.md",
@@ -363,6 +368,8 @@ INTRINSIC_NEVER_MANAGED = set(STATE_FILES) | {
     ".ai-human/resources/",
     ".ai-human/exchange/",
     ".ai-human/update-schedule/",
+    ".ai-human/memory/",
+    ".ai-human/chief/",
     ".ai-human/backups/",
     ".ai-human/downgrade-exports/",
     ".ai-human/install.json",
@@ -3763,6 +3770,34 @@ WORK_MAP_TX_PATH = Path(".ai-human/control/work-map-transaction.json")
 WORK_MAP_SCOPES = {"WORKER_LOCAL", "USER_GLOBAL"}
 WORK_MAP_KINDS = {"SKILL", "WORKER_OR_BOT", "PROJECT", "LEARNING", "PROCESS_FIX"}
 
+# H-53 keeps durable memory and the Chief's portfolio in worker-owned private state.
+# The Chief is a separate, read-only coordinator: it receives explicit metadata
+# snapshots and curated facts, never arbitrary paths into another worker.
+MEMORY_ROOT = Path(".ai-human/memory")
+MEMORY_STORE_PATH = MEMORY_ROOT / "store.json"
+MEMORY_INDEX_PATH = MEMORY_ROOT / "index.json"
+PORTFOLIO_EXPORTS_PATH = MEMORY_ROOT / "portfolio-exports.json"
+CHIEF_ROOT = Path(".ai-human/chief")
+CHIEF_CONFIG_PATH = CHIEF_ROOT / "config.json"
+CHIEF_PORTFOLIO_PATH = CHIEF_ROOT / "portfolio.json"
+CHIEF_BRIEFS_ROOT = CHIEF_ROOT / "briefs"
+CHIEF_STATE_PATH = CHIEF_ROOT / "state.json"
+H53_TX_PATH = Path(".ai-human/control/h53-transaction.json")
+MEMORY_KINDS = {"SEMANTIC", "EPISODIC", "PROCEDURAL", "DECISION"}
+MEMORY_SCOPES = {"WORKER_LOCAL", "GLOBAL_SHARED"}
+MEMORY_STATUSES = {"ACTIVE", "SUPERSEDED", "RETRACTED", "DISPUTED"}
+MEMORY_CONFIDENCE = {"OWNER_STATED", "SOURCE_CONFIRMED", "OBSERVED_VERIFY", "UNKNOWN"}
+MEMORY_SENSITIVITY = {"PUBLIC", "COMPANY_INTERNAL", "PRIVATE_WORK", "RESTRICTED"}
+MEMORY_ACCESS = {"OWNER_ONLY", "WORKER_TEAM", "COMPANY_SHARED"}
+CHIEF_WORKER_STATUSES = {"ACTIVE", "BLOCKED", "WAITING_OWNER", "STALE", "PAUSED", "RETIRED"}
+CHIEF_ITEM_FIELDS = {
+    "access_class", "blocked_reason", "current_task_id", "done_condition", "evidence_sha256",
+    "fact_owner_ids", "fresh_until_utc", "last_completed_step", "next_action", "operating_unit",
+    "owner", "purpose", "source_identity_sha256", "source_recorded_utc", "source_worker_id",
+    "source_state_sha256", "status", "status_sha256", "summary_pointer_approval_reference",
+    "summary_pointer_sha256", "updated_utc",
+}
+
 
 def map_fields(value, fields, label):
     if not isinstance(value, dict) or set(value) != set(fields.split()):
@@ -4058,6 +4093,48 @@ def validate_work_map_state(worker):
         return []
     except Exception as exc:
         return ["invalid private work map: " + str(exc)]
+
+
+def validate_h53_state(worker):
+    failures = []
+    allowed = {
+        portable_key(MEMORY_STORE_PATH), portable_key(PORTFOLIO_EXPORTS_PATH),
+        portable_key(CHIEF_STATE_PATH),
+    }
+    for root_relative in (MEMORY_ROOT, CHIEF_ROOT):
+        root = worker / root_relative
+        if not root.exists():
+            continue
+        if root.is_symlink() or not root.is_dir():
+            failures.append("H-53 private root must be a real directory: " + root_relative.as_posix())
+            continue
+        for path in root.rglob("*"):
+            relative = path.relative_to(worker)
+            if path.is_symlink():
+                failures.append("H-53 private state may not contain symbolic links: " + relative.as_posix())
+            elif path.is_file() and portable_key(relative) not in allowed:
+                failures.append("unexpected H-53 private file: " + relative.as_posix())
+            elif not path.is_file() and not path.is_dir():
+                failures.append("H-53 private state contains a non-regular entry: " + relative.as_posix())
+    try:
+        memory_store(worker, required=False)
+    except Exception as exc:
+        failures.append("invalid layered memory: " + str(exc))
+    try:
+        chief_state(worker, required=False)
+    except Exception as exc:
+        failures.append("invalid Chief state: " + str(exc))
+    try:
+        portfolio_exports(worker, required=False)
+    except Exception as exc:
+        failures.append("invalid portfolio exports: " + str(exc))
+    try:
+        transaction = worker_target(worker, H53_TX_PATH, "H-53 transaction")
+        if transaction.exists():
+            failures.append("interrupted H-53 transaction; run h53-recover")
+    except Exception as exc:
+        failures.append("invalid H-53 transaction path: " + str(exc))
+    return failures
 
 
 def map_mutation(args):
@@ -4456,18 +4533,1717 @@ def radar_decide(args):
     print("- choice: " + args.choice + "; activation: NOT_ACTIVATED")
 
 
-def reject_exchange_sensitive_source(relative, source, label):
+def reject_exchange_sensitive_path(relative, label):
     sensitive = {"credential", "password", "private", "secret", "token"}
     for part in relative.parts:
         lowered = part.casefold()
         if part.startswith(".") or lowered == ".env" or any(word in lowered for word in sensitive):
             raise ValueError(label + " path appears hidden, private or sensitive")
+
+
+def reject_exchange_sensitive_source(relative, source, label):
+    reject_exchange_sensitive_path(relative, label)
     try:
         content = source.read_text(encoding="utf-8", errors="ignore")
     except OSError as exc:
         raise ValueError(label + " could not be inspected for secret material: " + str(exc))
     if contains_secret_material(content):
         raise ValueError(label + " appears to contain secret material")
+
+
+# ---------------------------------------------------------------------------
+# H-53: layered worker memory and a read-only Chief of Staff
+# ---------------------------------------------------------------------------
+
+def h53_record_sha256(value, field="record_sha256"):
+    return canonical_json_sha256({key: item for key, item in value.items() if key != field})
+
+
+def h53_seal(value, field="record_sha256"):
+    value[field] = h53_record_sha256(value, field)
+    return value
+
+
+def h53_verify_seal(value, label, field="record_sha256"):
+    if not isinstance(value, dict) or not SHA256_HEX.fullmatch(str(value.get(field, ""))):
+        raise ValueError(label + " lacks its integrity digest")
+    if value[field] != h53_record_sha256(value, field):
+        raise ValueError(label + " integrity digest differs")
+
+
+def h53_target_hash(path):
+    if not path.exists():
+        return "MISSING"
+    if path.is_symlink() or not path.is_file():
+        raise ValueError("H-53 state target must be a regular file")
+    return sha256(path)
+
+
+def h53_other_state_hash(worker, target_relative):
+    target_key = portable_key(target_relative)
+    digest = hashlib.sha256()
+    for path in controlled_state_paths(worker):
+        relative = path.relative_to(worker).as_posix()
+        if portable_key(relative) == target_key:
+            continue
+        digest.update(relative.encode("utf-8") + b"\0")
+        digest.update(bytes.fromhex(sha256(path)) if path.is_file() else b"MISSING")
+        digest.update(b"\n")
+    return digest.hexdigest()
+
+
+def controlled_state_hash_with_file_sha(worker, target_relative, target_sha256):
+    target_key = portable_key(target_relative)
+    digest = hashlib.sha256()
+    found = False
+    for path in controlled_state_paths(worker):
+        relative = path.relative_to(worker).as_posix()
+        digest.update(relative.encode("utf-8") + b"\0")
+        if portable_key(relative) == target_key:
+            digest.update(bytes.fromhex(target_sha256))
+            found = True
+        elif path.is_file():
+            digest.update(bytes.fromhex(sha256(path)))
+        else:
+            digest.update(b"MISSING")
+        digest.update(b"\n")
+    if not found:
+        raise ValueError("controlled H-53 target is missing")
+    return digest.hexdigest()
+
+
+def h53_boundary(name):
+    """Fault-injection seam; production does not select a crash boundary."""
+
+
+def h53_stage_path(worker, target_relative):
+    target = worker_target(worker, target_relative, "H-53 state target")
+    return target.with_name("." + target.name + ".h53-stage")
+
+
+def h53_write_stage(stage, data):
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
+    descriptor = os.open(stage, flags, 0o600)
+    try:
+        with os.fdopen(descriptor, "wb", buffering=0) as stream:
+            offset = 0
+            while offset < len(data):
+                written = stream.write(data[offset:])
+                if not written:
+                    raise OSError("H-53 staging write made no progress")
+                offset += written
+            os.fsync(stream.fileno())
+    except BaseException:
+        # Recovery owns this exact reserved path after the journal is durable.
+        raise
+
+
+def h53_validate_stage(stage, transaction):
+    if not stage.exists() and not stage.is_symlink():
+        return "MISSING"
+    info = stage.lstat()
+    if stage.is_symlink() or not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
+        raise ValueError("H-53 staging path is not a single regular file")
+    if info.st_size > transaction["after_size"]:
+        raise ValueError("H-53 staging file exceeds the committed candidate size")
+    if info.st_size == transaction["after_size"] and sha256(stage) == transaction["after_sha256"]:
+        return "COMPLETE"
+    return "PARTIAL"
+
+
+def h53_commit(worker, lease, target_relative, value):
+    target_relative = safe_relative(target_relative, "H-53 state target")
+    if portable_key(target_relative) not in {
+        portable_key(MEMORY_STORE_PATH), portable_key(CHIEF_STATE_PATH),
+        portable_key(PORTFOLIO_EXPORTS_PATH),
+    }:
+        raise ValueError("unsupported H-53 state target")
+    allowed_private_files = {
+        portable_key(MEMORY_STORE_PATH), portable_key(PORTFOLIO_EXPORTS_PATH),
+        portable_key(CHIEF_STATE_PATH),
+    }
+    for root_relative in (MEMORY_ROOT, CHIEF_ROOT):
+        root = worker / root_relative
+        if not root.exists():
+            continue
+        if root.is_symlink() or not root.is_dir():
+            raise ValueError("H-53 private root must be a real directory")
+        for path in root.rglob("*"):
+            relative = path.relative_to(worker)
+            if path.is_symlink() or (
+                path.is_file() and portable_key(relative) not in allowed_private_files
+            ):
+                raise ValueError("unexpected H-53 private entry requires inspection: " + relative.as_posix())
+    target = worker_target(worker, target_relative, "H-53 state target")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    stage = h53_stage_path(worker, target_relative)
+    journal = worker_target(worker, H53_TX_PATH, "H-53 transaction")
+    if journal.exists():
+        raise ValueError("interrupted H-53 transaction; run h53-recover")
+    if stage.exists() or stage.is_symlink():
+        raise ValueError("unexpected H-53 staging residue; inspect it before continuing")
+    encoded = json.dumps(value, indent=2, sort_keys=True) + "\n"
+    encoded_bytes = encoded.encode("utf-8")
+    if len(encoded_bytes) > 4 * 1024 * 1024:
+        raise ValueError("H-53 state exceeds the four-megabyte safety limit")
+    transaction = {
+        "after_sha256": hashlib.sha256(encoded_bytes).hexdigest(),
+        "after_size": len(encoded_bytes),
+        "before_sha256": h53_target_hash(target),
+        "other_state_sha256": h53_other_state_hash(worker, target_relative),
+        "schema": "ai-human.h53-transaction/v1",
+        "session_id": lease["session_id"],
+        "staging": stage.relative_to(worker).as_posix(),
+        "target": target_relative.as_posix(),
+        "worker_identity_sha256": worker_identity_sha256(worker),
+    }
+    h53_seal(transaction)
+    atomic_json(journal, transaction)
+    h53_boundary("journal")
+    h53_write_stage(stage, encoded_bytes)
+    if h53_validate_stage(stage, transaction) != "COMPLETE":
+        raise ValueError("H-53 staging file did not reach its exact candidate bytes")
+    h53_boundary("stage")
+    os.replace(stage, target)
+    if os.name != "nt":
+        directory_fd = os.open(target.parent, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+        try:
+            os.fsync(directory_fd)
+        finally:
+            os.close(directory_fd)
+    h53_boundary("replace")
+    updated = refresh_lease_state(worker, lease)
+    h53_boundary("lease")
+    journal.unlink()
+    print("AI-HUMAN H-53 STATE: PASS")
+    print("- new expected-state hash: " + updated["state_hash"])
+
+
+def h53_recover(args):
+    worker = safe_worker(args.worker)
+    journal = worker_target(worker, H53_TX_PATH, "H-53 transaction")
+    transaction = read_json(journal)
+    require_exact_fields(transaction, {
+        "after_sha256", "after_size", "before_sha256", "other_state_sha256", "record_sha256",
+        "schema", "session_id", "staging", "target", "worker_identity_sha256",
+    }, "H-53 transaction")
+    h53_verify_seal(transaction, "H-53 transaction")
+    if transaction["schema"] != "ai-human.h53-transaction/v1":
+        raise ValueError("unsupported H-53 transaction schema")
+    lease = read_lease(worker)
+    if lease["session_id"] != args.session_id or transaction["session_id"] != args.session_id:
+        raise ValueError("H-53 recovery belongs to another writer")
+    if transaction["worker_identity_sha256"] != worker_identity_sha256(worker):
+        raise ValueError("H-53 recovery belongs to another worker identity")
+    current_state = controlled_state_hash(worker)
+    if current_state != args.expected_state_hash:
+        raise ValueError("H-53 recovery expected-state hash mismatch")
+    target_relative = safe_relative(transaction["target"], "H-53 recovery target")
+    if portable_key(target_relative) not in {
+        portable_key(MEMORY_STORE_PATH), portable_key(CHIEF_STATE_PATH),
+        portable_key(PORTFOLIO_EXPORTS_PATH),
+    }:
+        raise ValueError("unsupported H-53 recovery target")
+    if type(transaction["after_size"]) is not int or not 1 <= transaction["after_size"] <= 4 * 1024 * 1024:
+        raise ValueError("H-53 recovery candidate size is invalid")
+    expected_stage = h53_stage_path(worker, target_relative)
+    stage_relative = safe_relative(transaction["staging"], "H-53 recovery staging path")
+    stage = worker_target(worker, stage_relative, "H-53 recovery staging path")
+    if stage != expected_stage:
+        raise ValueError("H-53 recovery staging path differs from its exact target")
+    allowed_during_recovery = {
+        portable_key(MEMORY_STORE_PATH), portable_key(PORTFOLIO_EXPORTS_PATH),
+        portable_key(CHIEF_STATE_PATH), portable_key(stage_relative),
+    }
+    for root_relative in (MEMORY_ROOT, CHIEF_ROOT):
+        root = worker / root_relative
+        if not root.exists():
+            continue
+        for path in root.rglob("*"):
+            relative = path.relative_to(worker)
+            if path.is_symlink() or (
+                path.is_file() and portable_key(relative) not in allowed_during_recovery
+            ):
+                raise ValueError("unexpected H-53 recovery entry requires inspection: " + relative.as_posix())
+    if h53_other_state_hash(worker, target_relative) != transaction["other_state_sha256"]:
+        raise ValueError("unrelated controlled state changed during H-53 transaction")
+    target = worker_target(worker, target_relative, "H-53 recovery target")
+    current = h53_target_hash(target)
+    stage_status = h53_validate_stage(stage, transaction)
+    if current == transaction["before_sha256"] and stage_status == "COMPLETE":
+        os.replace(stage, target)
+        current = h53_target_hash(target)
+        stage_status = "MISSING"
+    if current == transaction["after_sha256"]:
+        if stage_status != "MISSING":
+            stage.unlink()
+        if portable_key(target_relative) == portable_key(MEMORY_STORE_PATH):
+            memory_store(worker)
+        elif portable_key(target_relative) == portable_key(CHIEF_STATE_PATH):
+            chief_state(worker)
+        else:
+            portfolio_exports(worker)
+        refresh_lease_state(worker, lease)
+        action = "COMMITTED"
+    elif current == transaction["before_sha256"]:
+        if stage_status != "MISSING":
+            stage.unlink()
+        action = "NO_CHANGE"
+    else:
+        raise ValueError("H-53 target is neither the exact before nor committed state")
+    journal.unlink()
+    print("AI-HUMAN H-53 RECOVERY: PASS")
+    print("- result: " + action)
+    print("- new expected-state hash: " + read_lease(worker)["state_hash"])
+
+
+def memory_index(records):
+    index = {
+        "by_kind": {kind: [] for kind in sorted(MEMORY_KINDS)},
+        "by_scope": {scope: [] for scope in sorted(MEMORY_SCOPES)},
+        "by_subject": {},
+        "schema": "ai-human.memory-index/v1",
+    }
+    for identifier, record in sorted(records.items()):
+        if record["status"] not in {"ACTIVE", "DISPUTED"}:
+            continue
+        index["by_kind"][record["kind"]].append(identifier)
+        index["by_scope"][record["scope"]].append(identifier)
+        index["by_subject"].setdefault(record["subject"], []).append(identifier)
+    return index
+
+
+def memory_store_sha256(data):
+    return canonical_json_sha256({key: value for key, value in data.items() if key != "store_sha256"})
+
+
+def memory_store(worker, required=True, allow_stale_index=False):
+    path = worker_target(worker, MEMORY_STORE_PATH, "worker memory store")
+    if not path.exists():
+        if required:
+            raise ValueError("layered memory is OFF; explicit owner configuration required")
+        return None
+    if path.is_symlink() or not path.is_file() or path.stat().st_size > 4 * 1024 * 1024:
+        raise ValueError("worker memory store must be a bounded regular file")
+    data = read_json(path)
+    require_exact_fields(data, {
+        "config", "identity_sha256", "index", "records", "revision", "schema",
+        "store_sha256", "worker_id",
+    }, "worker memory store")
+    if data["schema"] != "ai-human.memory-store/v1":
+        raise ValueError("unsupported worker memory schema")
+    if data["worker_id"] != installed_worker_id(worker) or data["identity_sha256"] != worker_identity_sha256(worker):
+        raise ValueError("memory store belongs to a different worker identity")
+    if type(data["revision"]) is not int or data["revision"] < 1:
+        raise ValueError("memory revision is invalid")
+    config = data["config"]
+    require_exact_fields(config, {
+        "approval_reference", "created_utc", "global_publication", "owner",
+        "retention_days", "status", "updated_utc",
+    }, "memory configuration")
+    if config["status"] not in {"ENABLED", "PAUSED", "REVOKED"}:
+        raise ValueError("memory configuration status is invalid")
+    if config["global_publication"] != "EXPLICIT_OWNER_APPROVAL_REQUIRED":
+        raise ValueError("global memory publication boundary differs")
+    if type(config["retention_days"]) is not int or not 1 <= config["retention_days"] <= 3650:
+        raise ValueError("memory retention must be 1..3650 days")
+    for field in ("owner", "approval_reference"):
+        map_text(config[field], "memory " + field, 1000)
+    created = map_recorded(config["created_utc"], "memory creation time")
+    updated = map_recorded(config["updated_utc"], "memory update time")
+    if updated < created:
+        raise ValueError("memory update precedes creation")
+    records = data["records"]
+    if not isinstance(records, dict) or len(records) > 250:
+        raise ValueError("memory record capacity exceeds its bounded store")
+    record_fields = {
+        "access_class", "approval_reference", "confidence", "id", "kind", "provenance",
+        "record_sha256", "recorded_from_utc", "recorded_to_utc", "review_due_utc",
+        "scope", "sensitivity", "source_locator", "source_owner", "source_sha256",
+        "source_worker_id", "status", "subject", "supersedes", "text",
+        "valid_from_utc", "valid_to_utc",
+    }
+    for identifier, record in records.items():
+        require_exact_fields(record, record_fields, "memory record")
+        h53_verify_seal(record, "memory record")
+        if map_id(identifier) != record["id"]:
+            raise ValueError("memory record key differs from its ID")
+        if record["kind"] not in MEMORY_KINDS or record["scope"] not in MEMORY_SCOPES:
+            raise ValueError("memory kind or scope is invalid")
+        if record["status"] not in MEMORY_STATUSES or record["confidence"] not in MEMORY_CONFIDENCE:
+            raise ValueError("memory status or confidence is invalid")
+        if record["sensitivity"] not in MEMORY_SENSITIVITY or record["access_class"] not in MEMORY_ACCESS:
+            raise ValueError("memory sensitivity or access class is invalid")
+        if record["source_worker_id"] != data["worker_id"]:
+            raise ValueError("local memory record claims another source worker")
+        for field in (
+            "approval_reference", "provenance", "source_locator", "source_owner", "subject", "text"
+        ):
+            map_text(record[field], "memory record " + field, 4000 if field == "text" else 1000)
+        if contains_secret_material(record) or re.search(
+            r"(?i)\b(?:ignore (?:all |any )?(?:previous|prior) instructions|system prompt|"
+            r"exfiltrate|send (?:the )?(?:password|secret|token)s?)\b", record["text"]
+        ):
+            raise ValueError("memory record contains secret or prompt-injection material")
+        if not SHA256_HEX.fullmatch(str(record["source_sha256"])):
+            raise ValueError("memory record lacks an exact source digest")
+        recorded_from = map_recorded(record["recorded_from_utc"], "memory recorded-from time")
+        recorded_to = None
+        if record["recorded_to_utc"] is not None:
+            recorded_to = map_recorded(record["recorded_to_utc"], "memory recorded-to time")
+            if recorded_to < recorded_from:
+                raise ValueError("memory recorded-to precedes recorded-from")
+        if record["status"] in {"ACTIVE", "DISPUTED"} and recorded_to is not None:
+            raise ValueError("current memory record cannot have a recorded-to time")
+        if record["status"] in {"SUPERSEDED", "RETRACTED"} and recorded_to is None:
+            raise ValueError("closed memory record requires a recorded-to time")
+        valid_from = parse_recorded_utc(record["valid_from_utc"], "memory valid-from time")
+        if valid_from > recorded_from:
+            raise ValueError("memory valid-from cannot be later than recording")
+        if record["valid_to_utc"] is not None:
+            valid_to = parse_recorded_utc(record["valid_to_utc"], "memory valid-to time")
+            if valid_to <= valid_from:
+                raise ValueError("memory valid-to must follow valid-from")
+        review_due = parse_recorded_utc(record["review_due_utc"], "memory review time")
+        if not recorded_from < review_due <= recorded_from + datetime.timedelta(days=config["retention_days"]):
+            raise ValueError("memory review exceeds configured retention")
+        supersedes = record["supersedes"]
+        if supersedes is not None and (map_id(supersedes) == identifier):
+            raise ValueError("memory record cannot supersede itself")
+        if record["scope"] == "GLOBAL_SHARED":
+            if record["access_class"] != "COMPANY_SHARED" or record["sensitivity"] not in {"PUBLIC", "COMPANY_INTERNAL"}:
+                raise ValueError("global memory may contain only company-shareable facts")
+            if record["confidence"] not in {"OWNER_STATED", "SOURCE_CONFIRMED"}:
+                raise ValueError("global memory requires confirmed evidence")
+        elif record["access_class"] == "COMPANY_SHARED":
+            raise ValueError("worker-local memory cannot claim company-wide access")
+    superseded_by = {}
+    for identifier, record in records.items():
+        predecessor_id = record["supersedes"]
+        if predecessor_id is None:
+            continue
+        predecessor = records.get(predecessor_id)
+        if predecessor is None:
+            raise ValueError("memory correction predecessor is missing")
+        if predecessor_id in superseded_by:
+            raise ValueError("memory predecessor has more than one correction")
+        superseded_by[predecessor_id] = identifier
+        if predecessor["status"] != "SUPERSEDED":
+            raise ValueError("memory correction predecessor is not superseded")
+        if (
+            predecessor["subject"] != record["subject"]
+            or predecessor["scope"] != record["scope"]
+            or predecessor["source_owner"] != record["source_owner"]
+            or predecessor["recorded_to_utc"] != record["recorded_from_utc"]
+        ):
+            raise ValueError("memory correction chain changes ownership or bitemporal boundary")
+        if parse_recorded_utc(predecessor["recorded_from_utc"], "memory predecessor time") > parse_recorded_utc(record["recorded_from_utc"], "memory correction time"):
+            raise ValueError("memory correction predates its predecessor")
+    for identifier, record in records.items():
+        if record["status"] == "SUPERSEDED" and identifier not in superseded_by:
+            raise ValueError("superseded memory record lacks its correction")
+    expected_index = memory_index(records)
+    if allow_stale_index:
+        normalized = json.loads(json.dumps(data))
+        normalized["index"] = expected_index
+        if data["store_sha256"] != memory_store_sha256(normalized):
+            raise ValueError("memory store corruption is not confined to its derived index")
+    else:
+        if data["index"] != expected_index:
+            raise ValueError("memory index differs from authoritative records; run memory-rebuild")
+        if data["store_sha256"] != memory_store_sha256(data):
+            raise ValueError("memory store integrity digest differs")
+    if config["status"] == "REVOKED" and records:
+        raise ValueError("revoked memory retains records")
+    return data
+
+
+def memory_prepare_store(data):
+    data["index"] = memory_index(data["records"])
+    data["store_sha256"] = memory_store_sha256(data)
+    return data
+
+
+def memory_configure(args):
+    worker = safe_worker(args.worker)
+    lease, _ = require_lease(worker, args.session_id, args.expected_state_hash)
+    current = memory_store(worker, required=False)
+    if args.action == "ENABLE":
+        request = read_governor_input(args.request, "memory configuration request")
+        require_exact_fields(request, {
+            "approval_reference", "owner", "retention_days", "schema"
+        }, "memory configuration request")
+        if request["schema"] != "ai-human.memory-config-request/v1" or request["owner"] != lease["actor"]:
+            raise ValueError("memory configuration requires the current owner")
+        if type(request["retention_days"]) is not int or not 1 <= request["retention_days"] <= 3650:
+            raise ValueError("memory retention must be 1..3650 days")
+        map_text(request["approval_reference"], "memory approval reference")
+        if current and current["config"]["status"] != "REVOKED":
+            raise ValueError("memory is already configured; use PAUSE, RESUME or REVOKE")
+        timestamp = now_utc()
+        data = {
+            "config": {
+                "approval_reference": request["approval_reference"], "created_utc": timestamp,
+                "global_publication": "EXPLICIT_OWNER_APPROVAL_REQUIRED", "owner": request["owner"],
+                "retention_days": request["retention_days"], "status": "ENABLED",
+                "updated_utc": timestamp,
+            },
+            "identity_sha256": worker_identity_sha256(worker), "index": memory_index({}),
+            "records": {}, "revision": 1, "schema": "ai-human.memory-store/v1",
+            "store_sha256": "", "worker_id": installed_worker_id(worker),
+        }
+    else:
+        if args.request is not None:
+            raise ValueError("only ENABLE accepts a memory configuration request")
+        if not current or current["config"]["owner"] != lease["actor"]:
+            raise ValueError("memory control requires its configured owner")
+        allowed = {
+            "PAUSE": {"ENABLED"}, "RESUME": {"PAUSED"},
+            "REVOKE": {"ENABLED", "PAUSED"},
+        }
+        if current["config"]["status"] not in allowed[args.action]:
+            raise ValueError("memory control transition is not allowed")
+        data = current
+        data["config"]["status"] = {"PAUSE": "PAUSED", "RESUME": "ENABLED", "REVOKE": "REVOKED"}[args.action]
+        data["config"]["updated_utc"] = now_utc()
+        if args.action == "REVOKE":
+            purge_chief_briefs_for_privacy(worker, lease, "memory revocation")
+            lease = read_lease(worker)
+            data["records"] = {}
+        data["revision"] += 1
+    memory_prepare_store(data)
+    memory_store_path = worker / MEMORY_STORE_PATH
+    h53_commit(worker, lease, MEMORY_STORE_PATH, data)
+    print("- memory status: " + data["config"]["status"])
+    print("- memory path: " + memory_store_path.relative_to(worker).as_posix())
+
+
+def validate_memory_record_request(request):
+    require_exact_fields(request, {
+        "access_class", "approval_reference", "confidence", "id", "kind", "provenance",
+        "review_due_utc", "schema", "scope", "sensitivity", "source_locator",
+        "source_owner", "source_sha256", "subject", "supersedes", "text",
+        "valid_from_utc", "valid_to_utc",
+    }, "memory record request")
+    if request["schema"] != "ai-human.memory-record-request/v1":
+        raise ValueError("unsupported memory record request schema")
+    return request
+
+
+def memory_record(args):
+    worker = safe_worker(args.worker)
+    lease, _ = require_lease(worker, args.session_id, args.expected_state_hash)
+    data = memory_store(worker)
+    if data["config"]["status"] != "ENABLED" or data["config"]["owner"] != lease["actor"]:
+        raise ValueError("memory recording requires the enabled store owner")
+    request = validate_memory_record_request(
+        read_governor_input(args.request, "memory record request")
+    )
+    identifier = map_id(request["id"])
+    if identifier in data["records"] or len(data["records"]) >= 250:
+        raise ValueError("memory ID already exists or store capacity was reached")
+    if request["kind"] not in MEMORY_KINDS or request["scope"] not in MEMORY_SCOPES:
+        raise ValueError("memory kind or scope is invalid")
+    if request["confidence"] not in MEMORY_CONFIDENCE or request["sensitivity"] not in MEMORY_SENSITIVITY or request["access_class"] not in MEMORY_ACCESS:
+        raise ValueError("memory confidence, sensitivity or access class is invalid")
+    for field in ("approval_reference", "provenance", "source_locator", "source_owner", "subject", "text"):
+        map_text(request[field], "memory request " + field, 4000 if field == "text" else 1000)
+    if contains_secret_material(request) or re.search(
+        r"(?i)\b(?:ignore (?:all |any )?(?:previous|prior) instructions|system prompt|"
+        r"exfiltrate|send (?:the )?(?:password|secret|token)s?)\b", request["text"]
+    ):
+        raise ValueError("memory request contains secret or prompt-injection material")
+    if not SHA256_HEX.fullmatch(str(request["source_sha256"])):
+        raise ValueError("memory request requires an exact source digest")
+    source_relative = safe_relative(args.source_file, "memory source file")
+    if any(part.startswith(".") for part in source_relative.parts):
+        raise ValueError("memory source may not use a hidden path")
+    source_path = worker_target(worker, source_relative, "memory source file")
+    if source_path.is_symlink() or not source_path.is_file() or source_path.stat().st_size > 1024 * 1024:
+        raise ValueError("memory source must be a bounded regular worker file")
+    if request["source_locator"] != source_relative.as_posix() or sha256(source_path) != request["source_sha256"]:
+        raise ValueError("memory source locator or digest differs from the selected file")
+    timestamp = now_utc()
+    recorded = parse_recorded_utc(timestamp, "memory recording time")
+    valid_from = parse_recorded_utc(request["valid_from_utc"], "memory valid-from time")
+    if valid_from > recorded:
+        raise ValueError("memory valid-from cannot be in the future")
+    if request["valid_to_utc"] is not None and parse_recorded_utc(request["valid_to_utc"], "memory valid-to time") <= valid_from:
+        raise ValueError("memory valid-to must follow valid-from")
+    review = parse_recorded_utc(request["review_due_utc"], "memory review time")
+    if not recorded < review <= recorded + datetime.timedelta(days=data["config"]["retention_days"]):
+        raise ValueError("memory review exceeds configured retention")
+    candidate_supersedes = map_id(request["supersedes"]) if request["supersedes"] is not None else None
+    if request["scope"] == "GLOBAL_SHARED":
+        if request["access_class"] != "COMPANY_SHARED" or request["sensitivity"] not in {"PUBLIC", "COMPANY_INTERNAL"}:
+            raise ValueError("global publication requires company-shareable sensitivity and access")
+        if request["confidence"] not in {"OWNER_STATED", "SOURCE_CONFIRMED"}:
+            raise ValueError("global publication requires confirmed evidence")
+        map_text(request["approval_reference"], "global publication approval")
+        current_global = sum(
+            record["scope"] == "GLOBAL_SHARED" and record["status"] in {"ACTIVE", "DISPUTED"}
+            for record in data["records"].values()
+        )
+        chief = chief_state(worker, required=False)
+        portfolio_count = len(chief["portfolio"]) if chief and chief["config"]["status"] != "REVOKED" else 0
+        replacement = data["records"].get(candidate_supersedes) if candidate_supersedes else None
+        adds_current = not (
+            replacement
+            and replacement["scope"] == "GLOBAL_SHARED"
+            and replacement["status"] in {"ACTIVE", "DISPUTED"}
+        )
+        if current_global + portfolio_count + int(adds_current) > map_batch_cap(worker):
+            raise ValueError(
+                "combined Chief portfolio and global truth reached the effective batch cap; "
+                "resolve or archive material first"
+            )
+    elif request["access_class"] == "COMPANY_SHARED":
+        raise ValueError("worker-local memory cannot grant company-wide access")
+    supersedes = candidate_supersedes
+    if supersedes is not None:
+        previous = data["records"].get(supersedes)
+        if not previous or previous["status"] not in {"ACTIVE", "DISPUTED"}:
+            raise ValueError("memory correction target is not current")
+        if previous["subject"] != request["subject"] or previous["scope"] != request["scope"] or previous["source_owner"] != request["source_owner"]:
+            raise ValueError("memory correction changes subject, scope or fact owner")
+        previous["status"] = "SUPERSEDED"
+        previous["recorded_to_utc"] = timestamp
+        h53_seal(previous)
+    status = "ACTIVE"
+    for previous in data["records"].values():
+        if (
+            previous["status"] in {"ACTIVE", "DISPUTED"}
+            and previous["subject"] == request["subject"]
+            and previous["scope"] == request["scope"]
+            and previous["text"] != request["text"]
+            and previous["id"] != supersedes
+        ):
+            previous["status"] = "DISPUTED"
+            previous["recorded_to_utc"] = None
+            h53_seal(previous)
+            status = "DISPUTED"
+    record = {
+        "access_class": request["access_class"], "approval_reference": request["approval_reference"],
+        "confidence": request["confidence"], "id": identifier, "kind": request["kind"],
+        "provenance": request["provenance"], "record_sha256": "",
+        "recorded_from_utc": timestamp, "recorded_to_utc": None,
+        "review_due_utc": request["review_due_utc"], "scope": request["scope"],
+        "sensitivity": request["sensitivity"], "source_locator": request["source_locator"],
+        "source_owner": request["source_owner"], "source_sha256": request["source_sha256"],
+        "source_worker_id": installed_worker_id(worker), "status": status,
+        "subject": request["subject"], "supersedes": supersedes, "text": request["text"],
+        "valid_from_utc": request["valid_from_utc"], "valid_to_utc": request["valid_to_utc"],
+    }
+    h53_seal(record)
+    data["records"][identifier] = record
+    data["revision"] += 1
+    data["config"]["updated_utc"] = timestamp
+    memory_prepare_store(data)
+    memory_store(worker)  # validates the unchanged on-disk predecessor before commit
+    h53_commit(worker, lease, MEMORY_STORE_PATH, data)
+    print("- memory record: " + identifier)
+    print("- status: " + status)
+    print("- publication: " + ("CURATED_GLOBAL" if request["scope"] == "GLOBAL_SHARED" else "WORKER_LOCAL"))
+
+
+def memory_control(args):
+    worker = safe_worker(args.worker)
+    lease, _ = require_lease(worker, args.session_id, args.expected_state_hash)
+    data = memory_store(worker)
+    if data["config"]["status"] not in {"ENABLED", "PAUSED"} or data["config"]["owner"] != lease["actor"]:
+        raise ValueError("memory control requires its configured owner")
+    timestamp = now_utc()
+    if args.action == "FORGET":
+        purge_chief_briefs_for_privacy(worker, lease, "exact memory forget")
+        lease = read_lease(worker)
+    if args.action == "PRUNE":
+        current = parse_recorded_utc(timestamp, "memory prune time")
+        removed = []
+        eligible = []
+        for identifier, record in sorted(data["records"].items()):
+            review = parse_recorded_utc(record["review_due_utc"], "memory review time")
+            valid_to = parse_recorded_utc(record["valid_to_utc"], "memory valid-to time") if record["valid_to_utc"] else None
+            if review <= current or (valid_to is not None and valid_to <= current):
+                eligible.append(identifier)
+        removed_predecessors = [
+            data["records"][identifier]["supersedes"]
+            for identifier in eligible[:map_batch_cap(worker)]
+            if data["records"][identifier]["supersedes"] is not None
+        ]
+        for identifier in eligible[:map_batch_cap(worker)]:
+            del data["records"][identifier]
+            removed.append(identifier)
+        for record in data["records"].values():
+            if record["supersedes"] in removed:
+                record["supersedes"] = None
+                h53_seal(record)
+        for predecessor_id in removed_predecessors:
+            predecessor = data["records"].get(predecessor_id)
+            if predecessor and predecessor["status"] == "SUPERSEDED":
+                predecessor["status"] = "RETRACTED"
+                h53_seal(predecessor)
+    else:
+        identifier = map_id(args.item)
+        record = data["records"].get(identifier)
+        if not record:
+            raise ValueError("memory item does not exist")
+        if args.action == "FORGET":
+            predecessor_id = record["supersedes"]
+            del data["records"][identifier]
+            for retained in data["records"].values():
+                if retained["supersedes"] == identifier:
+                    retained["supersedes"] = None
+                    h53_seal(retained)
+            predecessor = data["records"].get(predecessor_id) if predecessor_id else None
+            if predecessor and predecessor["status"] == "SUPERSEDED":
+                predecessor["status"] = "RETRACTED"
+                h53_seal(predecessor)
+        elif args.action in {"RETRACT", "DISPUTE"}:
+            if record["status"] not in {"ACTIVE", "DISPUTED"}:
+                raise ValueError("only a current memory item can be changed")
+            record["status"] = "RETRACTED" if args.action == "RETRACT" else "DISPUTED"
+            record["recorded_to_utc"] = timestamp if args.action == "RETRACT" else None
+            h53_seal(record)
+        else:
+            raise ValueError("unsupported memory control action")
+    data["revision"] += 1
+    data["config"]["updated_utc"] = timestamp
+    memory_prepare_store(data)
+    h53_commit(worker, lease, MEMORY_STORE_PATH, data)
+    print("- memory action: " + args.action)
+    if args.action == "PRUNE":
+        print("- remaining eligible records: " + str(max(0, len(eligible) - len(removed))))
+
+
+def memory_rebuild(args):
+    worker = safe_worker(args.worker)
+    lease = read_lease(worker)
+    if lease["session_id"] != args.session_id:
+        raise ValueError("memory rebuild belongs to another writer")
+    if controlled_state_hash(worker) != args.expected_state_hash:
+        raise ValueError("memory rebuild expected-state hash mismatch")
+    data = memory_store(worker, allow_stale_index=True)
+    if data["config"]["owner"] != lease["actor"]:
+        raise ValueError("memory rebuild requires its configured owner")
+    expected = memory_index(data["records"])
+    if data["index"] == expected:
+        print("AI-HUMAN MEMORY REBUILD: NO_CHANGE")
+        print("- new expected-state hash: " + lease["state_hash"])
+        return
+    original_normalized = json.loads(json.dumps(data))
+    original_normalized["index"] = expected
+    original_bytes = (json.dumps(original_normalized, indent=2, sort_keys=True) + "\n").encode("utf-8")
+    if controlled_state_hash_with_file_sha(
+        worker, MEMORY_STORE_PATH, hashlib.sha256(original_bytes).hexdigest()
+    ) != lease["state_hash"]:
+        raise ValueError("memory rebuild detected unrelated controlled-state drift")
+    data["index"] = expected
+    data["revision"] += 1
+    data["config"]["updated_utc"] = now_utc()
+    data["store_sha256"] = memory_store_sha256(data)
+    h53_commit(worker, lease, MEMORY_STORE_PATH, data)
+    print("- memory index: REBUILT_FROM_AUTHORITATIVE_RECORDS")
+
+
+def memory_query(args):
+    worker = safe_worker(args.worker)
+    data = memory_store(worker)
+    if data["config"]["status"] != "ENABLED" or args.owner != data["config"]["owner"]:
+        raise ValueError("memory query requires the enabled store owner")
+    now = parse_recorded_utc(now_utc(), "memory query time")
+    matches = []
+    for record in data["records"].values():
+        if record["status"] not in {"ACTIVE", "DISPUTED"}:
+            continue
+        if args.kind and record["kind"] != args.kind:
+            continue
+        if args.scope and record["scope"] != args.scope:
+            continue
+        if args.subject and record["subject"] != args.subject:
+            continue
+        if parse_recorded_utc(record["review_due_utc"], "memory review time") <= now:
+            continue
+        if record["valid_to_utc"] and parse_recorded_utc(record["valid_to_utc"], "memory valid-to time") <= now:
+            continue
+        matches.append(record)
+    print(json.dumps({
+        "records": matches[:BATCH_CAP], "result": "MATCHES" if matches else "NO_CHANGE",
+        "schema": "ai-human.memory-query/v1", "truncated": len(matches) > BATCH_CAP,
+    }, indent=2, sort_keys=True))
+
+
+def memory_show(args):
+    worker = safe_worker(args.worker)
+    data = memory_store(worker, required=False)
+    if not data:
+        print(json.dumps({"schema": "ai-human.memory-summary/v1", "status": "OFF"}, indent=2, sort_keys=True))
+        return
+    if args.owner != data["config"]["owner"]:
+        raise ValueError("memory summary belongs to another owner")
+    counts = {status: 0 for status in sorted(MEMORY_STATUSES)}
+    for record in data["records"].values():
+        counts[record["status"]] += 1
+    print(json.dumps({
+        "counts": counts, "revision": data["revision"], "schema": "ai-human.memory-summary/v1",
+        "status": data["config"]["status"], "worker_id": data["worker_id"],
+    }, indent=2, sort_keys=True))
+
+
+def chief_state_sha256(data):
+    return canonical_json_sha256({key: value for key, value in data.items() if key != "state_sha256"})
+
+
+def chief_status_material(item):
+    mechanical = {"status_sha256", "source_recorded_utc", "updated_utc", "fresh_until_utc"}
+    return {key: value for key, value in item.items() if key not in mechanical}
+
+
+def validate_chief_item(item, worker_id=None):
+    require_exact_fields(item, CHIEF_ITEM_FIELDS, "Chief portfolio item")
+    if worker_id is not None and item["source_worker_id"] != worker_id:
+        raise ValueError("portfolio key differs from source worker")
+    if not SAFE_ID.fullmatch(str(item["source_worker_id"])):
+        raise ValueError("portfolio source worker ID is invalid")
+    for field in ("source_identity_sha256", "source_state_sha256", "evidence_sha256", "status_sha256"):
+        if not SHA256_HEX.fullmatch(str(item[field])):
+            raise ValueError("portfolio item lacks an exact digest")
+    if item["status_sha256"] != canonical_json_sha256(chief_status_material(item)):
+        raise ValueError("portfolio status digest differs")
+    if item["status"] not in CHIEF_WORKER_STATUSES or item["access_class"] != "COMPANY_SHARED":
+        raise ValueError("portfolio status or access class is invalid")
+    for field in (
+        "blocked_reason", "current_task_id", "done_condition", "last_completed_step",
+        "next_action", "operating_unit", "owner", "purpose", "summary_pointer_approval_reference"
+    ):
+        if item[field] is not None:
+            map_text(item[field], "portfolio " + field, 1000)
+    for field in ("current_task_id", "done_condition", "last_completed_step", "next_action", "operating_unit", "owner", "purpose"):
+        if item[field] is None:
+            raise ValueError("portfolio " + field + " is required")
+    if not isinstance(item["fact_owner_ids"], list) or len(item["fact_owner_ids"]) > BATCH_CAP:
+        raise ValueError("portfolio fact-owner list exceeds the safety ceiling")
+    if any(not SAFE_ID.fullmatch(str(value)) for value in item["fact_owner_ids"]):
+        raise ValueError("portfolio fact-owner ID is invalid")
+    if len(item["fact_owner_ids"]) != len(set(item["fact_owner_ids"])):
+        raise ValueError("portfolio fact-owner IDs are duplicated")
+    if (item["summary_pointer_sha256"] is None) != (item["summary_pointer_approval_reference"] is None):
+        raise ValueError("personal-context pointer requires separate approval and digest")
+    if item["summary_pointer_sha256"] is not None and not SHA256_HEX.fullmatch(str(item["summary_pointer_sha256"])):
+        raise ValueError("personal-context pointer digest is invalid")
+    recorded = map_recorded(item["source_recorded_utc"], "portfolio source recording time")
+    updated = map_recorded(item["updated_utc"], "portfolio update time")
+    fresh = parse_recorded_utc(item["fresh_until_utc"], "portfolio freshness time")
+    if updated < recorded or not updated < fresh <= updated + datetime.timedelta(days=31):
+        raise ValueError("portfolio freshness proof is invalid")
+    if item["status"] == "BLOCKED" and not item["blocked_reason"]:
+        raise ValueError("blocked portfolio item requires a reason")
+    if item["status"] != "BLOCKED" and item["blocked_reason"] is not None:
+        raise ValueError("only a blocked portfolio item may carry a blocked reason")
+    if contains_secret_material(item):
+        raise ValueError("portfolio metadata contains possible secret material")
+    return item
+
+
+def validate_chief_brief(brief, config):
+    require_exact_fields(brief, {
+        "brief_sha256", "changed", "contradictions", "exceptions", "handoff_proposals",
+        "id", "material_sha256", "owner_next", "project_map", "recorded_utc", "schema",
+        "sequence",
+    }, "Chief brief")
+    if brief["schema"] != "ai-human.chief-brief/v1" or not re.fullmatch(r"brief-[a-z0-9-]+", str(brief["id"])):
+        raise ValueError("Chief brief ID or schema differs")
+    h53_verify_seal(brief, "Chief brief", field="brief_sha256")
+    map_recorded(brief["recorded_utc"], "Chief brief time")
+    if type(brief["sequence"]) is not int or brief["sequence"] < 1:
+        raise ValueError("Chief brief sequence is invalid")
+    if not brief["id"].endswith("-r" + f"{brief['sequence']:012d}"):
+        raise ValueError("Chief brief ID is not bound to its sequence")
+    for field in ("changed", "contradictions", "exceptions", "handoff_proposals", "owner_next", "project_map"):
+        if not isinstance(brief[field], list) or len(brief[field]) > BATCH_CAP:
+            raise ValueError("Chief brief " + field + " exceeds the safety ceiling")
+    if len(brief["changed"]) != len(set(brief["changed"])) or any(
+        not isinstance(value, str) or not re.fullmatch(r"(?:worker|fact):[A-Za-z0-9._-]+", value)
+        for value in brief["changed"]
+    ):
+        raise ValueError("Chief changed-item index is invalid")
+    if not SHA256_HEX.fullmatch(str(brief["material_sha256"])):
+        raise ValueError("Chief brief material digest is invalid")
+    seen_workers = set()
+    for item in brief["project_map"]:
+        require_exact_fields(item, {
+            "current_task_id", "fresh_until_utc", "next_action", "owner", "purpose",
+            "status", "worker_id",
+        }, "Chief project-map item")
+        worker_id = governor_safe_id(item["worker_id"], "Chief project-map worker")
+        if worker_id in seen_workers or item["status"] not in CHIEF_WORKER_STATUSES:
+            raise ValueError("Chief project map has a duplicate worker or invalid status")
+        seen_workers.add(worker_id)
+        for field in ("current_task_id", "next_action", "owner", "purpose"):
+            map_text(item[field], "Chief project-map " + field, 1000)
+        parse_recorded_utc(item["fresh_until_utc"], "Chief project-map freshness")
+    for contradiction in brief["contradictions"]:
+        require_exact_fields(contradiction, {"fact_ids", "fact_owners", "subject"}, "Chief contradiction")
+        if (
+            not isinstance(contradiction["fact_ids"], list)
+            or not 2 <= len(contradiction["fact_ids"]) <= BATCH_CAP
+            or len(contradiction["fact_ids"]) != len(set(contradiction["fact_ids"]))
+            or any(not COMPONENT_ID.fullmatch(str(value)) for value in contradiction["fact_ids"])
+            or not isinstance(contradiction["fact_owners"], list)
+            or not 1 <= len(contradiction["fact_owners"]) <= BATCH_CAP
+        ):
+            raise ValueError("Chief contradiction references are invalid")
+        map_text(contradiction["subject"], "Chief contradiction subject")
+        for owner in contradiction["fact_owners"]:
+            map_text(owner, "Chief contradiction fact owner")
+    for exception in brief["exceptions"]:
+        if not isinstance(exception, dict):
+            raise ValueError("Chief exception must be an object")
+        if set(exception) == {"status", "worker_id"}:
+            if exception["status"] not in {"BLOCKED", "WAITING_OWNER", "STALE", "RETIRED"}:
+                raise ValueError("Chief worker exception status is invalid")
+            governor_safe_id(exception["worker_id"], "Chief exception worker")
+        elif set(exception) == {"status", "subject"}:
+            if exception["status"] != "CONTRADICTORY_GLOBAL_FACT":
+                raise ValueError("Chief contradiction exception status is invalid")
+            map_text(exception["subject"], "Chief exception subject")
+        else:
+            raise ValueError("Chief exception fields differ from its schema")
+    for action in brief["owner_next"]:
+        if not isinstance(action, dict) or set(action) not in (
+            {"next_action", "worker_id"}, {"next_action", "subject"}
+        ):
+            raise ValueError("Chief owner-next fields differ from its schema")
+        map_text(action["next_action"], "Chief owner-next action", 1000)
+        if "worker_id" in action:
+            governor_safe_id(action["worker_id"], "Chief owner-next worker")
+        else:
+            map_text(action["subject"], "Chief owner-next subject")
+    handoff_fields = {
+        "activation", "approval_reference", "done_condition", "expires_utc",
+        "external_effects", "from_worker_id", "gate_zero", "route",
+        "target_identity_sha256", "target_state_sha256", "target_worker_id", "type",
+        "write_authority",
+    }
+    for handoff in brief["handoff_proposals"]:
+        require_exact_fields(handoff, handoff_fields, "Chief handoff proposal")
+        if (
+            handoff["activation"] != "NOT_SENT" or handoff["route"] != "H55_REQUIRED"
+            or handoff["type"] != "TARGET_BOUND_HANDOFF_PROPOSAL"
+            or handoff["write_authority"] != "NONE" or handoff["external_effects"] is not False
+            or handoff["gate_zero"] != "NOT_GRANTED"
+        ):
+            raise ValueError("Chief handoff proposal exceeds read-only authority")
+        for field in ("from_worker_id", "target_worker_id"):
+            governor_safe_id(handoff[field], "Chief handoff " + field)
+        if handoff["from_worker_id"] == handoff["target_worker_id"]:
+            raise ValueError("Chief handoff source and target cannot be the same")
+        for field in ("target_identity_sha256", "target_state_sha256"):
+            if not SHA256_HEX.fullmatch(str(handoff[field])):
+                raise ValueError("Chief handoff target proof is invalid")
+        expiry = parse_recorded_utc(handoff["expires_utc"], "Chief handoff expiry")
+        recorded = parse_recorded_utc(brief["recorded_utc"], "Chief brief time")
+        if not recorded < expiry <= recorded + datetime.timedelta(days=7):
+            raise ValueError("Chief handoff expiry exceeds its bounded lifetime")
+        map_text(handoff["approval_reference"], "Chief handoff approval")
+        map_text(handoff["done_condition"], "Chief handoff done condition")
+    if contains_secret_material(brief):
+        raise ValueError("Chief brief contains possible secret material")
+
+
+def chief_state(worker, required=True):
+    path = worker_target(worker, CHIEF_STATE_PATH, "Chief state")
+    if not path.exists():
+        if required:
+            raise ValueError("Chief of Staff is OFF; explicit owner configuration required")
+        return None
+    if path.is_symlink() or not path.is_file() or path.stat().st_size > 4 * 1024 * 1024:
+        raise ValueError("Chief state must be a bounded regular file")
+    data = read_json(path)
+    require_exact_fields(data, {
+        "briefs", "config", "identity_sha256", "last_material", "portfolio", "revision",
+        "revoked_worker_ids", "schema", "state_sha256", "worker_id",
+    }, "Chief state")
+    if data["schema"] != "ai-human.chief-state/v1" or data["worker_id"] != installed_worker_id(worker) or data["identity_sha256"] != worker_identity_sha256(worker):
+        raise ValueError("Chief state schema or worker identity differs")
+    config = data["config"]
+    require_exact_fields(config, {
+        "approval_reference", "created_utc", "external_effects", "max_workers", "owner",
+        "read_only", "retention_days", "self_approval", "status", "updated_utc",
+    }, "Chief configuration")
+    if config["status"] not in {"ENABLED", "PAUSED", "REVOKED"} or config["read_only"] is not True or config["external_effects"] is not False or config["self_approval"] is not False:
+        raise ValueError("Chief authority boundary differs from read-only configuration")
+    if type(config["max_workers"]) is not int or not 1 <= config["max_workers"] <= BATCH_CAP:
+        raise ValueError("Chief portfolio limit exceeds the safety ceiling")
+    if type(config["retention_days"]) is not int or not 1 <= config["retention_days"] <= 365:
+        raise ValueError("Chief brief retention must be 1..365 days")
+    map_text(config["owner"], "Chief owner")
+    map_text(config["approval_reference"], "Chief approval reference")
+    created = map_recorded(config["created_utc"], "Chief creation time")
+    if map_recorded(config["updated_utc"], "Chief update time") < created:
+        raise ValueError("Chief update precedes creation")
+    if not isinstance(data["portfolio"], dict) or len(data["portfolio"]) > config["max_workers"]:
+        raise ValueError("Chief portfolio exceeds its approved limit")
+    for worker_id, item in data["portfolio"].items():
+        validate_chief_item(item, worker_id)
+    if not isinstance(data["revoked_worker_ids"], list) or len(data["revoked_worker_ids"]) > BATCH_CAP or len(data["revoked_worker_ids"]) != len(set(data["revoked_worker_ids"])):
+        raise ValueError("Chief revocation list is invalid")
+    if any(not SAFE_ID.fullmatch(str(value)) for value in data["revoked_worker_ids"]):
+        raise ValueError("Chief revoked worker ID is invalid")
+    if set(data["portfolio"]).intersection(data["revoked_worker_ids"]):
+        raise ValueError("revoked worker remains in Chief portfolio")
+    if not isinstance(data["briefs"], dict) or len(data["briefs"]) > BATCH_CAP:
+        raise ValueError("Chief brief history exceeds its bounded retention")
+    for identifier, brief in data["briefs"].items():
+        validate_chief_brief(brief, config)
+        if identifier != brief["id"]:
+            raise ValueError("Chief brief key differs from its ID")
+    if len({brief["sequence"] for brief in data["briefs"].values()}) != len(data["briefs"]):
+        raise ValueError("Chief brief sequence is duplicated")
+    if any(brief["sequence"] > data["revision"] for brief in data["briefs"].values()):
+        raise ValueError("Chief brief sequence exceeds the state revision")
+    if data["last_material"]:
+        require_exact_fields(data["last_material"], {"items", "material_sha256"}, "Chief last material")
+        items = data["last_material"]["items"]
+        if not isinstance(items, dict) or len(items) > BATCH_CAP * 2:
+            raise ValueError("Chief last-material item index exceeds the safety ceiling")
+        if any(
+            not re.fullmatch(r"(?:worker|fact):[A-Za-z0-9._-]+", str(key))
+            or not SHA256_HEX.fullmatch(str(value)) for key, value in items.items()
+        ):
+            raise ValueError("Chief last-material item proof is invalid")
+        if data["last_material"]["material_sha256"] != canonical_json_sha256(items):
+            raise ValueError("Chief last-material digest differs")
+        if not data["briefs"]:
+            raise ValueError("Chief last material exists without a retained brief")
+        latest = max(data["briefs"].values(), key=lambda item: item["sequence"])
+        if latest["material_sha256"] != data["last_material"]["material_sha256"]:
+            raise ValueError("Chief last material differs from the latest brief")
+    elif data["briefs"]:
+        raise ValueError("retained Chief briefs require a last-material proof")
+    if data["state_sha256"] != chief_state_sha256(data):
+        raise ValueError("Chief state integrity digest differs")
+    if type(data["revision"]) is not int or data["revision"] < 1:
+        raise ValueError("Chief revision is invalid")
+    if config["status"] == "REVOKED" and (data["portfolio"] or data["briefs"] or data["last_material"]):
+        raise ValueError("revoked Chief retains portfolio state")
+    return data
+
+
+def chief_prepare_state(data):
+    data["state_sha256"] = chief_state_sha256(data)
+    return data
+
+
+def chief_prune_briefs(data, current=None):
+    current = current or parse_recorded_utc(now_utc(), "Chief retention time")
+    cutoff = current - datetime.timedelta(days=data["config"]["retention_days"])
+    removed = 0
+    for identifier, brief in list(data["briefs"].items()):
+        if parse_recorded_utc(brief["recorded_utc"], "Chief brief time") <= cutoff:
+            del data["briefs"][identifier]
+            removed += 1
+    if not data["briefs"]:
+        data["last_material"] = {}
+    return removed
+
+
+def purge_chief_briefs_for_privacy(worker, lease, reason):
+    data = chief_state(worker, required=False)
+    if not data or not data["briefs"] and not data["last_material"]:
+        return
+    if data["config"]["owner"] != lease["actor"]:
+        raise ValueError("exact forget requires the configured Chief owner to purge derived briefs")
+    data["briefs"] = {}
+    data["last_material"] = {}
+    data["config"]["updated_utc"] = now_utc()
+    data["revision"] += 1
+    chief_prepare_state(data)
+    h53_commit(worker, lease, CHIEF_STATE_PATH, data)
+    print("- Chief derived briefs purged for: " + reason)
+
+
+def chief_configure(args):
+    worker = safe_worker(args.worker)
+    lease, _ = require_lease(worker, args.session_id, args.expected_state_hash)
+    current = chief_state(worker, required=False)
+    if args.action == "ENABLE":
+        request = read_governor_input(args.request, "Chief configuration request")
+        require_exact_fields(request, {
+            "approval_reference", "max_workers", "owner", "retention_days", "schema"
+        }, "Chief configuration request")
+        if request["schema"] != "ai-human.chief-config-request/v1" or request["owner"] != lease["actor"]:
+            raise ValueError("Chief configuration requires the current owner")
+        effective_cap = map_batch_cap(worker)
+        if type(request["max_workers"]) is not int or not 1 <= request["max_workers"] <= effective_cap:
+            raise ValueError(
+                "Chief portfolio limit must be within the current effective batch cap of "
+                + str(effective_cap)
+            )
+        if type(request["retention_days"]) is not int or not 1 <= request["retention_days"] <= 365:
+            raise ValueError("Chief retention must be 1..365 days")
+        map_text(request["approval_reference"], "Chief approval reference")
+        if current and current["config"]["status"] != "REVOKED":
+            raise ValueError("Chief is already configured")
+        timestamp = now_utc()
+        data = {
+            "briefs": {}, "config": {
+                "approval_reference": request["approval_reference"], "created_utc": timestamp,
+                "external_effects": False, "max_workers": request["max_workers"],
+                "owner": request["owner"], "read_only": True,
+                "retention_days": request["retention_days"], "self_approval": False,
+                "status": "ENABLED", "updated_utc": timestamp,
+            }, "identity_sha256": worker_identity_sha256(worker), "last_material": {},
+            "portfolio": {}, "revision": 1, "revoked_worker_ids": [],
+            "schema": "ai-human.chief-state/v1", "state_sha256": "",
+            "worker_id": installed_worker_id(worker),
+        }
+    else:
+        if args.request is not None:
+            raise ValueError("only ENABLE accepts a Chief configuration request")
+        if not current or current["config"]["owner"] != lease["actor"]:
+            raise ValueError("Chief control requires its configured owner")
+        transitions = {"PAUSE": ("ENABLED", "PAUSED"), "RESUME": ("PAUSED", "ENABLED")}
+        if args.action == "REVOKE":
+            if current["config"]["status"] not in {"ENABLED", "PAUSED"}:
+                raise ValueError("Chief is not active")
+            current["config"]["status"] = "REVOKED"
+            current["portfolio"] = {}
+            current["briefs"] = {}
+            current["last_material"] = {}
+            current["revoked_worker_ids"] = []
+        elif args.action in transitions:
+            before, after = transitions[args.action]
+            if current["config"]["status"] != before:
+                raise ValueError("Chief control transition is not allowed")
+            current["config"]["status"] = after
+        else:
+            raise ValueError("unsupported Chief control action")
+        current["config"]["updated_utc"] = now_utc()
+        current["revision"] += 1
+        data = current
+    chief_prepare_state(data)
+    h53_commit(worker, lease, CHIEF_STATE_PATH, data)
+    print("- Chief status: " + data["config"]["status"])
+    print("- authority: READ_ONLY; EXTERNAL_EFFECTS_DISABLED; SELF_APPROVAL_DISABLED")
+
+
+def portfolio_status_source_sha256(worker):
+    """Bind status sources without coupling a brief to unrelated private state."""
+    digest = hashlib.sha256()
+    for name in (
+        "MASTER_CURSOR.md", "OPEN_REGISTER.md", "TODAY.md", "COMPLETED_LEDGER.md",
+        "EVIDENCE_LOG.md", "FACTS.md", "DECISIONS.md",
+    ):
+        path = worker_target(worker, Path(name), "portfolio status source")
+        if path.exists() and not path.is_file():
+            raise ValueError("portfolio status source must be a regular file")
+        digest.update(name.encode("utf-8") + b"\0")
+        digest.update(bytes.fromhex(sha256(path)) if path.is_file() else b"MISSING")
+        digest.update(b"\n")
+    digest.update(bytes.fromhex(worker_identity_sha256(worker)))
+    return digest.hexdigest()
+
+
+def validate_portfolio_snapshot_shape(snapshot):
+    require_exact_fields(snapshot, {
+        "item", "schema", "snapshot_sha256", "target_chief_identity_sha256",
+        "target_chief_worker_id",
+    }, "portfolio snapshot")
+    if snapshot["schema"] != "ai-human.portfolio-snapshot/v1":
+        raise ValueError("unsupported portfolio snapshot schema")
+    if not SAFE_ID.fullmatch(str(snapshot["target_chief_worker_id"])) or not SHA256_HEX.fullmatch(str(snapshot["target_chief_identity_sha256"])):
+        raise ValueError("portfolio snapshot target binding is invalid")
+    expected = canonical_json_sha256({key: value for key, value in snapshot.items() if key != "snapshot_sha256"})
+    if snapshot["snapshot_sha256"] != expected:
+        raise ValueError("portfolio snapshot integrity differs")
+    validate_chief_item(snapshot["item"])
+    return snapshot
+
+
+def portfolio_exports(worker, required=False):
+    path = worker_target(worker, PORTFOLIO_EXPORTS_PATH, "portfolio export store")
+    if not path.exists():
+        if required:
+            raise ValueError("source worker has no governed portfolio export")
+        return None
+    if path.is_symlink() or not path.is_file() or path.stat().st_size > 4 * 1024 * 1024:
+        raise ValueError("portfolio export store must be a bounded regular file")
+    data = read_json(path)
+    require_exact_fields(data, {
+        "identity_sha256", "revision", "schema", "snapshots", "store_sha256", "worker_id"
+    }, "portfolio export store")
+    if data["schema"] != "ai-human.portfolio-exports/v1" or data["worker_id"] != installed_worker_id(worker) or data["identity_sha256"] != worker_identity_sha256(worker):
+        raise ValueError("portfolio export store belongs to another worker")
+    if type(data["revision"]) is not int or data["revision"] < 1 or not isinstance(data["snapshots"], dict) or len(data["snapshots"]) > BATCH_CAP:
+        raise ValueError("portfolio export store exceeds its bounded schema")
+    for digest, snapshot in data["snapshots"].items():
+        if not SHA256_HEX.fullmatch(str(digest)):
+            raise ValueError("portfolio export key is invalid")
+        validate_portfolio_snapshot_shape(snapshot)
+        if snapshot["snapshot_sha256"] != digest:
+            raise ValueError("portfolio export key differs from snapshot")
+        if snapshot["item"]["source_worker_id"] != data["worker_id"] or snapshot["item"]["source_identity_sha256"] != data["identity_sha256"]:
+            raise ValueError("portfolio export source identity differs")
+    expected = canonical_json_sha256({key: value for key, value in data.items() if key != "store_sha256"})
+    if data["store_sha256"] != expected:
+        raise ValueError("portfolio export store integrity differs")
+    return data
+
+
+def portfolio_prepare_exports(data):
+    data["store_sha256"] = canonical_json_sha256({key: value for key, value in data.items() if key != "store_sha256"})
+    return data
+
+
+def portfolio_snapshot(args):
+    worker = safe_worker(args.worker)
+    lease, _ = require_lease(worker, args.session_id, args.expected_state_hash)
+    request = read_governor_input(args.request, "portfolio snapshot request")
+    require_exact_fields(request, {
+        "blocked_reason", "done_condition", "evidence_sha256", "fact_owner_ids",
+        "fresh_until_utc", "last_completed_step", "next_action", "operating_unit", "owner", "purpose",
+        "schema", "status", "summary_pointer_approval_reference", "summary_pointer_sha256",
+        "target_chief_identity_sha256", "target_chief_worker_id",
+    }, "portfolio snapshot request")
+    if request["schema"] != "ai-human.portfolio-snapshot-request/v1":
+        raise ValueError("unsupported portfolio snapshot request schema")
+    if not SAFE_ID.fullmatch(str(request["target_chief_worker_id"])) or not SHA256_HEX.fullmatch(str(request["target_chief_identity_sha256"])):
+        raise ValueError("portfolio snapshot requires an exact Chief target")
+    timestamp = now_utc()
+    metadata = install_metadata(worker)
+    if request["owner"] != lease["actor"] or request["owner"] != clean(parameter_value(worker, "Human owner"), "human owner"):
+        raise ValueError("portfolio owner differs from the source worker")
+    if request["purpose"] != metadata.get("purpose_scope") or request["operating_unit"] not in metadata.get("operating_units", []):
+        raise ValueError("portfolio purpose or operating unit differs from the source worker")
+    if not isinstance(request["fact_owner_ids"], list) or len(request["fact_owner_ids"]) > map_batch_cap(worker):
+        raise ValueError("portfolio fact-owner list exceeds the current effective batch cap")
+    evidence_relative = safe_relative(args.evidence_file, "portfolio evidence file")
+    evidence_path = worker_target(worker, evidence_relative, "portfolio evidence file")
+    if evidence_path.is_symlink() or not evidence_path.is_file() or evidence_path.stat().st_size > 1024 * 1024:
+        raise ValueError("portfolio evidence must be a bounded regular source-worker file")
+    if sha256(evidence_path) != request["evidence_sha256"]:
+        raise ValueError("portfolio evidence digest differs from the selected file")
+    if request["summary_pointer_sha256"] is not None:
+        personal = work_map(worker)
+        map_require_active(personal)
+        if personal["owner"] != lease["actor"] or personal["status"] != "CONFIRMED":
+            raise ValueError("personal-context pointer requires the current confirmed owner map")
+        if personal["confirmation"]["context_sha256"] != request["summary_pointer_sha256"]:
+            raise ValueError("personal-context pointer differs from the current confirmed map")
+        for entry in personal["entries"].values():
+            if entry["status"] not in {"ACTIVE", "SUPERSEDED"}:
+                continue
+            source = personal["sources"].get(entry["source_id"])
+            if not source or source["status"] != "APPROVED":
+                raise ValueError("personal-context pointer contains revoked evidence")
+            if source["mode"] == "SUMMARY" and map_source_snapshot(worker, personal, source["id"]).get("sha256") != entry["source_sha256"]:
+                raise ValueError("personal-context pointer source changed; reconfirm first")
+    item = {
+        "access_class": "COMPANY_SHARED", "blocked_reason": request["blocked_reason"],
+        "current_task_id": live_task_id(worker) or "NO_ACTIVE_TASK",
+        "done_condition": request["done_condition"], "evidence_sha256": request["evidence_sha256"],
+        "fact_owner_ids": request["fact_owner_ids"], "fresh_until_utc": request["fresh_until_utc"],
+        "last_completed_step": request["last_completed_step"], "next_action": request["next_action"],
+        "operating_unit": request["operating_unit"], "owner": request["owner"],
+        "purpose": request["purpose"], "source_identity_sha256": worker_identity_sha256(worker),
+        "source_recorded_utc": timestamp, "source_worker_id": installed_worker_id(worker),
+        "source_state_sha256": portfolio_status_source_sha256(worker),
+        "status": request["status"], "status_sha256": "",
+        "summary_pointer_approval_reference": request["summary_pointer_approval_reference"],
+        "summary_pointer_sha256": request["summary_pointer_sha256"], "updated_utc": timestamp,
+    }
+    item["status_sha256"] = canonical_json_sha256(chief_status_material(item))
+    validate_chief_item(item)
+    snapshot = {
+        "item": item, "schema": "ai-human.portfolio-snapshot/v1", "snapshot_sha256": "",
+        "target_chief_identity_sha256": request["target_chief_identity_sha256"],
+        "target_chief_worker_id": request["target_chief_worker_id"],
+    }
+    snapshot["snapshot_sha256"] = canonical_json_sha256({key: value for key, value in snapshot.items() if key != "snapshot_sha256"})
+    exports = portfolio_exports(worker, required=False) or {
+        "identity_sha256": worker_identity_sha256(worker), "revision": 0,
+        "schema": "ai-human.portfolio-exports/v1", "snapshots": {},
+        "store_sha256": "", "worker_id": installed_worker_id(worker),
+    }
+    current = parse_recorded_utc(timestamp, "portfolio export time")
+    for digest, existing in list(exports["snapshots"].items()):
+        if parse_recorded_utc(existing["item"]["fresh_until_utc"], "portfolio export freshness") <= current:
+            del exports["snapshots"][digest]
+    if snapshot["snapshot_sha256"] not in exports["snapshots"] and len(exports["snapshots"]) >= map_batch_cap(worker):
+        raise ValueError("portfolio exports reached the current effective batch cap")
+    exports["snapshots"][snapshot["snapshot_sha256"]] = snapshot
+    exports["revision"] += 1
+    portfolio_prepare_exports(exports)
+    h53_commit(worker, lease, PORTFOLIO_EXPORTS_PATH, exports)
+    print("- snapshot SHA-256: " + snapshot["snapshot_sha256"])
+    print("- target Chief worker: " + snapshot["target_chief_worker_id"])
+    print("- transport: NOT_SENT; H55 receipt still required for remote delivery")
+
+
+def validate_portfolio_snapshot(snapshot, chief_worker):
+    validate_portfolio_snapshot_shape(snapshot)
+    if snapshot["target_chief_worker_id"] != installed_worker_id(chief_worker) or snapshot["target_chief_identity_sha256"] != worker_identity_sha256(chief_worker):
+        raise ValueError("portfolio snapshot is addressed to another Chief")
+    if parse_recorded_utc(snapshot["item"]["fresh_until_utc"], "portfolio freshness") <= parse_recorded_utc(now_utc(), "now"):
+        raise ValueError("portfolio snapshot is stale")
+    return snapshot
+
+
+def validate_portfolio_source(snapshot, source_worker):
+    """Authenticate a governed export against its owning worker, never caller claims."""
+    validate_portfolio_snapshot_shape(snapshot)
+    item = snapshot["item"]
+    source_id = item["source_worker_id"]
+    if worker_mode(source_worker) != MODE_ACTIVE:
+        raise ValueError("portfolio source worker is not active")
+    for transaction in (
+        H53_TX_PATH, WORK_MAP_TX_PATH, EXCHANGE_MUTATION_PATH,
+        UPDATE_SCHEDULE_TRANSACTION_PATH,
+    ):
+        if worker_target(source_worker, transaction, "portfolio source transaction").exists():
+            raise ValueError("portfolio source has an interrupted transaction; recover it before intake")
+    if transaction_file(source_worker).exists() or downgrade_transaction_path(source_worker).exists():
+        raise ValueError("portfolio source has an interrupted lifecycle transaction")
+    if installed_worker_id(source_worker) != source_id or worker_identity_sha256(source_worker) != item["source_identity_sha256"]:
+        raise ValueError("portfolio source identity cannot be authenticated")
+    metadata = install_metadata(source_worker)
+    if (
+        item["owner"] != clean(parameter_value(source_worker, "Human owner"), "human owner")
+        or item["purpose"] != metadata.get("purpose_scope")
+        or item["operating_unit"] not in metadata.get("operating_units", [])
+    ):
+        raise ValueError("portfolio source owner, purpose or operating unit changed")
+    if portfolio_status_source_sha256(source_worker) != item["source_state_sha256"]:
+        raise ValueError("portfolio source state changed; create a fresh status snapshot")
+    source_exports = portfolio_exports(source_worker, required=True)
+    source_snapshot = source_exports["snapshots"].get(snapshot["snapshot_sha256"])
+    if source_snapshot != snapshot:
+        raise ValueError("snapshot bytes are not an immutable governed source export")
+    if item["summary_pointer_sha256"] is not None:
+        source_map = work_map(source_worker)
+        map_require_active(source_map)
+        if (
+            source_map["status"] != "CONFIRMED"
+            or source_map["confirmation"]["context_sha256"] != item["summary_pointer_sha256"]
+        ):
+            raise ValueError("portfolio personal-context pointer is no longer current")
+        for entry in source_map["entries"].values():
+            if entry["status"] not in {"ACTIVE", "SUPERSEDED"}:
+                continue
+            source = source_map["sources"].get(entry["source_id"])
+            if not source or source["status"] != "APPROVED":
+                raise ValueError("portfolio personal-context pointer contains revoked evidence")
+            if (
+                source["mode"] == "SUMMARY"
+                and map_source_snapshot(source_worker, source_map, source["id"]).get("sha256")
+                != entry["source_sha256"]
+            ):
+                raise ValueError("portfolio personal-context source changed; reconfirm first")
+            if parse_recorded_utc(entry["review_due"], "portfolio personal-context review") <= parse_recorded_utc(now_utc(), "now"):
+                raise ValueError("portfolio personal-context evidence review is overdue; reconfirm first")
+    source_lease = read_lease(source_worker, required=False)
+    if source_lease and source_lease.get("state_hash") != controlled_state_hash(source_worker):
+        raise ValueError("source worker controlled state differs from its lease")
+    if parse_recorded_utc(item["fresh_until_utc"], "portfolio freshness") <= parse_recorded_utc(now_utc(), "now"):
+        raise ValueError("portfolio snapshot is stale")
+    return snapshot
+
+
+def require_portfolio_transport_snapshot(snapshot):
+    if snapshot["item"]["summary_pointer_sha256"] is not None:
+        raise ValueError("H54 personal-context pointers are not eligible for portfolio transport")
+
+
+def portfolio_export_artifact(args):
+    worker = safe_worker(args.worker)
+    lease, _ = require_lease(worker, args.session_id, args.expected_state_hash)
+    if not SHA256_HEX.fullmatch(str(args.snapshot_sha256)):
+        raise ValueError("portfolio export requires an exact governed snapshot digest")
+    snapshot = portfolio_exports(worker, required=True)["snapshots"].get(args.snapshot_sha256)
+    if snapshot is None:
+        raise ValueError("selected portfolio snapshot is not in the governed source export store")
+    require_portfolio_transport_snapshot(snapshot)
+    validate_portfolio_source(snapshot, worker)
+    if snapshot["item"]["owner"] != lease["actor"]:
+        raise ValueError("portfolio artifact export requires its source owner")
+    relative = safe_relative(args.output, "portfolio artifact output")
+    reject_exchange_sensitive_path(relative, "portfolio artifact output")
+    if relative.suffix.casefold() != ".json":
+        raise ValueError("portfolio artifact output must be a JSON file")
+    target = worker_target(worker, relative, "portfolio artifact output")
+    encoded = (json.dumps(snapshot, indent=2, sort_keys=True) + "\n").encode("utf-8")
+    if len(encoded) > 1024 * 1024:
+        raise ValueError("portfolio artifact exceeds the one-megabyte intake limit")
+    created = False
+    if target.exists():
+        if not target.is_file() or target.stat().st_size != len(encoded) or target.read_bytes() != encoded:
+            raise ValueError("portfolio artifact output already exists with different bytes")
+    else:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        descriptor, stage_name = tempfile.mkstemp(prefix=".portfolio-export-", dir=target.parent)
+        stage = Path(stage_name)
+        try:
+            with os.fdopen(descriptor, "wb") as stream:
+                stream.write(encoded)
+                stream.flush()
+                os.fsync(stream.fileno())
+            reject_exchange_sensitive_source(relative, stage, "portfolio artifact")
+            # A hard-link commit publishes complete bytes atomically without replacing
+            # an existing destination. Unsupported filesystems fail closed.
+            os.link(stage, target)
+            created = True
+            if os.name != "nt":
+                directory_fd = os.open(target.parent, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+                try:
+                    os.fsync(directory_fd)
+                finally:
+                    os.close(directory_fd)
+        finally:
+            stage.unlink()
+    print("AI-HUMAN PORTFOLIO ARTIFACT: " + ("PASS" if created else "IDEMPOTENT"))
+    print("- artifact: " + relative.as_posix())
+    print("- artifact SHA-256: " + hashlib.sha256(encoded).hexdigest())
+    print("- snapshot SHA-256: " + snapshot["snapshot_sha256"])
+    print("- transport: NOT_SENT; explicit H55 send, acknowledgement and acceptance required")
+    print("- new expected-state hash: " + lease["state_hash"])
+
+
+def chief_portfolio_upsert(args):
+    worker = safe_worker(args.worker)
+    lease, _ = require_lease(worker, args.session_id, args.expected_state_hash)
+    source_worker = safe_worker(args.source_worker)
+    if source_worker == worker:
+        raise ValueError("Chief portfolio source must be a separate worker")
+    with worker_operation_mutex(source_worker):
+        chief_portfolio_apply(
+            worker, lease, read_governor_input(args.snapshot, "portfolio snapshot"), source_worker
+        )
+
+
+def chief_portfolio_import_exchange(args):
+    worker = safe_worker(args.worker)
+    lease, _ = require_lease(worker, args.session_id, args.expected_state_hash)
+    source_worker = safe_worker(args.source_worker)
+    if source_worker == worker:
+        raise ValueError("Chief portfolio source must be a separate worker")
+    exchange = safe_exchange_root(args.exchange)
+    # main holds the Chief mutex. Fail-fast source and relay mutexes keep source
+    # status, acceptance and current authorization stable through the H53 commit.
+    with worker_operation_mutex(source_worker), worker_operation_mutex(exchange):
+        exchange_require_status(exchange, {"ACTIVE", "PAUSED"})
+        envelope, recipient = exchange_authorized_envelope(worker, exchange, args.message_id)
+        _config, chief_entry = verify_joined_worker(worker, exchange)
+        validate_exchange_entry_for_worker(worker, chief_entry, _config)
+        _config, source_entry = verify_joined_worker(source_worker, exchange)
+        validate_exchange_entry_for_worker(source_worker, source_entry, _config)
+        request = envelope["request"]
+        if (
+            request["route"] != "CHIEF_MEDIATED" or request["message_type"] != "STATUS"
+            or request["recipients"] != [recipient] or chief_entry["access_class"] != "CHIEF"
+        ):
+            raise ValueError("portfolio intake requires one addressed CHIEF_MEDIATED STATUS recipient")
+        if parse_recorded_utc(request["expires_utc"], "portfolio envelope expiry") <= datetime.datetime.now(datetime.timezone.utc):
+            raise ValueError("portfolio exchange envelope is expired")
+        for directory in ("received", "accepted"):
+            receipt = require_exchange_local_record(worker, directory, args.message_id)
+            if receipt["envelope_sha256"] != envelope["envelope_sha256"]:
+                raise ValueError("portfolio " + directory + " receipt differs from its envelope")
+        if exchange_current_state(exchange, args.message_id, recipient) != "ACCEPTED":
+            raise ValueError("portfolio exchange message must remain ACCEPTED by the relay")
+        attachments = envelope["attachments"]
+        if len(attachments) != 1 or attachments[0]["media_type"] != "application/json":
+            raise ValueError("portfolio intake requires exactly one application/json attachment")
+        attachment = path_without_symlinks(
+            exchange_message_root(exchange, args.message_id),
+            safe_relative(attachments[0]["bundle_path"], "portfolio bundle path"),
+            "portfolio exchange bundle",
+        )
+        with attachment.open("rb") as stream:
+            bundle_bytes = stream.read(1024 * 1024 + 1)
+        if len(bundle_bytes) > 1024 * 1024:
+            raise ValueError("portfolio exchange bundle exceeds one megabyte")
+        if (
+            len(bundle_bytes) != attachments[0]["size_bytes"]
+            or hashlib.sha256(bundle_bytes).hexdigest() != attachments[0]["sha256"]
+        ):
+            raise ValueError("portfolio exchange bundle integrity differs at intake")
+        snapshot = validate_portfolio_snapshot(strict_json_loads(bundle_bytes.decode("utf-8")), worker)
+        require_portfolio_transport_snapshot(snapshot)
+        if (
+            envelope["sender_worker_id"] != snapshot["item"]["source_worker_id"]
+            or envelope["sender_identity_sha256"] != snapshot["item"]["source_identity_sha256"]
+            or envelope["sender_task_id"] != snapshot["item"]["current_task_id"]
+            or source_entry["worker_id"] != envelope["sender_worker_id"]
+        ):
+            raise ValueError("portfolio snapshot source differs from its authenticated sender")
+        # H55 sender_state_sha256 binds controlled state at send; H53 binds only
+        # status-source files. They are deliberately different digest domains.
+        policy = exchange_current_envelope_access(exchange, envelope, recipient)
+        if any(source_entry[field] != chief_entry[field] for field in (
+            "company", "legal_entity", "operating_unit", "human_owner"
+        )) and policy["cross_boundary_authorization_reference"] == "NONE":
+            raise ValueError("cross-boundary portfolio intake requires exact H55 authorization")
+        chief_portfolio_apply(worker, lease, snapshot, source_worker, exchange_policy=policy)
+
+
+def chief_portfolio_apply(worker, lease, snapshot, source_worker, exchange_policy=None):
+    data = chief_state(worker)
+    if data["config"]["status"] != "ENABLED" or data["config"]["owner"] != lease["actor"]:
+        raise ValueError("portfolio intake requires the enabled Chief owner")
+    chief_prune_briefs(data)
+    validate_portfolio_snapshot(snapshot, worker)
+    validate_portfolio_source(snapshot, source_worker)
+    item = snapshot["item"]
+    source_id = item["source_worker_id"]
+    source_metadata = install_metadata(source_worker)
+    chief_metadata = install_metadata(worker)
+    if (
+        source_metadata.get("company") != chief_metadata.get("company")
+        or source_metadata.get("legal_entity") != chief_metadata.get("legal_entity")
+        or item["operating_unit"] not in chief_metadata.get("operating_units", [])
+        or item["owner"] != data["config"]["owner"]
+    ) and (exchange_policy is None or exchange_policy["cross_boundary_authorization_reference"] == "NONE"):
+        raise ValueError("cross-company, entity, operating-unit or owner intake requires an exact current H55 route")
+    if source_id in data["revoked_worker_ids"]:
+        raise ValueError("portfolio access for this worker is revoked")
+    existing = data["portfolio"].get(source_id)
+    if existing and existing["source_identity_sha256"] != item["source_identity_sha256"]:
+        raise ValueError("portfolio worker ID cannot be rebound to another identity")
+    if existing and existing["status_sha256"] == item["status_sha256"] and existing["source_recorded_utc"] == item["source_recorded_utc"]:
+        print("AI-HUMAN CHIEF PORTFOLIO: NO_CHANGE")
+        print("- new expected-state hash: " + lease["state_hash"])
+        return
+    if not existing and len(data["portfolio"]) >= data["config"]["max_workers"]:
+        raise ValueError("Chief portfolio reached its approved worker limit")
+    memory = memory_store(worker, required=False)
+    current_global = sum(
+        record["scope"] == "GLOBAL_SHARED" and record["status"] in {"ACTIVE", "DISPUTED"}
+        for record in memory["records"].values()
+    ) if memory and memory["config"]["status"] != "REVOKED" else 0
+    prospective_workers = len(data["portfolio"]) + (0 if existing else 1)
+    if current_global + prospective_workers > map_batch_cap(worker):
+        raise ValueError(
+            "combined Chief portfolio and global truth exceeds the effective batch cap"
+        )
+    if existing and parse_recorded_utc(item["source_recorded_utc"], "portfolio source time") < parse_recorded_utc(existing["source_recorded_utc"], "current portfolio source time"):
+        raise ValueError("portfolio snapshot is older than current state")
+    data["portfolio"][source_id] = item
+    data["config"]["updated_utc"] = now_utc()
+    data["revision"] += 1
+    chief_prepare_state(data)
+    h53_commit(worker, lease, CHIEF_STATE_PATH, data)
+    print("- portfolio worker: " + source_id)
+    print("- cross-worker write: NONE; received metadata snapshot only")
+
+
+def chief_portfolio_control(args):
+    worker = safe_worker(args.worker)
+    lease, _ = require_lease(worker, args.session_id, args.expected_state_hash)
+    data = chief_state(worker)
+    if data["config"]["owner"] != lease["actor"]:
+        raise ValueError("Chief portfolio control requires its owner")
+    chief_prune_briefs(data)
+    worker_id = governor_safe_id(args.item, "portfolio worker ID")
+    if args.action == "REVOKE":
+        data["portfolio"].pop(worker_id, None)
+        if worker_id not in data["revoked_worker_ids"]:
+            if len(data["revoked_worker_ids"]) >= BATCH_CAP:
+                raise ValueError("Chief revocation list reached the safety ceiling")
+            data["revoked_worker_ids"].append(worker_id)
+    elif args.action == "ALLOW":
+        if not args.approval_reference:
+            raise ValueError("restoring portfolio access requires explicit approval")
+        map_text(args.approval_reference, "portfolio access approval")
+        if worker_id not in data["revoked_worker_ids"]:
+            raise ValueError("portfolio worker access is not revoked")
+        data["revoked_worker_ids"].remove(worker_id)
+    elif args.action == "FORGET":
+        if worker_id not in data["portfolio"]:
+            raise ValueError("portfolio worker does not exist")
+        del data["portfolio"][worker_id]
+    else:
+        raise ValueError("unsupported Chief portfolio action")
+    if args.action in {"REVOKE", "FORGET"}:
+        # Historical briefs are derived copies of portfolio metadata. Exact access
+        # removal/forgetting therefore removes those copies in the same atomic state.
+        data["briefs"] = {}
+        data["last_material"] = {}
+    data["config"]["updated_utc"] = now_utc()
+    data["revision"] += 1
+    chief_prepare_state(data)
+    h53_commit(worker, lease, CHIEF_STATE_PATH, data)
+    print("- portfolio action: " + args.action)
+    print("- worker: " + worker_id)
+
+
+def chief_material(worker, data):
+    material = {}
+    now = parse_recorded_utc(now_utc(), "Chief brief time")
+    project_map = []
+    for worker_id, item in sorted(data["portfolio"].items()):
+        shown = dict(item)
+        if parse_recorded_utc(item["fresh_until_utc"], "portfolio freshness") <= now:
+            shown["status"] = "STALE"
+        material["worker:" + worker_id] = (
+            canonical_json_sha256({"status": "STALE", "status_sha256": item["status_sha256"]})
+            if shown["status"] == "STALE" else item["status_sha256"]
+        )
+        project_map.append({
+            "current_task_id": shown["current_task_id"], "fresh_until_utc": shown["fresh_until_utc"],
+            "next_action": shown["next_action"], "owner": shown["owner"],
+            "purpose": shown["purpose"], "status": shown["status"], "worker_id": worker_id,
+        })
+    contradictions = []
+    memory = memory_store(worker, required=False)
+    if memory and memory["config"]["status"] == "ENABLED":
+        subjects = {}
+        for record in memory["records"].values():
+            if record["scope"] != "GLOBAL_SHARED" or record["status"] not in {"ACTIVE", "DISPUTED"}:
+                continue
+            if parse_recorded_utc(record["review_due_utc"], "global memory review") <= now:
+                continue
+            if record["valid_to_utc"] and parse_recorded_utc(record["valid_to_utc"], "global memory valid-to") <= now:
+                continue
+            subjects.setdefault(record["subject"], []).append(record)
+            material["fact:" + record["id"]] = record["record_sha256"]
+        for subject, records in sorted(subjects.items()):
+            if len({record["text"] for record in records}) > 1:
+                contradictions.append({
+                    "fact_ids": sorted(record["id"] for record in records),
+                    "fact_owners": sorted(set(record["source_owner"] for record in records)),
+                    "subject": subject,
+                })
+    return material, project_map, contradictions
+
+
+def chief_brief(args):
+    worker = safe_worker(args.worker)
+    lease, _ = require_lease(worker, args.session_id, args.expected_state_hash)
+    data = chief_state(worker)
+    if data["config"]["status"] != "ENABLED" or data["config"]["owner"] != lease["actor"]:
+        raise ValueError("Chief brief requires the enabled Chief owner")
+    print("- evidence: RETAINED_SNAPSHOTS; live source status and current route authorization UNKNOWN (not rechecked by brief)")
+    pruned = chief_prune_briefs(data)
+    material, project_map, contradictions = chief_material(worker, data)
+    material_sha = canonical_json_sha256(material)
+    if data["last_material"].get("material_sha256") == material_sha and not args.handoff_bindings:
+        if pruned:
+            data["config"]["updated_utc"] = now_utc()
+            data["revision"] += 1
+            chief_prepare_state(data)
+            h53_commit(worker, lease, CHIEF_STATE_PATH, data)
+            lease = read_lease(worker)
+        print("AI-HUMAN CHIEF BRIEF: NO_CHANGE")
+        print("- no material change; remain quiet")
+        print("- new expected-state hash: " + lease["state_hash"])
+        return
+    previous = data["last_material"].get("items", {})
+    all_changed = sorted(
+        key for key in set(previous) | set(material) if previous.get(key) != material.get(key)
+    )
+    effective_cap = map_batch_cap(worker)
+    changed = all_changed[:effective_cap]
+    checkpoint = dict(previous)
+    for key in changed:
+        if key in material:
+            checkpoint[key] = material[key]
+        else:
+            checkpoint.pop(key, None)
+    checkpoint_sha = canonical_json_sha256(checkpoint)
+    exceptions = []
+    owner_next = []
+    handoffs = []
+    bindings = {}
+    if args.handoff_bindings:
+        binding_data = read_governor_input(args.handoff_bindings, "Chief handoff bindings")
+        require_exact_fields(binding_data, {"bindings", "schema"}, "Chief handoff bindings")
+        if binding_data["schema"] != "ai-human.chief-handoff-bindings/v1" or not isinstance(binding_data["bindings"], list) or len(binding_data["bindings"]) > map_batch_cap(worker):
+            raise ValueError("Chief handoff bindings exceed their schema or current batch cap")
+        for binding in binding_data["bindings"]:
+            require_exact_fields(binding, {
+                "approval_reference", "expires_utc", "from_worker_id", "target_worker_id"
+            }, "Chief handoff binding")
+            source_id = governor_safe_id(binding["from_worker_id"], "Chief handoff source")
+            target_id = governor_safe_id(binding["target_worker_id"], "Chief handoff target")
+            if source_id == target_id or source_id in bindings:
+                raise ValueError("Chief handoff binding is duplicated or self-targeted")
+            source_item = data["portfolio"].get(source_id)
+            target_item = data["portfolio"].get(target_id)
+            now = parse_recorded_utc(now_utc(), "Chief handoff creation time")
+            expiry = parse_recorded_utc(binding["expires_utc"], "Chief handoff expiry")
+            if not source_item or source_item["status"] != "BLOCKED":
+                raise ValueError("Chief handoff source is not a current blocked portfolio item")
+            if not target_item or target_id in data["revoked_worker_ids"] or target_item["status"] in {"RETIRED", "PAUSED"} or parse_recorded_utc(target_item["fresh_until_utc"], "Chief handoff target freshness") <= now:
+                raise ValueError("Chief handoff target is unavailable, revoked or stale")
+            if not now < expiry <= now + datetime.timedelta(days=7):
+                raise ValueError("Chief handoff binding expiry must be within seven days")
+            map_text(binding["approval_reference"], "Chief handoff approval")
+            bindings[source_id] = binding
+    for item in project_map:
+        if item["status"] in {"BLOCKED", "WAITING_OWNER", "STALE", "RETIRED"}:
+            exceptions.append({"status": item["status"], "worker_id": item["worker_id"]})
+        if item["status"] == "WAITING_OWNER":
+            owner_next.append({"next_action": item["next_action"], "worker_id": item["worker_id"]})
+        if item["status"] == "BLOCKED" and item["worker_id"] in bindings:
+            binding = bindings[item["worker_id"]]
+            target = data["portfolio"][binding["target_worker_id"]]
+            handoffs.append({
+                "activation": "NOT_SENT", "approval_reference": binding["approval_reference"],
+                "done_condition": data["portfolio"][item["worker_id"]]["done_condition"],
+                "expires_utc": binding["expires_utc"], "external_effects": False,
+                "from_worker_id": item["worker_id"], "gate_zero": "NOT_GRANTED",
+                "route": "H55_REQUIRED", "target_identity_sha256": target["source_identity_sha256"],
+                "target_state_sha256": target["source_state_sha256"],
+                "target_worker_id": binding["target_worker_id"],
+                "type": "TARGET_BOUND_HANDOFF_PROPOSAL", "write_authority": "NONE",
+            })
+    for contradiction in contradictions:
+        exceptions.append({"status": "CONTRADICTORY_GLOBAL_FACT", "subject": contradiction["subject"]})
+        owner_next.append({"next_action": "Named fact owner resolves the contradiction", "subject": contradiction["subject"]})
+    timestamp = now_utc()
+    sequence = data["revision"] + 1
+    brief_id = "brief-" + timestamp.casefold() + "-r" + f"{sequence:012d}"
+    if brief_id in data["briefs"]:
+        raise ValueError("Chief brief sequence conflicts with retained history")
+    brief = {
+        "brief_sha256": "", "changed": changed, "contradictions": contradictions,
+        "exceptions": exceptions, "handoff_proposals": handoffs, "id": brief_id,
+        "material_sha256": checkpoint_sha, "owner_next": owner_next,
+        "project_map": project_map, "recorded_utc": timestamp,
+        "schema": "ai-human.chief-brief/v1", "sequence": sequence,
+    }
+    h53_seal(brief, field="brief_sha256")
+    if len(data["briefs"]) >= BATCH_CAP:
+        oldest = min(data["briefs"], key=lambda key: data["briefs"][key]["sequence"])
+        del data["briefs"][oldest]
+    data["briefs"][brief_id] = brief
+    data["last_material"] = {"items": checkpoint, "material_sha256": checkpoint_sha}
+    data["config"]["updated_utc"] = timestamp
+    data["revision"] += 1
+    chief_prepare_state(data)
+    h53_commit(worker, lease, CHIEF_STATE_PATH, data)
+    print("- brief: " + json.dumps(brief, sort_keys=True))
+    print("- authority: READ_ONLY; handoffs are proposals and were NOT_SENT")
+    if len(all_changed) > len(changed):
+        print("- continuation: " + str(len(all_changed) - len(changed)) + " material changes remain for the next bounded brief")
+
+
+def chief_show(args):
+    worker = safe_worker(args.worker)
+    data = chief_state(worker, required=False)
+    if not data:
+        print(json.dumps({"schema": "ai-human.chief-summary/v1", "status": "OFF"}, indent=2, sort_keys=True))
+        return
+    if args.owner != data["config"]["owner"]:
+        raise ValueError("Chief state belongs to another owner")
+    print(json.dumps({
+        "authority": "READ_ONLY", "brief_count": len(data["briefs"]),
+        "current_route_authorization": "UNKNOWN", "live_source_status": "UNKNOWN",
+        "evidence": "RETAINED_SNAPSHOTS",
+        "portfolio_count": len(data["portfolio"]), "revoked_count": len(data["revoked_worker_ids"]),
+        "schema": "ai-human.chief-summary/v1", "status": data["config"]["status"],
+        "worker_id": data["worker_id"],
+    }, indent=2, sort_keys=True))
 
 
 def improvement_target(worker, relative, label):
@@ -5247,6 +7023,10 @@ def controlled_state_paths(worker):
         definitions = worker / UPDATE_SCHEDULE_DEFINITIONS_ROOT
         if definitions.is_dir():
             paths.extend(path for path in definitions.iterdir() if path.is_file())
+    for private_root in (MEMORY_ROOT, CHIEF_ROOT):
+        root = worker / private_root
+        if root.is_dir():
+            paths.extend(path for path in root.rglob("*.json") if path.is_file())
     return sorted(paths, key=lambda path: path.relative_to(worker).as_posix())
 
 
@@ -10848,6 +12628,7 @@ def validate_worker(worker, quiet=False, allow_transaction=False):
     failures.extend(validate_work_map_state(worker))
     failures.extend(validate_exchange_local_state(worker))
     failures.extend(validate_update_schedule_state(worker, metadata, allow_transaction))
+    failures.extend(validate_h53_state(worker))
     failures.extend(validate_completion_records(worker))
     lease = None
     try:
@@ -14051,7 +15832,7 @@ def downgrade_private_roots():
     """One explicit registry; future private-state features extend this inventory."""
     return (
         IMPROVEMENT_ROOT, AUTONOMY_ROOT, PERSONAL_ROOT, EXCHANGE_LOCAL_ROOT,
-        UPDATE_SCHEDULE_ROOT,
+        UPDATE_SCHEDULE_ROOT, MEMORY_ROOT, CHIEF_ROOT,
     )
 
 
@@ -17617,6 +19398,117 @@ def parser():
     exchange_export_p.add_argument("--output", required=True)
     exchange_export_p.set_defaults(handler=exchange_export)
 
+    memory_configure_p = sub.add_parser("memory-configure")
+    memory_configure_p.add_argument("worker")
+    memory_configure_p.add_argument("action", choices=("ENABLE", "PAUSE", "RESUME", "REVOKE"))
+    memory_configure_p.add_argument("--session-id", required=True)
+    memory_configure_p.add_argument("--expected-state-hash", required=True)
+    memory_configure_p.add_argument("--request")
+    memory_configure_p.set_defaults(handler=memory_configure)
+
+    memory_record_p = sub.add_parser("memory-record")
+    memory_record_p.add_argument("worker")
+    memory_record_p.add_argument("--session-id", required=True)
+    memory_record_p.add_argument("--expected-state-hash", required=True)
+    memory_record_p.add_argument("--request", required=True)
+    memory_record_p.add_argument("--source-file", required=True)
+    memory_record_p.set_defaults(handler=memory_record)
+
+    memory_control_p = sub.add_parser("memory-control")
+    memory_control_p.add_argument("worker")
+    memory_control_p.add_argument("action", choices=("RETRACT", "DISPUTE", "FORGET", "PRUNE"))
+    memory_control_p.add_argument("--item")
+    memory_control_p.add_argument("--session-id", required=True)
+    memory_control_p.add_argument("--expected-state-hash", required=True)
+    memory_control_p.set_defaults(handler=memory_control)
+
+    memory_rebuild_p = sub.add_parser("memory-rebuild")
+    memory_rebuild_p.add_argument("worker")
+    memory_rebuild_p.add_argument("--session-id", required=True)
+    memory_rebuild_p.add_argument("--expected-state-hash", required=True)
+    memory_rebuild_p.set_defaults(handler=memory_rebuild)
+
+    memory_query_p = sub.add_parser("memory-query")
+    memory_query_p.add_argument("worker")
+    memory_query_p.add_argument("--owner", required=True)
+    memory_query_p.add_argument("--kind", choices=sorted(MEMORY_KINDS))
+    memory_query_p.add_argument("--scope", choices=sorted(MEMORY_SCOPES))
+    memory_query_p.add_argument("--subject")
+    memory_query_p.set_defaults(handler=memory_query)
+
+    memory_show_p = sub.add_parser("memory-show")
+    memory_show_p.add_argument("worker")
+    memory_show_p.add_argument("--owner", required=True)
+    memory_show_p.set_defaults(handler=memory_show)
+
+    chief_configure_p = sub.add_parser("chief-configure")
+    chief_configure_p.add_argument("worker")
+    chief_configure_p.add_argument("action", choices=("ENABLE", "PAUSE", "RESUME", "REVOKE"))
+    chief_configure_p.add_argument("--session-id", required=True)
+    chief_configure_p.add_argument("--expected-state-hash", required=True)
+    chief_configure_p.add_argument("--request")
+    chief_configure_p.set_defaults(handler=chief_configure)
+
+    portfolio_snapshot_p = sub.add_parser("portfolio-snapshot")
+    portfolio_snapshot_p.add_argument("worker")
+    portfolio_snapshot_p.add_argument("--request", required=True)
+    portfolio_snapshot_p.add_argument("--evidence-file", required=True)
+    portfolio_snapshot_p.add_argument("--session-id", required=True)
+    portfolio_snapshot_p.add_argument("--expected-state-hash", required=True)
+    portfolio_snapshot_p.set_defaults(handler=portfolio_snapshot)
+
+    portfolio_export_p = sub.add_parser("portfolio-export-artifact")
+    portfolio_export_p.add_argument("worker")
+    portfolio_export_p.add_argument("--snapshot-sha256", required=True)
+    portfolio_export_p.add_argument("--output", required=True)
+    portfolio_export_p.add_argument("--session-id", required=True)
+    portfolio_export_p.add_argument("--expected-state-hash", required=True)
+    portfolio_export_p.set_defaults(handler=portfolio_export_artifact)
+
+    chief_portfolio_p = sub.add_parser("chief-portfolio-upsert")
+    chief_portfolio_p.add_argument("worker")
+    chief_portfolio_p.add_argument("--session-id", required=True)
+    chief_portfolio_p.add_argument("--expected-state-hash", required=True)
+    chief_portfolio_p.add_argument("--snapshot", required=True)
+    chief_portfolio_p.add_argument("--source-worker", required=True)
+    chief_portfolio_p.set_defaults(handler=chief_portfolio_upsert)
+
+    chief_import_p = sub.add_parser("chief-portfolio-import-exchange")
+    chief_import_p.add_argument("worker")
+    chief_import_p.add_argument("--session-id", required=True)
+    chief_import_p.add_argument("--expected-state-hash", required=True)
+    chief_import_p.add_argument("--exchange", required=True)
+    chief_import_p.add_argument("--message-id", required=True)
+    chief_import_p.add_argument("--source-worker", required=True)
+    chief_import_p.set_defaults(handler=chief_portfolio_import_exchange)
+
+    chief_portfolio_control_p = sub.add_parser("chief-portfolio-control")
+    chief_portfolio_control_p.add_argument("worker")
+    chief_portfolio_control_p.add_argument("action", choices=("REVOKE", "ALLOW", "FORGET"))
+    chief_portfolio_control_p.add_argument("--item", required=True)
+    chief_portfolio_control_p.add_argument("--approval-reference")
+    chief_portfolio_control_p.add_argument("--session-id", required=True)
+    chief_portfolio_control_p.add_argument("--expected-state-hash", required=True)
+    chief_portfolio_control_p.set_defaults(handler=chief_portfolio_control)
+
+    chief_brief_p = sub.add_parser("chief-brief")
+    chief_brief_p.add_argument("worker")
+    chief_brief_p.add_argument("--session-id", required=True)
+    chief_brief_p.add_argument("--expected-state-hash", required=True)
+    chief_brief_p.add_argument("--handoff-bindings")
+    chief_brief_p.set_defaults(handler=chief_brief)
+
+    chief_show_p = sub.add_parser("chief-show")
+    chief_show_p.add_argument("worker")
+    chief_show_p.add_argument("--owner", required=True)
+    chief_show_p.set_defaults(handler=chief_show)
+
+    h53_recover_p = sub.add_parser("h53-recover")
+    h53_recover_p.add_argument("worker")
+    h53_recover_p.add_argument("--session-id", required=True)
+    h53_recover_p.add_argument("--expected-state-hash", required=True)
+    h53_recover_p.set_defaults(handler=h53_recover)
+
     batch_plan_p = sub.add_parser("batch-plan")
     batch_plan_p.add_argument("kind", choices=BATCH_KINDS)
     batch_plan_p.add_argument("--units", type=int, required=True)
@@ -17703,6 +19595,8 @@ def main():
                 raise ValueError("remove and visibly verify the external radar schedule before suspension, uninstall, rollback or downgrade")
             if worker is not None and args.command not in {"work-map-recover", "session-status", "validate"} and worker_target(worker, WORK_MAP_TX_PATH, "map transaction").exists():
                 raise ValueError("interrupted work-map transaction detected; run work-map-recover first")
+            if worker is not None and args.command not in {"h53-recover", "session-status", "validate"} and worker_target(worker, H53_TX_PATH, "H-53 transaction").exists():
+                raise ValueError("interrupted H-53 transaction detected; run h53-recover first")
             if (
                 worker is not None
                 and args.command != "recover-lifecycle"

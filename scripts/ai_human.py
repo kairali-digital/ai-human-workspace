@@ -16341,7 +16341,9 @@ def start_downgrade_transaction(worker, archive, manifest, receipt, intent):
         if {child.name for child in archive.iterdir()} != expected or any(child.is_symlink() for child in archive.iterdir()):
             raise ValueError("unexpected object in downgrade archive; preserve and reconcile before restoration")
     backup = worker_target(worker, archive.relative_to(worker) / "AUTOMATIONS.before.md", "downgrade automation backup")
-    restored_text = backup.read_text(encoding="utf-8")
+    # This is a byte-preserving recovery source, not normalized display text.
+    # read_text translates CRLF/mixed newlines and would invalidate its raw hash.
+    restored_text = backup.read_bytes().decode("utf-8")
     exported_text = render_downgrade_automation(restored_text, receipt["prepared_utc"], manifest)
     expected_current = restored_text if intent == "EXPORT" else exported_text
     if sha256(worker / "AUTOMATIONS.md") != hashlib.sha256(expected_current.encode()).hexdigest():
@@ -16415,7 +16417,7 @@ def read_downgrade_transaction(worker):
     backup = worker_target(worker, relative / "AUTOMATIONS.before.md", "transaction automation backup")
     if not backup.is_file() or sha256(backup) != transaction["restored_automation_sha256"]:
         raise ValueError("transaction automation backup integrity mismatch")
-    restored = backup.read_text(encoding="utf-8")
+    restored = backup.read_bytes().decode("utf-8")
     if hashlib.sha256(render_downgrade_automation(restored, receipt["prepared_utc"], manifest).encode()).hexdigest() != transaction["exported_automation_sha256"]:
         raise ValueError("transaction exported automation digest differs")
     if sha256(worker / "AUTOMATIONS.md") not in {transaction["restored_automation_sha256"], transaction["exported_automation_sha256"]}:
@@ -16470,7 +16472,7 @@ def finish_downgrade_transaction(worker, destination):
     atomic_json(archive / "archive-manifest.json", transaction["archive_manifest"])
     downgrade_boundary("archive-manifest")
     write_downgrade_transaction(worker, transaction, "AUTOMATION")
-    restored = (archive / "AUTOMATIONS.before.md").read_text(encoding="utf-8")
+    restored = (archive / "AUTOMATIONS.before.md").read_bytes().decode("utf-8")
     content = render_downgrade_automation(restored, transaction["prepared_receipt"]["prepared_utc"], transaction["archive_manifest"]) if destination == "EXPORT" else restored
     atomic_text(worker / "AUTOMATIONS.md", content)
     downgrade_boundary("automation")

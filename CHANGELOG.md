@@ -22,7 +22,8 @@ All notable changes are recorded here in plain language.
   the new private state through governed downgrade export and recovery.
 - Bind downgrade exports to the private features understood by the target version;
   v2.5 memory and coordination state cannot be restored into v2.4. Preserve legacy
-  archive bytes and compatible state, and refuse rollback during active work.
+  archive bytes and compatible state; rollback refuses active writers and requires
+  an explicit approved checkpoint when a task remains live.
 
 All new capabilities remain off by default. Automatic release eligibility is still off.
 Final same-byte audits, independent recovery copies, platform checks and exact-candidate

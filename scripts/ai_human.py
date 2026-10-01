@@ -16726,8 +16726,10 @@ def restore_downgrade(args):
 
 def rollback(args):
     worker = safe_worker(args.worker)
-    if live_task(worker) or read_lease(worker, required=False):
-        raise ValueError("rollback requires a checkpoint with no live task or active writer")
+    if read_lease(worker, required=False):
+        raise ValueError("rollback requires a checkpoint without an active writer")
+    if live_task(worker) and not getattr(args, "at_checkpoint", False):
+        raise ValueError("rollback with a live task requires an explicitly approved --at-checkpoint")
     if map_external_schedule_exists(work_map(worker, required=False)):
         raise ValueError("remove and visibly verify the external radar schedule before rollback")
     require_no_autonomy_effect(worker, "managed-core rollback")
@@ -16751,7 +16753,9 @@ def rollback(args):
             continue
         path = worker / root
         if path.exists() or path.is_symlink():
-            label = "private H-54 personal context" if root == PERSONAL_ROOT else root.as_posix()
+            label = {PERSONAL_ROOT: "private H-54 personal context",
+                     EXCHANGE_LOCAL_ROOT: "H-55 worker-exchange state",
+                     UPDATE_SCHEDULE_ROOT: "native update-schedule state"}.get(root, root.as_posix())
             blockers.append(label)
     if version_tuple(current) >= (2, 4, 0) and version_tuple(args.version) < (2, 4, 0):
         autonomy_root = worker / AUTONOMY_ROOT
@@ -19320,6 +19324,7 @@ def parser():
     rollback_p.add_argument("worker")
     rollback_p.add_argument("--version", required=True)
     rollback_p.add_argument("--source")
+    rollback_p.add_argument("--at-checkpoint", action="store_true")
     rollback_p.set_defaults(handler=rollback)
 
     recover_lifecycle_p = sub.add_parser("recover-lifecycle")

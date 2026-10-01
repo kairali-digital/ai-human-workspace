@@ -2472,6 +2472,23 @@ class LifecycleTests(unittest.TestCase):
                 )
                 self.assertIn("governor state: HALT", halted.stdout)
                 self.assertIn("latest recorded outcome requires owner recovery", halted.stdout)
+                self.run_cli("session-release", worker, "--session-id", "governor-session",
+                             "--expected-state-hash", AI_HUMAN.controlled_state_hash(worker))
+                before = {p.relative_to(worker).as_posix(): sha256(p) for p in worker.rglob("*") if p.is_file()}
+                denied = self.run_cli("prepare-downgrade", worker, "--target-version", "2.4.0", expect=1)
+                self.assertIn("owner recovery", denied.stderr)
+                self.assertEqual(before, {p.relative_to(worker).as_posix(): sha256(p) for p in worker.rglob("*") if p.is_file()})
+                state_hash = self.acquire_session(worker)
+                recovery_policy = self.write_json_fixture("recovered-" + status + ".json",
+                    self.governor_policy(policy_version=2, approval_reference="Synthetic owner recovery decision"))
+                self.run_cli("governor-configure", worker, "--session-id", "governor-session",
+                             "--expected-state-hash", state_hash, "--policy", recovery_policy)
+                self.run_cli("session-release", worker, "--session-id", "governor-session",
+                             "--expected-state-hash", AI_HUMAN.controlled_state_hash(worker))
+                recovered = AI_HUMAN.tree_sha256(worker / AI_HUMAN.GOVERNOR_ROOT)
+                self.run_cli("prepare-downgrade", worker, "--target-version", "2.4.0")
+                self.run_cli("restore-downgrade", worker)
+                self.assertEqual(recovered, AI_HUMAN.tree_sha256(worker / AI_HUMAN.GOVERNOR_ROOT))
 
     def test_governor_worker_policy_cap_cannot_be_raised_by_runtime_planning(self):
         worker = self.base / "governor-worker-cap"
@@ -5351,6 +5368,7 @@ class LifecycleTests(unittest.TestCase):
         )
         rolled_back = self.run_cli(
             "rollback", worker, "--version", CURRENT_VERSION, "--source", self.release,
+            "--at-checkpoint",
         )
         self.assertIn("AI-HUMAN ROLLBACK: PASS", rolled_back.stdout)
         self.assertEqual(
@@ -9665,7 +9683,7 @@ class LifecycleTests(unittest.TestCase):
             "--freshness-days", "30", "--retention-days", "365",
         )
         compatible_before = AI_HUMAN.tree_sha256(worker / AI_HUMAN.IMPROVEMENT_ROOT)
-        improvement_row = next(line for line in (worker / "AUTOMATIONS.md").read_text().splitlines()
+        improvement_row = next(line for line in (worker / "AUTOMATIONS.md").read_text(encoding="utf-8").splitlines()
                                if line.startswith("| USER-QUARTERLY-IMPROVEMENT-001 |"))
         self.run_cli("session-release", worker, "--session-id", "memory-session",
                      "--expected-state-hash", AI_HUMAN.controlled_state_hash(worker))
@@ -9685,7 +9703,7 @@ class LifecycleTests(unittest.TestCase):
         self.assertNotIn(str(AI_HUMAN.AUTONOMY_ROOT), roots)
         self.assertFalse((worker / AI_HUMAN.MEMORY_ROOT).exists())
         self.assertEqual(compatible_before, AI_HUMAN.tree_sha256(worker / AI_HUMAN.IMPROVEMENT_ROOT))
-        self.assertIn(improvement_row, (worker / "AUTOMATIONS.md").read_text().splitlines())
+        self.assertIn(improvement_row, (worker / "AUTOMATIONS.md").read_text(encoding="utf-8").splitlines())
         self.run_cli("rollback", worker, "--version", "2.4.0", "--source", old)
         before = {p.relative_to(worker).as_posix(): sha256(p) for p in worker.rglob("*") if p.is_file()}
         denied = self.run_cli("restore-downgrade", worker, expect=1)
@@ -9712,6 +9730,17 @@ class LifecycleTests(unittest.TestCase):
                 result = self.run_cli("rollback", worker, "--version", CURRENT_VERSION, "--source", self.release, expect=1)
                 self.assertIn("checkpoint", result.stderr)
                 self.assertEqual(before, {p.relative_to(worker).as_posix(): sha256(p) for p in worker.rglob("*") if p.is_file()})
+                if active == "writer":
+                    denied = self.run_cli("rollback", worker, "--version", CURRENT_VERSION,
+                                          "--source", self.release, "--at-checkpoint", expect=1)
+                    self.assertIn("active writer", denied.stderr)
+                    self.assertEqual(before, {p.relative_to(worker).as_posix(): sha256(p) for p in worker.rglob("*") if p.is_file()})
+                else:
+                    state_before = state_hashes(worker)
+                    self.run_cli("rollback", worker, "--version", CURRENT_VERSION,
+                                 "--source", self.release, "--at-checkpoint")
+                    self.assertEqual(state_before, state_hashes(worker))
+                    self.assertEqual(AI_HUMAN.live_task_id(worker), "ROLLBACK-GUARD-001")
 
     def test_downgrade_inventory_includes_every_new_private_control_root(self):
         self.assertEqual(set(AI_HUMAN.downgrade_private_roots()), {
@@ -9927,7 +9956,7 @@ class LifecycleTests(unittest.TestCase):
             "rollback", recipient["path"], "--version", "2.3.0",
             "--source", old_release, expect=1,
         )
-        self.assertIn("H-55 worker-exchange state", blocked.stderr)
+        self.assertIn("checkpoint", blocked.stderr)
         self.run_cli(
             "exchange-directory-status", "downgrade-recipient", "PAUSED",
             "--exchange", exchange, "--owner", "Mission Owner",
@@ -9962,6 +9991,9 @@ class LifecycleTests(unittest.TestCase):
             "session-release", recipient["path"], "--session-id", recipient["session"],
             "--expected-state-hash", recipient["state"],
         )
+        blocked = self.run_cli("rollback", recipient["path"], "--version", "2.3.0",
+                               "--source", old_release, "--at-checkpoint", expect=1)
+        self.assertIn("H-55 worker-exchange state", blocked.stderr)
         local_before = {
             path.relative_to(recipient["path"] / ".ai-human/exchange").as_posix(): sha256(path)
             for path in (recipient["path"] / ".ai-human/exchange").rglob("*") if path.is_file()

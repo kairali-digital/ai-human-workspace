@@ -68,7 +68,7 @@ setting is restored and the validator reports `PASS`.
 
 Manual:
 
-`RELEASE → ANNOUNCE → READ-ONLY CHECK → EMPLOYEE APPROVAL → NO LIVE TASK OR WRITER → BACKUP → APPLY MANIFEST → VALIDATE → RECEIPT → MONITOR PROOF`
+`RELEASE → ANNOUNCE → READ-ONLY CHECK → EMPLOYEE APPROVAL → DECLARED SAFE CHECKPOINT + NO ACTIVE WRITER → BACKUP → APPLY MANIFEST → VALIDATE → RECEIPT → MONITOR PROOF`
 
 Optional native automatic updates (off until separately configured):
 
@@ -152,7 +152,10 @@ the governed export required by rollback. It requires an idle task/writer checkp
 resolved governor/context/handoff work, and verified removal of schedules and routes
 belonging to the exported features. Only incompatible roots move to a hash-inventoried
 `.ai-human/downgrade-exports/` archive; compatible v2.4 improvement/autonomy state stays
-in place when targeting v2.4. Direct rollback also refuses live tasks or writers.
+in place when targeting v2.4. Direct rollback always refuses an active writer. Like a
+manual update, rollback with a live task requires the owner's explicit safe-checkpoint
+approval (`--at-checkpoint`); it preserves the task and its state. This does not relax
+unattended idle-only updates or the fully idle requirement for private-state export.
 
 `restore-downgrade` requires an installed runtime supporting every archived root:
 v2.5 for the new memory, Chief, exchange, map, governor, continuity, resource and

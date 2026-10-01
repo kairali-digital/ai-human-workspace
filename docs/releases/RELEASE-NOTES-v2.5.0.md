@@ -13,7 +13,8 @@ unavailable and Gate0 stays fail-closed.
 Versioned downgrade export preserves private state understood only by newer runtimes.
 New v2.5 roots must be exported before rollback to v2.4; restoration requires v2.5.
 Legacy archives retain their original bytes. Compatible improvement/autonomy state
-stays in place for v2.4. Rollback refuses live tasks/writers; export also refuses
+stays in place for v2.4. Rollback refuses writers and requires explicit checkpoint
+approval for a live task; export also refuses
 unresolved governor/context/handoff work. See the lifecycle recovery notes.
 
 The proposed stable update floor is configured v2.0.0, excluding held v2.0.1.

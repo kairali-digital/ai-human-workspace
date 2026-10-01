@@ -553,7 +553,7 @@ class LifecycleTests(unittest.TestCase):
         with mock.patch.object(AI_HUMAN, "refresh_lease_state", side_effect=RuntimeError("simulated loss after replace")):
             with self.assertRaises(RuntimeError):
                 AI_HUMAN.map_commit(worker, lease, data)
-        journal = (worker / AI_HUMAN.WORK_MAP_TX_PATH).read_text()
+        journal = (worker / AI_HUMAN.WORK_MAP_TX_PATH).read_text(encoding="utf-8")
         self.assertNotIn("Unique private", journal)
         self.map_command(worker, "work-map-control", extra=("REVOKE",), expect=1)
         self.map_command(worker, "work-map-recover")
@@ -576,7 +576,7 @@ class LifecycleTests(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 AI_HUMAN.map_commit(worker, lease, data)
         cursor = worker / "MASTER_CURSOR.md"
-        cursor.write_text(cursor.read_text() + "\nUnexpected edit\n", encoding="utf-8")
+        cursor.write_text(cursor.read_text(encoding="utf-8") + "\nUnexpected edit\n", encoding="utf-8")
         self.map_command(worker, "work-map-recover", expect=1)
         self.assertTrue((worker / AI_HUMAN.WORK_MAP_TX_PATH).is_file())
         other = self.base / "legacy-worker"
@@ -821,7 +821,7 @@ class LifecycleTests(unittest.TestCase):
         self.run_cli("prepare-downgrade", worker, "--target-version", "2.3.0", expect=1)
         self.assertEqual(original, (worker / AI_HUMAN.WORK_MAP_PATH).read_bytes())
         self.assertTrue(link.is_symlink())
-        self.assertEqual(outside.read_text(), "Unrelated private source")
+        self.assertEqual(outside.read_text(encoding="utf-8"), "Unrelated private source")
         self.assertFalse(AI_HUMAN.downgrade_preparation_receipt(worker).exists())
 
     def downgrade_crash_worker(self):
@@ -953,7 +953,7 @@ class LifecycleTests(unittest.TestCase):
         extra = archive / "not-an-atomic-temp.txt"
         extra.write_text("Keep this file", encoding="utf-8")
         self.run_cli("recover-downgrade", worker, "--mode", "RESUME", expect=1)
-        self.assertEqual(extra.read_text(), "Keep this file")
+        self.assertEqual(extra.read_text(encoding="utf-8"), "Keep this file")
         extra.unlink()
         self.run_cli("recover-downgrade", worker, "--mode", "RESUME")
         self.assertFalse(windows_temp.exists())

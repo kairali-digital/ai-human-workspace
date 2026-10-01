@@ -1,0 +1,35 @@
+name: Windows candidate checks (not a release)
+
+on:
+  push:
+    branches: [agent/windows-actions-v250]
+    paths:
+      - .github/workflows/windows-candidate.yml
+      - .github/ci/windows_candidate.py
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-candidate-v250
+  cancel-in-progress: false
+
+jobs:
+  windows:
+    name: Windows Server 2025 automated lifecycle
+    runs-on: windows-2025
+    timeout-minutes: 35
+    env:
+      PYTHONUTF8: "1"
+      PYTHONUNBUFFERED: "1"
+      PIP_DISABLE_PIP_VERSION_CHECK: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.11"
+      - name: Test exact candidate with synthetic data only
+        run: python .github/ci/windows_candidate.py

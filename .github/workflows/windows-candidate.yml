@@ -16,9 +16,14 @@ concurrency:
 
 jobs:
   windows:
-    name: Windows Server 2025 automated lifecycle
+    name: Windows automated shard ${{ matrix.shard }}
     runs-on: windows-2025
     timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        shard: [0, 1, 2, 3]
     env:
       PYTHONUTF8: "1"
       PYTHONUNBUFFERED: "1"
@@ -32,4 +37,4 @@ jobs:
         with:
           python-version: "3.11"
       - name: Test exact candidate with synthetic data only
-        run: python .github/ci/windows_candidate.py
+        run: python .github/ci/windows_candidate.py --shard ${{ matrix.shard }}

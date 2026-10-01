@@ -6,6 +6,7 @@ import csv
 import datetime
 import hashlib
 import importlib.util
+import io
 import json
 import os
 import re
@@ -10479,6 +10480,64 @@ class LifecycleTests(unittest.TestCase):
             (invalid_worker / AI_HUMAN.UPDATE_SCHEDULE_TRANSACTION_PATH).exists()
         )
 
+    def test_native_release_discovery_requires_explicit_platform_immutability(self):
+        for immutable in (False, None, "true", 1, {}):
+            with self.subTest(immutable=immutable):
+                data = {
+                    "author": {"login": AI_HUMAN.DEFAULT_RELEASE_PUBLISHER},
+                    "draft": False, "prerelease": False, "tag_name": "v2.4.0",
+                    "immutable": immutable,
+                    "zipball_url": "https://untrusted.invalid/tag-archive",
+                }
+                response = mock.MagicMock()
+                response.__enter__.return_value = io.BytesIO(json.dumps(data).encode("utf-8"))
+                with mock.patch.object(AI_HUMAN.urllib.request, "urlopen", return_value=response) as fetch:
+                    with self.assertRaisesRegex(ValueError, "immutable"):
+                        AI_HUMAN.github_release(AI_HUMAN.DEFAULT_REPOSITORY, require_immutable=True)
+                self.assertEqual(fetch.call_count, 1)
+
+    def test_release_discovery_binds_archive_to_full_verified_commit(self):
+        commit_sha = "a" * 40
+        for immutable in (True, False):
+            with self.subTest(immutable=immutable):
+                release_data = {
+                    "author": {"login": AI_HUMAN.DEFAULT_RELEASE_PUBLISHER},
+                    "draft": False, "prerelease": False, "tag_name": "v2.4.0",
+                    "immutable": immutable,
+                    "zipball_url": "https://untrusted.invalid/tag-archive",
+                }
+                commit_data = {
+                    "author": {"login": AI_HUMAN.DEFAULT_RELEASE_PUBLISHER},
+                    "commit": {"verification": {"verified": True, "reason": "valid"}},
+                    "sha": commit_sha,
+                }
+                responses = []
+                for data in (release_data, commit_data):
+                    response = mock.MagicMock()
+                    response.__enter__.return_value = io.BytesIO(json.dumps(data).encode("utf-8"))
+                    responses.append(response)
+                with mock.patch.object(AI_HUMAN.urllib.request, "urlopen", side_effect=responses) as fetch:
+                    result = AI_HUMAN.github_release(
+                        AI_HUMAN.DEFAULT_REPOSITORY, "2.4.0", require_immutable=immutable
+                    )
+                self.assertEqual(result, (
+                    "2.4.0",
+                    "https://api.github.com/repos/" + AI_HUMAN.DEFAULT_REPOSITORY + "/zipball/" + commit_sha,
+                    commit_sha,
+                ))
+                self.assertEqual(fetch.call_count, 2)
+                self.assertTrue(fetch.call_args_list[0].args[0].full_url.endswith("/releases/tags/v2.4.0"))
+
+    def test_release_download_propagates_immutable_requirement_before_archive_access(self):
+        with (
+            mock.patch.object(AI_HUMAN, "github_release", side_effect=ValueError("not immutable")) as discovery,
+            mock.patch.object(AI_HUMAN.urllib.request, "urlopen") as fetch,
+        ):
+            with self.assertRaisesRegex(ValueError, "immutable"):
+                AI_HUMAN.download_release(AI_HUMAN.DEFAULT_REPOSITORY, require_immutable=True)
+        discovery.assert_called_once_with(AI_HUMAN.DEFAULT_REPOSITORY, None, require_immutable=True)
+        fetch.assert_not_called()
+
     def test_native_tick_has_no_network_before_due_dedupes_and_requires_exact_pilot(self):
         worker = self.base / "native-tick-worker"
         self.install(worker)
@@ -10521,6 +10580,7 @@ class LifecycleTests(unittest.TestCase):
         self.assertEqual(deferred["status"], "DEFERRED")
         self.assertEqual(deferred["reason"], "PILOT_APPROVAL_REQUIRED")
         self.assertEqual(download.call_count, 1)
+        download.assert_called_once_with(AI_HUMAN.DEFAULT_REPOSITORY, require_immutable=True)
 
         pilot_results = [
             {

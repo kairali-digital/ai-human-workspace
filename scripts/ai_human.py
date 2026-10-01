@@ -15654,7 +15654,7 @@ def release_publisher(repository):
     )
 
 
-def github_release(repository, requested_version=None):
+def github_release(repository, requested_version=None, *, require_immutable=False):
     if not isinstance(repository, str) or not GITHUB_REPOSITORY.fullmatch(repository):
         raise ValueError("release repository must be an exact GitHub owner/name")
     expected_owner = release_publisher(repository)
@@ -15677,6 +15677,8 @@ def github_release(repository, requested_version=None):
         raise ValueError("tagged release version differs from the requested version")
     if (data.get("author") or {}).get("login") != expected_owner:
         raise ValueError("latest release was not published by the pinned release owner")
+    if require_immutable and data.get("immutable") is not True:
+        raise ValueError("unattended updates require a platform-verified immutable release")
     commit_request = urllib.request.Request(
         "https://api.github.com/repos/" + repository + "/commits/" + urllib.parse.quote(tag),
         headers={"Accept": "application/vnd.github+json", "User-Agent": "ai-human-workspace"},
@@ -15694,15 +15696,20 @@ def github_release(repository, requested_version=None):
         raise ValueError(
             "latest release tag lacks a valid GitHub signature by the pinned release owner"
         )
-    return version, data["zipball_url"], commit_sha
+    # Resolve the tag once, then download that exact verified commit. Never trust
+    # a mutable tag archive URL (or an arbitrary URL supplied in release metadata).
+    archive_url = "https://api.github.com/repos/" + repository + "/zipball/" + commit_sha
+    return version, archive_url, commit_sha
 
 
 def latest_release(repository):
     return github_release(repository)
 
 
-def download_release(repository, requested_version=None):
-    version, url, commit_sha = github_release(repository, requested_version)
+def download_release(repository, requested_version=None, *, require_immutable=False):
+    version, url, commit_sha = github_release(
+        repository, requested_version, require_immutable=require_immutable
+    )
     temp = tempfile.TemporaryDirectory(prefix="ai-human-release-")
     root = Path(temp.name)
     archive = root / "release.zip"
@@ -17898,7 +17905,7 @@ def update_schedule_tick_internal(worker, schedule_id, expected_config_hash, for
         )
     temporary = None
     try:
-        temporary, release, manifest = download_release(metadata["repository"])
+        temporary, release, manifest = download_release(metadata["repository"], require_immutable=True)
         latest = manifest["version"]
         if (
             version_tuple(latest) > version_tuple(installed)

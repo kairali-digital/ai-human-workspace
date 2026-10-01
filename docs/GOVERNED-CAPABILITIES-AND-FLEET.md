@@ -75,9 +75,16 @@ supervisor must match the worker configuration and every declared proof test mus
 before worker activation or company-reuse approval. Company-reuse approval still does
 not publish or distribute the capability; that needs a separately approved release.
 
-## Monthly update control plane
+## Legacy monthly update control plane and native migration
 
-Each configured worker is due for one read-only check on the first calendar day at
+This section describes the retained legacy external-scheduler path, not the new-install
+default. Optional native schedules are off by default and require the owner's explicit
+weekly/monthly rule; see `core/UPDATE-SCHEDULER.md`. Once a native schedule exists,
+even paused or removed, the legacy automatic/fleet entry points refuse for that worker
+before downloading a release. Verify removal of an old external schedule before native
+configuration; never create duplicate update runners.
+
+Each legacy configured worker is due for one read-only check on the first calendar day at
 10:00 AM in its confirmed IANA time zone. The approved scheduler adapter supplies that
 worker-local offset-aware timestamp; the lifecycle command does not infer it from its
 host machine. The report contains only worker ID, installed version, latest version,

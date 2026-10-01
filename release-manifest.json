@@ -68,7 +68,7 @@
       "target": ".ai-human/system/WORKER-EXCHANGE.md"
     },
     {
-      "sha256": "d66c29404594a580cce8933b669ab3c32e4bf30cfa4b7a38f7b1fa4a596e36f4",
+      "sha256": "c29215ee80944ca233498e684fbf4dbe52a1e08c799b6b997d839d1944eef80b",
       "source": "core/UPDATE-SCHEDULER.md",
       "target": ".ai-human/system/UPDATE-SCHEDULER.md"
     },

@@ -21,13 +21,23 @@ are normalized; extra triggers, actions, settings or attributes invalidate proof
 `update-schedule-show --verify-native` rereads the current host task and fails on drift.
 The displayed next due time is computed from the internal rule after definition
 readback; it is not presented as a native next-run query. Rendering on another
-operating system is simulation, not proof that a task was registered. The current
-macOS adapter is also render-and-test only: because exact loaded command and calendar
-semantics cannot yet be read back through a stable interface, real LaunchAgent
-registration fails closed instead of claiming verification. The renderer still
-creates the private log directory before bootstrap, and pause removes the login-time
-LaunchAgent copy so it remains paused after reboot; resume recreates it from the
-private hash-verified definition.
+operating system is simulation, not proof that a task was registered. The macOS loaded
+definition parser is restricted to tested macOS 27.0.1 build 26A434 because launchctl's
+diagnostic format is not a stable API; other builds fail closed for activation. Exact
+loaded command and calendar semantics must match even when the on-disk hash matches.
+The renderer creates the private log directory before bootstrap, and pause removes
+the login-time LaunchAgent copy so it remains paused after reboot; resume recreates it
+from the private hash-verified definition. A Mac OS-build change or a Mac/Windows
+time-zone change permits only exact-target safety cleanup, not activation. Cleanup
+must prove the owned definition, native identity and absence; recovery must not
+reinstall a schedule in an unconfirmed environment. Windows cleanup additionally
+checks the loaded task's current-user SID. A failed readback is not proof of absence.
+
+The chosen interpreter runs in isolated mode, ignoring inherited Python environment
+and user-site paths. Configuration and resume first verify the installed runner hash,
+load that actual runner and resolve the confirmed IANA zone with that interpreter.
+Missing time-zone data, including a dependency visible only in user-site packages,
+blocks activation instead of silently weakening isolation.
 
 Every tick first validates the schedule identity, config hash, native proof and due
 occurrence. A not-due or already-closed occurrence is quiet and performs no release
@@ -39,7 +49,10 @@ config hash and exact valid occurrence; malformed version-2 reports fail closed.
 
 The existing release updater remains the only apply path: it accepts only the pinned
 repository, owner-approved released manifests, exact hashes and backward-compatible
-updates, then checkpoints, backs up, validates and rolls back on failure. General-lane
+updates, then checkpoints, backs up, validates and rolls back on failure. Native
+unattended discovery also requires the platform's explicit immutable-release flag;
+an immutable commit alone is insufficient. Archives are fetched at the verified full
+commit, not a mutable metadata download pointer. General-lane
 automatic application additionally requires a verified artifact binding the exact
 release to a passing Daily Email Triage fleet pilot. The pilot lane itself remains
 `daily-email-triage`.

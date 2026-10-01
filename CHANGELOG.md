@@ -2,6 +2,29 @@
 
 All notable changes are recorded here in plain language.
 
+## [Unreleased] — local candidate; not approved for installation or rollout
+
+- Add an adaptive work governor that can lower the effective action batch while
+  retaining the hard maximum of 25; stored files and datasets are not action counts.
+- Add context checkpoints, identity-bound file/session handoffs and read-first resource
+  evidence. Missing signals stay unknown; no app is force-quit or tab silently closed.
+- Add an optional addressed Worker Exchange, with explicit acceptance, replay/tamper
+  rejection, bounded routing and separate worker-owned state.
+- Add a consented local work map and evidence-bound opportunity proposals. Discovery
+  and suggestions do not activate a skill, project, schedule or external effect.
+- Add an off-by-default, read-only Chief of Staff and layered, source-backed memory,
+  including correction, expiry, conflict and forgetting controls. Shared snapshots do
+  not confer access to private project data or authority over another worker.
+- Add optional owner-chosen weekly/monthly native update schedules, verified idle-only
+  updates, immutable release checks, isolated execution and safe pause/remove/recovery.
+  Mac registration is restricted to the tested OS build; real Windows proof is pending.
+- Add canonical receipt tree proofs without rewriting historical receipts, and preserve
+  the new private state through governed downgrade export and recovery.
+
+All new capabilities remain off by default. Automatic release eligibility is still off.
+Final same-byte audits, independent recovery copies, platform checks and exact-candidate
+owner approval are required before this candidate becomes a release.
+
 ## [2.4.0] - 2026-09-03
 
 - Upgrade the personal improvement loop from quarterly-only to an owner-selected

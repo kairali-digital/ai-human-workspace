@@ -553,7 +553,7 @@ class LifecycleTests(unittest.TestCase):
         with mock.patch.object(AI_HUMAN, "refresh_lease_state", side_effect=RuntimeError("simulated loss after replace")):
             with self.assertRaises(RuntimeError):
                 AI_HUMAN.map_commit(worker, lease, data)
-        journal = (worker / AI_HUMAN.WORK_MAP_TX_PATH).read_text()
+        journal = (worker / AI_HUMAN.WORK_MAP_TX_PATH).read_text(encoding="utf-8")
         self.assertNotIn("Unique private", journal)
         self.map_command(worker, "work-map-control", extra=("REVOKE",), expect=1)
         self.map_command(worker, "work-map-recover")
@@ -576,7 +576,7 @@ class LifecycleTests(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 AI_HUMAN.map_commit(worker, lease, data)
         cursor = worker / "MASTER_CURSOR.md"
-        cursor.write_text(cursor.read_text() + "\nUnexpected edit\n", encoding="utf-8")
+        cursor.write_text(cursor.read_text(encoding="utf-8") + "\nUnexpected edit\n", encoding="utf-8")
         self.map_command(worker, "work-map-recover", expect=1)
         self.assertTrue((worker / AI_HUMAN.WORK_MAP_TX_PATH).is_file())
         other = self.base / "legacy-worker"
@@ -821,7 +821,7 @@ class LifecycleTests(unittest.TestCase):
         self.run_cli("prepare-downgrade", worker, "--target-version", "2.3.0", expect=1)
         self.assertEqual(original, (worker / AI_HUMAN.WORK_MAP_PATH).read_bytes())
         self.assertTrue(link.is_symlink())
-        self.assertEqual(outside.read_text(), "Unrelated private source")
+        self.assertEqual(outside.read_text(encoding="utf-8"), "Unrelated private source")
         self.assertFalse(AI_HUMAN.downgrade_preparation_receipt(worker).exists())
 
     def downgrade_crash_worker(self):
@@ -953,7 +953,7 @@ class LifecycleTests(unittest.TestCase):
         extra = archive / "not-an-atomic-temp.txt"
         extra.write_text("Keep this file", encoding="utf-8")
         self.run_cli("recover-downgrade", worker, "--mode", "RESUME", expect=1)
-        self.assertEqual(extra.read_text(), "Keep this file")
+        self.assertEqual(extra.read_text(encoding="utf-8"), "Keep this file")
         extra.unlink()
         self.run_cli("recover-downgrade", worker, "--mode", "RESUME")
         self.assertFalse(windows_temp.exists())
@@ -8423,7 +8423,7 @@ class LifecycleTests(unittest.TestCase):
 
     def chief_upsert(self, chief, snapshot, source=None, expect=0):
         if source is None:
-            source_id = json.loads(snapshot.read_text())["item"]["source_worker_id"]
+            source_id = json.loads(snapshot.read_text(encoding="utf-8"))["item"]["source_worker_id"]
             source = next(
                 path for path in self.base.iterdir()
                 if path.is_dir() and (path / ".ai-human/install.json").is_file()
@@ -8434,6 +8434,400 @@ class LifecycleTests(unittest.TestCase):
             "--expected-state-hash", AI_HUMAN.controlled_state_hash(chief),
             "--snapshot", snapshot, "--source-worker", source, expect=expect,
         )
+
+    def chief_exchange_fixture(self, *, cross_boundary=False, snapshot_changes=None):
+        exchange, workers = self.setup_exchange_workers([
+            ("portfolio-source", "INTERNAL"), ("chief", "CHIEF"),
+        ])
+        chief = workers["chief"]["path"]
+        source = workers["portfolio-source"]["path"]
+        if cross_boundary:
+            # Use a genuinely installed different company worker, not forged directory facts.
+            source = self.base / "cross-source"
+            identity = {
+                "company": "Different Holdings", "legal_entity": "Different Entity",
+                "operating_units": ["Different Unit"],
+            }
+            self.install(source, worker_id="cross-source", **identity)
+            self.run_cli("task-start", source, "--title", "Prepare a bounded status summary")
+            self.acquire_session(source, "cross-source-session")
+            entry = self.exchange_entry(
+                source, "cross-source", company=identity["company"],
+                legal_entity=identity["legal_entity"], operating_unit="Different Unit",
+            )
+            self.run_cli(
+                "exchange-join", source, "--exchange", exchange,
+                "--session-id", "cross-source-session",
+                "--expected-state-hash", AI_HUMAN.controlled_state_hash(source),
+                "--entry", self.write_json_fixture("cross-source-entry.json", entry),
+            )
+        config = self.write_json_fixture("exchange-chief-config.json", {
+            "approval_reference": "Owner designated the separate read-only Chief",
+            "max_workers": 3, "owner": "Mission Owner", "retention_days": 30,
+            "schema": "ai-human.chief-config-request/v1",
+        })
+        self.run_cli(
+            "chief-configure", chief, "ENABLE", "--session-id", "chief-session",
+            "--expected-state-hash", AI_HUMAN.controlled_state_hash(chief), "--request", config,
+        )
+        policy = self.exchange_policy(
+            "portfolio-to-chief", AI_HUMAN.installed_worker_id(source), "chief",
+            access="CHIEF", modes=["CHIEF_MEDIATED", "DIRECT"],
+            cross_boundary_authorization_reference=("Exact owner-approved cross-entity status route" if cross_boundary else "NONE"),
+        )
+        self.run_cli(
+            "exchange-policy-add", "--exchange", exchange, "--owner", "Mission Owner",
+            "--policy", self.write_json_fixture("portfolio-route.json", policy),
+        )
+        snapshot = self.export_portfolio_snapshot(source, chief, **(snapshot_changes or {}))
+        digest = AI_HUMAN.read_json(snapshot)["snapshot_sha256"]
+        self.run_cli(
+            "portfolio-export-artifact", source, "--snapshot-sha256", digest,
+            "--output", "artifacts/portfolio.json", "--session-id", AI_HUMAN.read_lease(source)["session_id"],
+            "--expected-state-hash", AI_HUMAN.controlled_state_hash(source),
+        )
+        return exchange, source, chief, source / "artifacts/portfolio.json"
+
+    def send_chief_portfolio(self, exchange, source, chief, artifact, message_id="portfolio-status", *, state="ACCEPTED", **overrides):
+        attachments = overrides.pop("attachments", [{
+            "path": artifact.relative_to(source).as_posix(), "media_type": "application/json",
+            "sha256": sha256(artifact),
+        }])
+        request = self.exchange_request(
+            message_id, [AI_HUMAN.installed_worker_id(chief)],
+            conversation_id="conversation-" + message_id, route="CHIEF_MEDIATED",
+            message_type="STATUS", confidentiality="CHIEF", attachments=attachments,
+        )
+        request.update(overrides)
+        self.run_cli(
+            "exchange-send", source, "--exchange", exchange,
+            "--session-id", AI_HUMAN.read_lease(source)["session_id"],
+            "--expected-state-hash", AI_HUMAN.controlled_state_hash(source),
+            "--request", self.write_json_fixture(message_id + "-request.json", request),
+        )
+        if state in {"ACKNOWLEDGED", "ACCEPTED", "REJECTED"}:
+            self.run_cli(
+                "exchange-ack", chief, message_id, "--exchange", exchange,
+                "--session-id", "chief-session",
+                "--expected-state-hash", AI_HUMAN.controlled_state_hash(chief),
+            )
+        if state in {"ACCEPTED", "REJECTED"}:
+            self.run_cli(
+                "exchange-decide", chief, message_id, "ACCEPT" if state == "ACCEPTED" else "REJECT",
+                "--exchange", exchange, "--session-id", "chief-session",
+                "--expected-state-hash", AI_HUMAN.controlled_state_hash(chief),
+                "--reason", "Owner reviewed the addressed status summary",
+            )
+
+    def import_chief_portfolio(self, exchange, source, chief, message_id="portfolio-status", expect=0):
+        return self.run_cli(
+            "chief-portfolio-import-exchange", chief, "--exchange", exchange,
+            "--source-worker", source, "--message-id", message_id,
+            "--session-id", "chief-session", "--expected-state-hash", AI_HUMAN.controlled_state_hash(chief),
+            expect=expect,
+        )
+
+    def test_h53_exchange_import_requires_explicit_ack_accept_and_is_quiet_on_retry(self):
+        exchange, source, chief, artifact = self.chief_exchange_fixture()
+        self.send_chief_portfolio(exchange, source, chief, artifact, state="DELIVERED")
+        before_source = AI_HUMAN.controlled_state_hash(source)
+        before_chief = AI_HUMAN.controlled_state_hash(chief)
+        self.assertIn("received proof is missing", self.import_chief_portfolio(exchange, source, chief, expect=1).stderr)
+        self.assertEqual(AI_HUMAN.exchange_current_state(exchange, "portfolio-status", "chief"), "DELIVERED")
+        self.assertEqual(before_chief, AI_HUMAN.controlled_state_hash(chief))
+        self.run_cli(
+            "exchange-ack", chief, "portfolio-status", "--exchange", exchange,
+            "--session-id", "chief-session", "--expected-state-hash", before_chief,
+        )
+        self.assertIn("accepted proof is missing", self.import_chief_portfolio(exchange, source, chief, expect=1).stderr)
+        self.run_cli(
+            "exchange-decide", chief, "portfolio-status", "ACCEPT", "--exchange", exchange,
+            "--session-id", "chief-session", "--expected-state-hash", AI_HUMAN.controlled_state_hash(chief),
+            "--reason", "Owner accepts this metadata",
+        )
+        before_relay = AI_HUMAN.tree_sha256(exchange)
+        self.import_chief_portfolio(exchange, source, chief)
+        imported = AI_HUMAN.chief_state(chief)
+        self.assertEqual(imported["portfolio"]["portfolio-source"], AI_HUMAN.read_json(artifact)["item"])
+        self.assertNotEqual(
+            AI_HUMAN.exchange_load_envelope(exchange, "portfolio-status")["sender_state_sha256"],
+            imported["portfolio"]["portfolio-source"]["source_state_sha256"],
+        )
+        before_retry = AI_HUMAN.controlled_state_hash(chief)
+        self.assertIn("NO_CHANGE", self.import_chief_portfolio(exchange, source, chief).stdout)
+        self.assertEqual(before_retry, AI_HUMAN.controlled_state_hash(chief))
+        self.assertEqual(before_source, AI_HUMAN.controlled_state_hash(source))
+        self.assertEqual(before_relay, AI_HUMAN.tree_sha256(exchange))
+        for worker in (source, chief):
+            self.run_cli("validate", worker)
+
+    def test_h53_exchange_rejects_wrong_route_type_bundle_and_forged_snapshot(self):
+        exchange, source, chief, artifact = self.chief_exchange_fixture()
+        variants = [
+            ("direct", {"route": "DIRECT"}, "CHIEF_MEDIATED STATUS"),
+            ("note", {"message_type": "NOTE"}, "CHIEF_MEDIATED STATUS"),
+            ("empty", {"attachments": []}, "exactly one application/json"),
+            ("text", {"attachments": [{"path": "artifacts/portfolio.json", "media_type": "text/plain", "sha256": sha256(artifact)}]}, "exactly one application/json"),
+        ]
+        second = source / "artifacts/second.json"
+        shutil.copyfile(artifact, second)
+        variants.append(("multiple", {"attachments": [
+            {"path": path.relative_to(source).as_posix(), "media_type": "application/json", "sha256": sha256(path)}
+            for path in (artifact, second)
+        ]}, "exactly one application/json"))
+        for message_id, changes, error in variants:
+            with self.subTest(message_id=message_id):
+                self.send_chief_portfolio(exchange, source, chief, artifact, message_id, **changes)
+                before = AI_HUMAN.controlled_state_hash(chief)
+                self.assertIn(error, self.import_chief_portfolio(exchange, source, chief, message_id, expect=1).stderr)
+                self.assertEqual(before, AI_HUMAN.controlled_state_hash(chief))
+        forged = AI_HUMAN.read_json(artifact)
+        forged["item"]["next_action"] = "A plausible but unapproved action"
+        forged["item"]["status_sha256"] = AI_HUMAN.canonical_json_sha256(AI_HUMAN.chief_status_material(forged["item"]))
+        forged["snapshot_sha256"] = AI_HUMAN.h53_record_sha256(forged, "snapshot_sha256")
+        AI_HUMAN.atomic_json(artifact, forged)
+        self.send_chief_portfolio(exchange, source, chief, artifact, "forged")
+        self.assertIn("governed source export", self.import_chief_portfolio(exchange, source, chief, "forged", expect=1).stderr)
+        forged["item"]["summary_pointer_sha256"] = "1" * 64
+        forged["item"]["summary_pointer_approval_reference"] = "Owner approved a local pointer only"
+        forged["item"]["status_sha256"] = AI_HUMAN.canonical_json_sha256(AI_HUMAN.chief_status_material(forged["item"]))
+        forged["snapshot_sha256"] = AI_HUMAN.h53_record_sha256(forged, "snapshot_sha256")
+        AI_HUMAN.atomic_json(artifact, forged)
+        self.send_chief_portfolio(exchange, source, chief, artifact, "pointer")
+        self.assertIn("H54 personal-context pointers", self.import_chief_portfolio(exchange, source, chief, "pointer", expect=1).stderr)
+
+    def test_h53_exchange_rechecks_receipts_relay_current_route_and_source(self):
+        exchange, source, chief, artifact = self.chief_exchange_fixture()
+        self.send_chief_portfolio(exchange, source, chief, artifact)
+        for directory in ("received", "accepted"):
+            receipt_path = chief / AI_HUMAN.EXCHANGE_LOCAL_ROOT / directory / "portfolio-status.json"
+            original = AI_HUMAN.read_json(receipt_path)
+            changed = {**original, "envelope_sha256": "0" * 64}
+            changed["record_sha256"] = AI_HUMAN.exchange_record_sha256(changed, "record_sha256")
+            AI_HUMAN.atomic_json(receipt_path, changed)
+            AI_HUMAN.refresh_lease_state(chief, AI_HUMAN.read_lease(chief))
+            self.assertIn("receipt differs", self.import_chief_portfolio(exchange, source, chief, expect=1).stderr)
+            AI_HUMAN.atomic_json(receipt_path, original)
+            AI_HUMAN.refresh_lease_state(chief, AI_HUMAN.read_lease(chief))
+        source_file = source / "TODAY.md"
+        original = source_file.read_text(encoding="utf-8")
+        source_file.write_text(original + "\nNew source status\n", encoding="utf-8")
+        AI_HUMAN.refresh_lease_state(source, AI_HUMAN.read_lease(source))
+        self.assertIn("source state changed", self.import_chief_portfolio(exchange, source, chief, expect=1).stderr)
+        source_file.write_text(original, encoding="utf-8")
+        AI_HUMAN.refresh_lease_state(source, AI_HUMAN.read_lease(source))
+        other_path = self.base / "same-status-outside-source.md"
+        other_path.write_text(original, encoding="utf-8")
+        source_file.unlink()
+        source_file.symlink_to(other_path)
+        self.assertIn("symbolic links", self.import_chief_portfolio(exchange, source, chief, expect=1).stderr)
+        source_file.unlink()
+        source_file.write_text(original, encoding="utf-8")
+        parameters = source / "PARAMETERS.md"
+        original_parameters = parameters.read_text(encoding="utf-8")
+        parameters.write_text(original_parameters.replace("Mission Owner", "Different Owner"), encoding="utf-8")
+        self.assertIn("human owner differs", self.import_chief_portfolio(exchange, source, chief, expect=1).stderr)
+        parameters.write_text(original_parameters, encoding="utf-8")
+        self.import_chief_portfolio(exchange, source, chief)
+        self.run_cli(
+            "exchange-policy-revoke", "--exchange", exchange, "--owner", "Mission Owner",
+            "portfolio-to-chief", "--approval-reference", "Owner withdrew this exact route",
+            "--reason", "Owner revoked future intake",
+        )
+        before = AI_HUMAN.controlled_state_hash(chief)
+        self.assertIn("active exact route", self.import_chief_portfolio(exchange, source, chief, expect=1).stderr)
+        self.assertEqual(before, AI_HUMAN.controlled_state_hash(chief))
+        self.assertIn("portfolio-source", AI_HUMAN.chief_state(chief)["portfolio"])
+
+    def test_h53_exchange_rejects_cancellation_expiry_tamper_and_wrong_source(self):
+        now = datetime.datetime.now(datetime.timezone.utc)
+        exchange, source, chief, artifact = self.chief_exchange_fixture(snapshot_changes={
+            "fresh_until_utc": (now + datetime.timedelta(minutes=2)).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        })
+        self.send_chief_portfolio(
+            exchange, source, chief, artifact,
+            expires_utc=(now + datetime.timedelta(minutes=5)).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        )
+        self.assertIn("separate worker", self.import_chief_portfolio(exchange, chief, chief, expect=1).stderr)
+        bundle = exchange / "messages/portfolio-status/attachments/000-portfolio.json"
+        original = bundle.read_bytes()
+        bundle.write_bytes(original + b" ")
+        self.assertIn("integrity mismatch", self.import_chief_portfolio(exchange, source, chief, expect=1).stderr)
+        bundle.write_bytes(original)
+        args = SimpleNamespace(
+            worker=chief, source_worker=source, exchange=exchange, message_id="portfolio-status",
+            session_id="chief-session", expected_state_hash=AI_HUMAN.controlled_state_hash(chief),
+        )
+        original_resolve = AI_HUMAN.path_without_symlinks
+        def change_after_transport_check(root, relative, label):
+            selected = original_resolve(root, relative, label)
+            if label == "portfolio exchange bundle":
+                selected.write_bytes(original + b" ")
+            return selected
+        with mock.patch.object(AI_HUMAN, "path_without_symlinks", side_effect=change_after_transport_check):
+            with self.assertRaisesRegex(ValueError, "integrity differs at intake"):
+                AI_HUMAN.chief_portfolio_import_exchange(args)
+        bundle.write_bytes(original)
+        expiry = AI_HUMAN.parse_recorded_utc(AI_HUMAN.exchange_load_envelope(exchange, "portfolio-status")["request"]["expires_utc"], "test expiry")
+        real_datetime = datetime.datetime
+        class ExpiredClock(real_datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return (expiry + datetime.timedelta(seconds=1)).astimezone(tz)
+        with mock.patch.object(AI_HUMAN.datetime, "datetime", ExpiredClock):
+            with self.assertRaisesRegex(ValueError, "envelope is expired"):
+                AI_HUMAN.chief_portfolio_import_exchange(args)
+        expiry = AI_HUMAN.parse_recorded_utc(AI_HUMAN.read_json(artifact)["item"]["fresh_until_utc"], "test freshness")
+        with mock.patch.object(AI_HUMAN.datetime, "datetime", ExpiredClock):
+            with self.assertRaisesRegex(ValueError, "snapshot is stale"):
+                AI_HUMAN.chief_portfolio_import_exchange(args)
+        with AI_HUMAN.worker_operation_mutex(exchange):
+            AI_HUMAN.exchange_append_event(exchange, "portfolio-status", "chief", "relay", "CANCELLED", "Synthetic relay cancellation")
+        self.assertIn("remain ACCEPTED", self.import_chief_portfolio(exchange, source, chief, expect=1).stderr)
+        self.assertEqual(AI_HUMAN.chief_state(chief)["portfolio"], {})
+
+    def test_h53_exchange_cross_boundary_requires_current_exact_authorization(self):
+        exchange, source, chief, artifact = self.chief_exchange_fixture(cross_boundary=True)
+        self.assertIn("exact current H55 route", self.chief_upsert(chief, artifact, source=source, expect=1).stderr)
+        self.send_chief_portfolio(exchange, source, chief, artifact)
+        self.assertIn("authenticated sender", self.import_chief_portfolio(exchange, self.base / "portfolio-source", chief, expect=1).stderr)
+        self.import_chief_portfolio(exchange, source, chief)
+        self.assertIn("cross-source", AI_HUMAN.chief_state(chief)["portfolio"])
+        self.run_cli("validate", chief)
+
+    def test_h53_exchange_revocation_before_checkpoint_blocks_initial_intake(self):
+        exchange, source, chief, artifact = self.chief_exchange_fixture()
+        self.send_chief_portfolio(exchange, source, chief, artifact)
+        self.run_cli(
+            "exchange-policy-revoke", "portfolio-to-chief", "--exchange", exchange,
+            "--owner", "Mission Owner", "--approval-reference", "Owner withdrew this route",
+            "--reason", "Revoked before the local authorization checkpoint",
+        )
+        before = AI_HUMAN.controlled_state_hash(chief)
+        self.assertIn("active exact route", self.import_chief_portfolio(exchange, source, chief, expect=1).stderr)
+        self.assertEqual(AI_HUMAN.controlled_state_hash(chief), before)
+        self.assertEqual(AI_HUMAN.chief_state(chief)["portfolio"], {})
+        self.assertFalse((chief / AI_HUMAN.H53_TX_PATH).exists())
+
+    def test_h53_export_artifact_is_no_clobber_bounded_and_rejects_private_pointers(self):
+        exchange, source, chief, artifact = self.chief_exchange_fixture()
+        snapshot = AI_HUMAN.read_json(artifact)
+        args = SimpleNamespace(
+            worker=source, snapshot_sha256=snapshot["snapshot_sha256"], output="artifacts/portfolio.json",
+            session_id=AI_HUMAN.read_lease(source)["session_id"], expected_state_hash=AI_HUMAN.controlled_state_hash(source),
+        )
+        AI_HUMAN.portfolio_export_artifact(args)
+        for path in ("../outside.json", ".ai-human/copy.json", "private/copy.json", "artifacts/con.json", "artifacts/alias./copy.json"):
+            args.output = path
+            with self.subTest(path=path), self.assertRaises(ValueError):
+                AI_HUMAN.portfolio_export_artifact(args)
+        args.output = "artifacts/portfolio.json"
+        artifact.write_text("existing user data", encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "different bytes"):
+            AI_HUMAN.portfolio_export_artifact(args)
+        self.assertEqual(artifact.read_text(encoding="utf-8"), "existing user data")
+        args.output = "artifacts/alias.json"
+        alias = source / args.output
+        alias.symlink_to(artifact)
+        with self.assertRaisesRegex(ValueError, "symbolic links"):
+            AI_HUMAN.portfolio_export_artifact(args)
+        args.output = "artifacts/not-published.json"
+        with mock.patch.object(AI_HUMAN.os, "link", side_effect=OSError("synthetic publish crash")):
+            with self.assertRaisesRegex(OSError, "publish crash"):
+                AI_HUMAN.portfolio_export_artifact(args)
+        self.assertFalse((source / args.output).exists())
+        self.assertEqual(list(artifact.parent.glob(".portfolio-export-*")), [])
+        original_link = AI_HUMAN.os.link
+        def occupy_before_link(stage, target):
+            Path(target).write_text("concurrent user artifact", encoding="utf-8")
+            original_link(stage, target)
+        with mock.patch.object(AI_HUMAN.os, "link", side_effect=occupy_before_link):
+            with self.assertRaises(FileExistsError):
+                AI_HUMAN.portfolio_export_artifact(args)
+        self.assertEqual((source / args.output).read_text(encoding="utf-8"), "concurrent user artifact")
+        args.output = "artifacts/published.json"
+        def crash_after_link(stage, target):
+            original_link(stage, target)
+            raise OSError("synthetic crash after complete publication")
+        with mock.patch.object(AI_HUMAN.os, "link", side_effect=crash_after_link):
+            with self.assertRaisesRegex(OSError, "complete publication"):
+                AI_HUMAN.portfolio_export_artifact(args)
+        self.assertEqual(AI_HUMAN.read_json(source / args.output), snapshot)
+        AI_HUMAN.portfolio_export_artifact(args)
+        self.assertEqual(AI_HUMAN.read_json(source / args.output), snapshot)
+        personal = self.map_confirmed()
+        pointer_snapshot = self.export_portfolio_snapshot(
+            personal, chief, summary_pointer_sha256=AI_HUMAN.work_map(personal)["confirmation"]["context_sha256"],
+            summary_pointer_approval_reference="Owner approved only the local pointer",
+        )
+        args.worker = personal
+        args.session_id = AI_HUMAN.read_lease(personal)["session_id"]
+        args.expected_state_hash = AI_HUMAN.controlled_state_hash(personal)
+        args.snapshot_sha256 = AI_HUMAN.read_json(pointer_snapshot)["snapshot_sha256"]
+        with self.assertRaisesRegex(ValueError, "H54 personal-context pointers"):
+            AI_HUMAN.portfolio_export_artifact(args)
+        self.assertFalse((personal / args.output).exists())
+
+    def test_h53_exchange_import_crash_recovery_and_concurrent_locks(self):
+        exchange, source, chief, artifact = self.chief_exchange_fixture()
+        self.send_chief_portfolio(exchange, source, chief, artifact)
+        for busy_worker in (source, chief, exchange):
+            with AI_HUMAN.worker_operation_mutex(busy_worker):
+                self.assertIn("operation is already in progress", self.import_chief_portfolio(exchange, source, chief, expect=1).stderr)
+        args = SimpleNamespace(
+            worker=chief, source_worker=source, exchange=exchange, message_id="portfolio-status",
+            session_id="chief-session", expected_state_hash=AI_HUMAN.controlled_state_hash(chief),
+        )
+        def crash_after_stage(boundary):
+            if boundary == "stage":
+                raise RuntimeError("synthetic import crash after authorization checkpoint")
+        with mock.patch.object(AI_HUMAN, "h53_boundary", side_effect=crash_after_stage):
+            with self.assertRaisesRegex(RuntimeError, "import crash"):
+                AI_HUMAN.chief_portfolio_import_exchange(args)
+        self.assertEqual(AI_HUMAN.chief_state(chief)["portfolio"], {})
+        journal_before = (chief / AI_HUMAN.H53_TX_PATH).read_text(encoding="utf-8")
+        self.assertNotIn("Review the next bounded local step", journal_before)
+        self.run_cli(
+            "exchange-policy-revoke", "--exchange", exchange, "--owner", "Mission Owner",
+            "portfolio-to-chief", "--approval-reference", "Owner withdrew this exact route",
+            "--reason", "Revoked after the durable local authorization checkpoint",
+        )
+        self.run_cli(
+            "h53-recover", chief, "--session-id", "chief-session",
+            "--expected-state-hash", AI_HUMAN.controlled_state_hash(chief),
+        )
+        self.assertEqual(AI_HUMAN.chief_state(chief)["portfolio"]["portfolio-source"], AI_HUMAN.read_json(artifact)["item"])
+        self.assertFalse((chief / AI_HUMAN.H53_TX_PATH).exists())
+        self.assertIn("active exact route", self.import_chief_portfolio(exchange, source, chief, expect=1).stderr)
+        self.run_cli("validate", chief)
+
+    def test_h53_exchange_two_importers_do_not_overwrite_and_source_recovery_is_required(self):
+        exchange, source, chief, artifact = self.chief_exchange_fixture()
+        self.send_chief_portfolio(exchange, source, chief, artifact)
+        transaction = source / AI_HUMAN.H53_TX_PATH
+        AI_HUMAN.atomic_json(transaction, {"synthetic": "interrupted source transaction"})
+        self.assertIn("interrupted transaction", self.import_chief_portfolio(exchange, source, chief, expect=1).stderr)
+        transaction.unlink()
+        expected = AI_HUMAN.controlled_state_hash(chief)
+        command = [
+            sys.executable, str(CLI), "chief-portfolio-import-exchange", str(chief),
+            "--exchange", str(exchange), "--source-worker", str(source),
+            "--message-id", "portfolio-status", "--session-id", "chief-session",
+            "--expected-state-hash", expected,
+        ]
+        processes = [subprocess.Popen(command, cwd=ROOT, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE) for _ in range(2)]
+        outcomes = [process.communicate(timeout=30) for process in processes]
+        self.assertEqual(sorted(process.returncode for process in processes), [0, 1], outcomes)
+        loser_error = next(output[1] for process, output in zip(processes, outcomes) if process.returncode)
+        self.assertTrue("operation is already in progress" in loser_error or "expected-state hash mismatch" in loser_error, loser_error)
+        self.assertEqual(len(AI_HUMAN.chief_state(chief)["portfolio"]), 1)
+        self.assertEqual(AI_HUMAN.read_lease(chief)["state_hash"], AI_HUMAN.controlled_state_hash(chief))
+        brief = self.run_cli(
+            "chief-brief", chief, "--session-id", "chief-session",
+            "--expected-state-hash", AI_HUMAN.controlled_state_hash(chief),
+        )
+        self.assertIn("live source status and current route authorization UNKNOWN", brief.stdout)
+        self.run_cli("validate", chief)
 
     def test_h53_memory_is_off_explicit_bitemporal_and_scope_isolated(self):
         worker = self.base / "memory-off-worker"
@@ -8499,7 +8893,7 @@ class LifecycleTests(unittest.TestCase):
             "memory-control", worker, "FORGET", "--item", "fact-one",
             "--session-id", "memory-session", "--expected-state-hash", AI_HUMAN.controlled_state_hash(worker),
         )
-        self.assertNotIn("fact-one", (worker / AI_HUMAN.MEMORY_STORE_PATH).read_text())
+        self.assertNotIn("fact-one", (worker / AI_HUMAN.MEMORY_STORE_PATH).read_text(encoding="utf-8"))
         prune_args = SimpleNamespace(
             worker=worker, action="PRUNE", item=None, session_id="memory-session",
             expected_state_hash=AI_HUMAN.controlled_state_hash(worker),
@@ -8534,7 +8928,7 @@ class LifecycleTests(unittest.TestCase):
         worker = self.memory_fixture("memory-rebuild", "memory-rebuild")
         self.memory_record_cli(worker, self.memory_request())
         path = worker / AI_HUMAN.MEMORY_STORE_PATH
-        data = json.loads(path.read_text())
+        data = json.loads(path.read_text(encoding="utf-8"))
         data["index"]["by_kind"]["SEMANTIC"] = []
         AI_HUMAN.atomic_json(path, data)
         current = AI_HUMAN.controlled_state_hash(worker)
@@ -8544,11 +8938,11 @@ class LifecycleTests(unittest.TestCase):
         )
         self.assertIn("REBUILT_FROM_AUTHORITATIVE_RECORDS", rebuilt.stdout)
         self.assertEqual(AI_HUMAN.memory_store(worker)["index"]["by_kind"]["SEMANTIC"], ["fact-one"])
-        data = json.loads(path.read_text())
+        data = json.loads(path.read_text(encoding="utf-8"))
         data["index"]["by_kind"]["SEMANTIC"] = []
         AI_HUMAN.atomic_json(path, data)
         today = worker / "TODAY.md"
-        today.write_text(today.read_text() + "\nUnrelated drift\n", encoding="utf-8")
+        today.write_text(today.read_text(encoding="utf-8") + "\nUnrelated drift\n", encoding="utf-8")
         failed = self.run_cli(
             "memory-rebuild", worker, "--session-id", "memory-session",
             "--expected-state-hash", AI_HUMAN.controlled_state_hash(worker), expect=1,
@@ -8569,7 +8963,7 @@ class LifecycleTests(unittest.TestCase):
         with mock.patch.object(AI_HUMAN, "refresh_lease_state", side_effect=RuntimeError("synthetic crash")):
             with self.assertRaisesRegex(RuntimeError, "synthetic crash"):
                 AI_HUMAN.memory_record(args)
-        journal = (worker / AI_HUMAN.H53_TX_PATH).read_text()
+        journal = (worker / AI_HUMAN.H53_TX_PATH).read_text(encoding="utf-8")
         self.assertNotIn("synthetic-policy", journal)
         recovered = self.run_cli(
             "h53-recover", worker, "--session-id", "memory-session",
@@ -8588,7 +8982,7 @@ class LifecycleTests(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 AI_HUMAN.memory_record(args)
         cursor = worker / "MASTER_CURSOR.md"
-        cursor.write_text(cursor.read_text() + "\nUnrelated owner edit\n", encoding="utf-8")
+        cursor.write_text(cursor.read_text(encoding="utf-8") + "\nUnrelated owner edit\n", encoding="utf-8")
         failed = self.run_cli(
             "h53-recover", worker, "--session-id", "memory-session",
             "--expected-state-hash", AI_HUMAN.controlled_state_hash(worker), expect=1,
@@ -8605,7 +8999,7 @@ class LifecycleTests(unittest.TestCase):
             source, chief, status="BLOCKED", summary_pointer_sha256=pointer,
             summary_pointer_approval_reference="Owner approved this digest pointer only",
         )
-        self.assertNotIn(private_marker, snapshot.read_text())
+        self.assertNotIn(private_marker, snapshot.read_text(encoding="utf-8"))
         self.chief_upsert(chief, snapshot)
         target = self.base / "target-worker"
         self.install(target, worker_id="target-001")
@@ -8650,7 +9044,7 @@ class LifecycleTests(unittest.TestCase):
         )
         self.chief_upsert(chief, wrong, expect=1)
         snapshot = self.export_portfolio_snapshot(source, chief)
-        tampered = json.loads(snapshot.read_text())
+        tampered = json.loads(snapshot.read_text(encoding="utf-8"))
         tampered["item"]["next_action"] = "Tampered action"
         tampered_path = self.write_json_fixture("tampered-snapshot.json", tampered)
         self.chief_upsert(chief, tampered_path, expect=1)

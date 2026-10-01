@@ -142,7 +142,8 @@ CONTEXT_NEW_WORK_COMMANDS = {
     "autonomy-skill-install", "resource-snapshot", "resource-plan",
     "work-map-discover", "work-map-record", "radar-run",
     "exchange-send", "exchange-mission-create",
-    "memory-record", "portfolio-snapshot", "chief-portfolio-upsert", "chief-brief",
+    "memory-record", "portfolio-snapshot", "portfolio-export-artifact",
+    "chief-portfolio-upsert", "chief-portfolio-import-exchange", "chief-brief",
 }
 HANDOFF_REQUEST_FIELDS = {
     "active_gates", "approval_boundaries", "done_condition", "expires_utc",
@@ -334,7 +335,8 @@ MODE_GUARDED_COMMANDS = {
     "update-schedule-configure", "update-schedule-edit",
     "update-schedule-legacy-disable", "update-pilot-approve",
     "memory-configure", "memory-record", "memory-control", "memory-rebuild",
-    "chief-configure", "portfolio-snapshot", "chief-portfolio-upsert", "chief-portfolio-control", "chief-brief",
+    "chief-configure", "portfolio-snapshot", "portfolio-export-artifact",
+    "chief-portfolio-upsert", "chief-portfolio-import-exchange", "chief-portfolio-control", "chief-brief",
 }
 COORDINATION_STATE_FILES = (
     "MASTER_CURSOR.md", "OPEN_REGISTER.md", "TODAY.md",
@@ -4531,12 +4533,16 @@ def radar_decide(args):
     print("- choice: " + args.choice + "; activation: NOT_ACTIVATED")
 
 
-def reject_exchange_sensitive_source(relative, source, label):
+def reject_exchange_sensitive_path(relative, label):
     sensitive = {"credential", "password", "private", "secret", "token"}
     for part in relative.parts:
         lowered = part.casefold()
         if part.startswith(".") or lowered == ".env" or any(word in lowered for word in sensitive):
             raise ValueError(label + " path appears hidden, private or sensitive")
+
+
+def reject_exchange_sensitive_source(relative, source, label):
+    reject_exchange_sensitive_path(relative, label)
     try:
         content = source.read_text(encoding="utf-8", errors="ignore")
     except OSError as exc:
@@ -5628,7 +5634,9 @@ def portfolio_status_source_sha256(worker):
         "MASTER_CURSOR.md", "OPEN_REGISTER.md", "TODAY.md", "COMPLETED_LEDGER.md",
         "EVIDENCE_LOG.md", "FACTS.md", "DECISIONS.md",
     ):
-        path = worker / name
+        path = worker_target(worker, Path(name), "portfolio status source")
+        if path.exists() and not path.is_file():
+            raise ValueError("portfolio status source must be a regular file")
         digest.update(name.encode("utf-8") + b"\0")
         digest.update(bytes.fromhex(sha256(path)) if path.is_file() else b"MISSING")
         digest.update(b"\n")
@@ -5781,25 +5789,30 @@ def validate_portfolio_snapshot(snapshot, chief_worker):
     return snapshot
 
 
-def chief_portfolio_upsert(args):
-    worker = safe_worker(args.worker)
-    lease, _ = require_lease(worker, args.session_id, args.expected_state_hash)
-    data = chief_state(worker)
-    if data["config"]["status"] != "ENABLED" or data["config"]["owner"] != lease["actor"]:
-        raise ValueError("portfolio intake requires the enabled Chief owner")
-    chief_prune_briefs(data)
-    snapshot = validate_portfolio_snapshot(
-        read_governor_input(args.snapshot, "portfolio snapshot"), worker
-    )
+def validate_portfolio_source(snapshot, source_worker):
+    """Authenticate a governed export against its owning worker, never caller claims."""
+    validate_portfolio_snapshot_shape(snapshot)
     item = snapshot["item"]
     source_id = item["source_worker_id"]
-    source_worker = safe_worker(args.source_worker)
-    if source_worker == worker:
-        raise ValueError("Chief portfolio source must be a separate worker")
     if worker_mode(source_worker) != MODE_ACTIVE:
         raise ValueError("portfolio source worker is not active")
+    for transaction in (
+        H53_TX_PATH, WORK_MAP_TX_PATH, EXCHANGE_MUTATION_PATH,
+        UPDATE_SCHEDULE_TRANSACTION_PATH,
+    ):
+        if worker_target(source_worker, transaction, "portfolio source transaction").exists():
+            raise ValueError("portfolio source has an interrupted transaction; recover it before intake")
+    if transaction_file(source_worker).exists() or downgrade_transaction_path(source_worker).exists():
+        raise ValueError("portfolio source has an interrupted lifecycle transaction")
     if installed_worker_id(source_worker) != source_id or worker_identity_sha256(source_worker) != item["source_identity_sha256"]:
         raise ValueError("portfolio source identity cannot be authenticated")
+    metadata = install_metadata(source_worker)
+    if (
+        item["owner"] != clean(parameter_value(source_worker, "Human owner"), "human owner")
+        or item["purpose"] != metadata.get("purpose_scope")
+        or item["operating_unit"] not in metadata.get("operating_units", [])
+    ):
+        raise ValueError("portfolio source owner, purpose or operating unit changed")
     if portfolio_status_source_sha256(source_worker) != item["source_state_sha256"]:
         raise ValueError("portfolio source state changed; create a fresh status snapshot")
     source_exports = portfolio_exports(source_worker, required=True)
@@ -5831,14 +5844,166 @@ def chief_portfolio_upsert(args):
     source_lease = read_lease(source_worker, required=False)
     if source_lease and source_lease.get("state_hash") != controlled_state_hash(source_worker):
         raise ValueError("source worker controlled state differs from its lease")
+    if parse_recorded_utc(item["fresh_until_utc"], "portfolio freshness") <= parse_recorded_utc(now_utc(), "now"):
+        raise ValueError("portfolio snapshot is stale")
+    return snapshot
+
+
+def require_portfolio_transport_snapshot(snapshot):
+    if snapshot["item"]["summary_pointer_sha256"] is not None:
+        raise ValueError("H54 personal-context pointers are not eligible for portfolio transport")
+
+
+def portfolio_export_artifact(args):
+    worker = safe_worker(args.worker)
+    lease, _ = require_lease(worker, args.session_id, args.expected_state_hash)
+    if not SHA256_HEX.fullmatch(str(args.snapshot_sha256)):
+        raise ValueError("portfolio export requires an exact governed snapshot digest")
+    snapshot = portfolio_exports(worker, required=True)["snapshots"].get(args.snapshot_sha256)
+    if snapshot is None:
+        raise ValueError("selected portfolio snapshot is not in the governed source export store")
+    require_portfolio_transport_snapshot(snapshot)
+    validate_portfolio_source(snapshot, worker)
+    if snapshot["item"]["owner"] != lease["actor"]:
+        raise ValueError("portfolio artifact export requires its source owner")
+    relative = safe_relative(args.output, "portfolio artifact output")
+    reject_exchange_sensitive_path(relative, "portfolio artifact output")
+    if relative.suffix.casefold() != ".json":
+        raise ValueError("portfolio artifact output must be a JSON file")
+    target = worker_target(worker, relative, "portfolio artifact output")
+    encoded = (json.dumps(snapshot, indent=2, sort_keys=True) + "\n").encode("utf-8")
+    if len(encoded) > 1024 * 1024:
+        raise ValueError("portfolio artifact exceeds the one-megabyte intake limit")
+    created = False
+    if target.exists():
+        if not target.is_file() or target.stat().st_size != len(encoded) or target.read_bytes() != encoded:
+            raise ValueError("portfolio artifact output already exists with different bytes")
+    else:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        descriptor, stage_name = tempfile.mkstemp(prefix=".portfolio-export-", dir=target.parent)
+        stage = Path(stage_name)
+        try:
+            with os.fdopen(descriptor, "wb") as stream:
+                stream.write(encoded)
+                stream.flush()
+                os.fsync(stream.fileno())
+            reject_exchange_sensitive_source(relative, stage, "portfolio artifact")
+            # A hard-link commit publishes complete bytes atomically without replacing
+            # an existing destination. Unsupported filesystems fail closed.
+            os.link(stage, target)
+            created = True
+            if os.name != "nt":
+                directory_fd = os.open(target.parent, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+                try:
+                    os.fsync(directory_fd)
+                finally:
+                    os.close(directory_fd)
+        finally:
+            stage.unlink()
+    print("AI-HUMAN PORTFOLIO ARTIFACT: " + ("PASS" if created else "IDEMPOTENT"))
+    print("- artifact: " + relative.as_posix())
+    print("- artifact SHA-256: " + hashlib.sha256(encoded).hexdigest())
+    print("- snapshot SHA-256: " + snapshot["snapshot_sha256"])
+    print("- transport: NOT_SENT; explicit H55 send, acknowledgement and acceptance required")
+    print("- new expected-state hash: " + lease["state_hash"])
+
+
+def chief_portfolio_upsert(args):
+    worker = safe_worker(args.worker)
+    lease, _ = require_lease(worker, args.session_id, args.expected_state_hash)
+    source_worker = safe_worker(args.source_worker)
+    if source_worker == worker:
+        raise ValueError("Chief portfolio source must be a separate worker")
+    with worker_operation_mutex(source_worker):
+        chief_portfolio_apply(
+            worker, lease, read_governor_input(args.snapshot, "portfolio snapshot"), source_worker
+        )
+
+
+def chief_portfolio_import_exchange(args):
+    worker = safe_worker(args.worker)
+    lease, _ = require_lease(worker, args.session_id, args.expected_state_hash)
+    source_worker = safe_worker(args.source_worker)
+    if source_worker == worker:
+        raise ValueError("Chief portfolio source must be a separate worker")
+    exchange = safe_exchange_root(args.exchange)
+    # main holds the Chief mutex. Fail-fast source and relay mutexes keep source
+    # status, acceptance and current authorization stable through the H53 commit.
+    with worker_operation_mutex(source_worker), worker_operation_mutex(exchange):
+        exchange_require_status(exchange, {"ACTIVE", "PAUSED"})
+        envelope, recipient = exchange_authorized_envelope(worker, exchange, args.message_id)
+        _config, chief_entry = verify_joined_worker(worker, exchange)
+        validate_exchange_entry_for_worker(worker, chief_entry, _config)
+        _config, source_entry = verify_joined_worker(source_worker, exchange)
+        validate_exchange_entry_for_worker(source_worker, source_entry, _config)
+        request = envelope["request"]
+        if (
+            request["route"] != "CHIEF_MEDIATED" or request["message_type"] != "STATUS"
+            or request["recipients"] != [recipient] or chief_entry["access_class"] != "CHIEF"
+        ):
+            raise ValueError("portfolio intake requires one addressed CHIEF_MEDIATED STATUS recipient")
+        if parse_recorded_utc(request["expires_utc"], "portfolio envelope expiry") <= datetime.datetime.now(datetime.timezone.utc):
+            raise ValueError("portfolio exchange envelope is expired")
+        for directory in ("received", "accepted"):
+            receipt = require_exchange_local_record(worker, directory, args.message_id)
+            if receipt["envelope_sha256"] != envelope["envelope_sha256"]:
+                raise ValueError("portfolio " + directory + " receipt differs from its envelope")
+        if exchange_current_state(exchange, args.message_id, recipient) != "ACCEPTED":
+            raise ValueError("portfolio exchange message must remain ACCEPTED by the relay")
+        attachments = envelope["attachments"]
+        if len(attachments) != 1 or attachments[0]["media_type"] != "application/json":
+            raise ValueError("portfolio intake requires exactly one application/json attachment")
+        attachment = path_without_symlinks(
+            exchange_message_root(exchange, args.message_id),
+            safe_relative(attachments[0]["bundle_path"], "portfolio bundle path"),
+            "portfolio exchange bundle",
+        )
+        with attachment.open("rb") as stream:
+            bundle_bytes = stream.read(1024 * 1024 + 1)
+        if len(bundle_bytes) > 1024 * 1024:
+            raise ValueError("portfolio exchange bundle exceeds one megabyte")
+        if (
+            len(bundle_bytes) != attachments[0]["size_bytes"]
+            or hashlib.sha256(bundle_bytes).hexdigest() != attachments[0]["sha256"]
+        ):
+            raise ValueError("portfolio exchange bundle integrity differs at intake")
+        snapshot = validate_portfolio_snapshot(strict_json_loads(bundle_bytes.decode("utf-8")), worker)
+        require_portfolio_transport_snapshot(snapshot)
+        if (
+            envelope["sender_worker_id"] != snapshot["item"]["source_worker_id"]
+            or envelope["sender_identity_sha256"] != snapshot["item"]["source_identity_sha256"]
+            or envelope["sender_task_id"] != snapshot["item"]["current_task_id"]
+            or source_entry["worker_id"] != envelope["sender_worker_id"]
+        ):
+            raise ValueError("portfolio snapshot source differs from its authenticated sender")
+        # H55 sender_state_sha256 binds controlled state at send; H53 binds only
+        # status-source files. They are deliberately different digest domains.
+        policy = exchange_current_envelope_access(exchange, envelope, recipient)
+        if any(source_entry[field] != chief_entry[field] for field in (
+            "company", "legal_entity", "operating_unit", "human_owner"
+        )) and policy["cross_boundary_authorization_reference"] == "NONE":
+            raise ValueError("cross-boundary portfolio intake requires exact H55 authorization")
+        chief_portfolio_apply(worker, lease, snapshot, source_worker, exchange_policy=policy)
+
+
+def chief_portfolio_apply(worker, lease, snapshot, source_worker, exchange_policy=None):
+    data = chief_state(worker)
+    if data["config"]["status"] != "ENABLED" or data["config"]["owner"] != lease["actor"]:
+        raise ValueError("portfolio intake requires the enabled Chief owner")
+    chief_prune_briefs(data)
+    validate_portfolio_snapshot(snapshot, worker)
+    validate_portfolio_source(snapshot, source_worker)
+    item = snapshot["item"]
+    source_id = item["source_worker_id"]
     source_metadata = install_metadata(source_worker)
     chief_metadata = install_metadata(worker)
     if (
         source_metadata.get("company") != chief_metadata.get("company")
         or source_metadata.get("legal_entity") != chief_metadata.get("legal_entity")
         or item["operating_unit"] not in chief_metadata.get("operating_units", [])
-    ):
-        raise ValueError("cross-company, entity or operating-unit intake requires an exact current H55 route")
+        or item["owner"] != data["config"]["owner"]
+    ) and (exchange_policy is None or exchange_policy["cross_boundary_authorization_reference"] == "NONE"):
+        raise ValueError("cross-company, entity, operating-unit or owner intake requires an exact current H55 route")
     if source_id in data["revoked_worker_ids"]:
         raise ValueError("portfolio access for this worker is revoked")
     existing = data["portfolio"].get(source_id)
@@ -5957,6 +6122,7 @@ def chief_brief(args):
     data = chief_state(worker)
     if data["config"]["status"] != "ENABLED" or data["config"]["owner"] != lease["actor"]:
         raise ValueError("Chief brief requires the enabled Chief owner")
+    print("- evidence: RETAINED_SNAPSHOTS; live source status and current route authorization UNKNOWN (not rechecked by brief)")
     pruned = chief_prune_briefs(data)
     material, project_map, contradictions = chief_material(worker, data)
     material_sha = canonical_json_sha256(material)
@@ -6072,6 +6238,8 @@ def chief_show(args):
         raise ValueError("Chief state belongs to another owner")
     print(json.dumps({
         "authority": "READ_ONLY", "brief_count": len(data["briefs"]),
+        "current_route_authorization": "UNKNOWN", "live_source_status": "UNKNOWN",
+        "evidence": "RETAINED_SNAPSHOTS",
         "portfolio_count": len(data["portfolio"]), "revoked_count": len(data["revoked_worker_ids"]),
         "schema": "ai-human.chief-summary/v1", "status": data["config"]["status"],
         "worker_id": data["worker_id"],
@@ -19289,6 +19457,14 @@ def parser():
     portfolio_snapshot_p.add_argument("--expected-state-hash", required=True)
     portfolio_snapshot_p.set_defaults(handler=portfolio_snapshot)
 
+    portfolio_export_p = sub.add_parser("portfolio-export-artifact")
+    portfolio_export_p.add_argument("worker")
+    portfolio_export_p.add_argument("--snapshot-sha256", required=True)
+    portfolio_export_p.add_argument("--output", required=True)
+    portfolio_export_p.add_argument("--session-id", required=True)
+    portfolio_export_p.add_argument("--expected-state-hash", required=True)
+    portfolio_export_p.set_defaults(handler=portfolio_export_artifact)
+
     chief_portfolio_p = sub.add_parser("chief-portfolio-upsert")
     chief_portfolio_p.add_argument("worker")
     chief_portfolio_p.add_argument("--session-id", required=True)
@@ -19296,6 +19472,15 @@ def parser():
     chief_portfolio_p.add_argument("--snapshot", required=True)
     chief_portfolio_p.add_argument("--source-worker", required=True)
     chief_portfolio_p.set_defaults(handler=chief_portfolio_upsert)
+
+    chief_import_p = sub.add_parser("chief-portfolio-import-exchange")
+    chief_import_p.add_argument("worker")
+    chief_import_p.add_argument("--session-id", required=True)
+    chief_import_p.add_argument("--expected-state-hash", required=True)
+    chief_import_p.add_argument("--exchange", required=True)
+    chief_import_p.add_argument("--message-id", required=True)
+    chief_import_p.add_argument("--source-worker", required=True)
+    chief_import_p.set_defaults(handler=chief_portfolio_import_exchange)
 
     chief_portfolio_control_p = sub.add_parser("chief-portfolio-control")
     chief_portfolio_control_p.add_argument("worker")

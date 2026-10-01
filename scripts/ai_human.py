@@ -9812,6 +9812,10 @@ def render_update_schedule_definition(worker, config):
 MACOS_UPDATE_READBACK_BUILDS = frozenset({("27.0.1", "26A434")})
 
 
+class UnsupportedMacOSUpdateBuild(ValueError):
+    """Activation is unavailable; exact owned-job deactivation may still work."""
+
+
 def require_supported_macos_update_build():
     values = []
     for option in ("-productVersion", "-buildVersion"):
@@ -9823,7 +9827,7 @@ def require_supported_macos_update_build():
             raise ValueError("cannot verify the macOS native readback build")
         values.append(result.stdout.strip())
     if tuple(values) not in MACOS_UPDATE_READBACK_BUILDS:
-        raise ValueError("unsupported macOS native readback build; registration refused")
+        raise UnsupportedMacOSUpdateBuild("unsupported macOS native readback build; registration refused")
 
 
 def parse_macos_launchctl_print(content, external_id, uid):
@@ -10224,6 +10228,54 @@ class NativeUpdateAdapter:
         return {"status": "REMOVED", "definition_sha256": None}
 
 
+class MacOSUpdateCleanupAdapter(NativeUpdateAdapter):
+    """An OS upgrade never grants activation, but must not strand an owned job."""
+
+    cleanup_only = True
+
+    def install(self, definition_path):
+        raise UnsupportedMacOSUpdateBuild("unsupported macOS build permits cleanup only")
+
+    def verify_cleanup_definition(self, definition_path, expected_sha256):
+        definition_path = Path(definition_path)
+        if sha256(definition_path) != expected_sha256:
+            raise ValueError("native cleanup definition differs from stored proof")
+        definition = plistlib.loads(definition_path.read_bytes())
+        arguments = definition.get("ProgramArguments")
+        expected = native_runner_arguments(self.worker, self.config)
+        if (
+            definition.get("Label") != self.external_id
+            or not isinstance(arguments, list) or len(arguments) != len(expected)
+            or arguments[:-1] != expected[:-1]
+            or not SHA256_HEX.fullmatch(str(arguments[-1]))
+        ):
+            raise ValueError("native cleanup definition belongs to another worker or task")
+        target = self._macos_target()
+        if target.exists() and (not target.is_file() or sha256(target) != expected_sha256):
+            raise ValueError("native cleanup target differs from the owned definition")
+        self._cleanup_binding = (definition_path, expected_sha256)
+
+    def _macos_bootout(self):
+        binding = getattr(self, "_cleanup_binding", None)
+        if binding is None:
+            raise ValueError("native cleanup requires an exact owned definition")
+        self.verify_cleanup_definition(*binding)
+        super()._macos_bootout()
+
+    def query(self, definition_path):
+        # Absence is a deactivation proof, never an active-definition proof.
+        if self.query_removed(definition_path) != {
+            "status": "REMOVED", "definition_sha256": None,
+        }:
+            raise ValueError("unsupported macOS build cannot verify an active native task")
+        return {
+            "status": "PAUSED" if self.config.get("status") == "PAUSED" else "REMOVED",
+            "definition_sha256": (
+                sha256(Path(definition_path)) if self.config.get("status") == "PAUSED" else None
+            ),
+        }
+
+
 def native_update_adapter(worker, config):
     actual = "WINDOWS" if os.name == "nt" else "MACOS" if sys.platform == "darwin" else ""
     if config["platform"] != actual:
@@ -10234,6 +10286,15 @@ def native_update_adapter(worker, config):
     if actual == "MACOS":
         require_supported_macos_update_build()
     return NativeUpdateAdapter(worker, config)
+
+
+def native_update_cleanup_adapter(worker, config):
+    try:
+        return native_update_adapter(worker, config)
+    except UnsupportedMacOSUpdateBuild:
+        # Only the normal factory's exact Mac build refusal permits this path.
+        # Wrong-host, permission and other failures retain their original denial.
+        return MacOSUpdateCleanupAdapter(worker, config)
 
 
 def query_removed_native(adapter, definition_path):
@@ -10254,8 +10315,12 @@ def verify_update_schedule_native_readback(worker, config=None):
     )
     if sha256(definition) != native["definition_sha256"]:
         raise ValueError("native update definition differs from stored proof")
-    adapter = native_update_adapter(worker, config)
-    if adapter.observed_timezone_id() != config["native_timezone_id"]:
+    adapter = (
+        native_update_cleanup_adapter(worker, config)
+        if config["status"] in {"PAUSED", "REMOVED"}
+        else native_update_adapter(worker, config)
+    )
+    if not getattr(adapter, "cleanup_only", False) and adapter.observed_timezone_id() != config["native_timezone_id"]:
         raise ValueError("native operating-system time zone differs from owner confirmation")
     expected_status = {
         "ENABLED": "ACTIVE", "PAUSED": "PAUSED", "REMOVED": "REMOVED",
@@ -15567,11 +15632,27 @@ def recover_update_schedule_internal(worker):
             )
         transaction_path.unlink()
         return backup
-    adapter = native_update_adapter(worker, candidate)
-    adapter.remove()
+    adapter = native_update_cleanup_adapter(worker, candidate)
     candidate_definition = update_schedule_target(
         worker, value["definition_path"], "candidate update schedule definition"
     )
+    already_removed = False
+    if getattr(adapter, "cleanup_only", False):
+        already_removed = query_removed_native(adapter, candidate_definition) == {
+            "status": "REMOVED", "definition_sha256": None,
+        }
+        if not already_removed:
+            _root, _manifest, backup_records = validate_update_schedule_backup(worker, backup)
+            allowed_hashes = {
+                record["sha256"] for record in backup_records
+                if record["path"] == value["definition_path"] and record["existed"]
+            } | {hashlib.sha256(render_update_schedule_definition(worker, candidate)).hexdigest()}
+            digest = sha256(candidate_definition)
+            if digest not in allowed_hashes:
+                raise ValueError("native cleanup definition differs from the recovery transaction")
+            adapter.verify_cleanup_definition(candidate_definition, digest)
+    if not already_removed:
+        adapter.remove()
     if query_removed_native(adapter, candidate_definition) != {
         "status": "REMOVED", "definition_sha256": None,
     }:
@@ -15583,12 +15664,38 @@ def recover_update_schedule_internal(worker):
         old_definition = update_schedule_target(
             worker, old_native["definition_path"], "restored update schedule definition"
         )
-        old_adapter = native_update_adapter(worker, old_config)
+        old_adapter = native_update_cleanup_adapter(worker, old_config)
         if sha256(old_definition) != old_native["definition_sha256"]:
             raise ValueError("restored native update definition differs from stored proof")
-        old_adapter.install(old_definition)
-        if old_config["status"] == "PAUSED":
-            old_adapter.pause()
+        if getattr(old_adapter, "cleanup_only", False):
+            old_adapter.verify_cleanup_definition(old_definition, old_native["definition_sha256"])
+            if query_removed_native(old_adapter, old_definition) != {
+                "status": "REMOVED", "definition_sha256": None,
+            }:
+                raise ValueError("recovery safety pause lacks native absence proof")
+            if old_config["status"] == "ENABLED":
+                # Rebase the existing journal after restoring its exact before
+                # image. A crash during these writes remains recoverable against
+                # the same private backup; no unknown-build activation occurs.
+                paused = dict(old_config)
+                paused.update(status="PAUSED", config_version=old_config["config_version"] + 1,
+                              updated_utc=now_utc())
+                value = dict(value)
+                value.update(operation="PAUSE", candidate=paused,
+                             candidate_sha256=update_schedule_config_sha256(paused),
+                             definition_path=old_native["definition_path"])
+                value = mark_update_schedule_transaction(worker, value, "NATIVE_MUTATION_STARTED")
+                paused_native = native_schedule_proof(
+                    paused, old_native["definition_path"], old_native["definition_sha256"],
+                    "VERIFIED_PAUSED",
+                )
+                commit_update_schedule_local(worker, paused, paused_native, value)
+                old_config = paused
+                old_adapter = native_update_cleanup_adapter(worker, paused)
+        else:
+            old_adapter.install(old_definition)
+            if old_config["status"] == "PAUSED":
+                old_adapter.pause()
         observed = old_adapter.query(old_definition)
         expected_status = "ACTIVE" if old_config["status"] == "ENABLED" else "PAUSED"
         if observed != {
@@ -15841,9 +15948,16 @@ def update_schedule_control(args):
         worker, definition_relative, "native update schedule definition"
     )
     next_status = {"PAUSE": "PAUSED", "RESUME": "ENABLED", "REMOVE": "REMOVED"}[args.action]
-    adapter = native_update_adapter(worker, config)
-    if adapter.observed_timezone_id() != config["native_timezone_id"]:
+    adapter_factory = (
+        native_update_cleanup_adapter if args.action in {"PAUSE", "REMOVE"}
+        else native_update_adapter
+    )
+    adapter = adapter_factory(worker, config)
+    cleanup_only = getattr(adapter, "cleanup_only", False)
+    if not cleanup_only and adapter.observed_timezone_id() != config["native_timezone_id"]:
         raise ValueError("native operating-system time zone differs from owner confirmation")
+    if cleanup_only:
+        adapter.verify_cleanup_definition(definition_path, native["definition_sha256"])
     if config["status"] == next_status:
         observed_status = {
             "ENABLED": "ACTIVE", "PAUSED": "PAUSED", "REMOVED": "REMOVED",
@@ -15872,10 +15986,10 @@ def update_schedule_control(args):
     current_observed = {"ENABLED": "ACTIVE", "PAUSED": "PAUSED"}[config["status"]]
     if (
         sha256(definition_path) != native["definition_sha256"]
-        or adapter.query(definition_path) != {
+        or (not cleanup_only and adapter.query(definition_path) != {
             "status": current_observed,
             "definition_sha256": native["definition_sha256"],
-        }
+        })
     ):
         raise ValueError("native update schedule drifted before control transition")
     updated = dict(config)
@@ -15895,8 +16009,11 @@ def update_schedule_control(args):
         worker, args.action, updated, definition_relative
     )
     try:
-        adapter = native_update_adapter(worker, updated)
-        if adapter.observed_timezone_id() != updated["native_timezone_id"]:
+        adapter = adapter_factory(worker, updated)
+        cleanup_only = getattr(adapter, "cleanup_only", False)
+        if cleanup_only:
+            adapter.verify_cleanup_definition(definition_path, native["definition_sha256"])
+        if not cleanup_only and adapter.observed_timezone_id() != updated["native_timezone_id"]:
             raise ValueError("native operating-system time zone differs from owner confirmation")
         transaction = mark_update_schedule_transaction(
             worker, transaction, "NATIVE_MUTATION_STARTED"

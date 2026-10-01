@@ -259,10 +259,10 @@
     "portal/scripts/refresh-download-manifest.mjs": "295a366cc3a72253b8c8ce6f1c4775a800c34edd7e58999a0291080e3331484c",
     "portal/scripts/validate-portal.mjs": "080db353359f08ac7e4d9d8cb317537fbbefdff84493807a6f94c70e52b5b642",
     "portal/tsconfig.json": "3666e5cd5a6a59e88db1fda8674179d6168254b24a501863248739f80959e13c",
-    "release-manifest.json": "996a44c5b8ce3807172a41030d3b79ef509037de8ce3a9eaa8fbc199abb26186",
+    "release-manifest.json": "636faa7891681e02e00b97ac15d5f425e0d1adb2992a8e06d5ca27296b1de462",
     "requirements.txt": "bcd72e04087962066a8f6256d59ea05b6667feeab269b4e8ad9d12b02ad37928",
     "roles/ROLE-TEMPLATE.md": "5469b79f740bd3fe414ed74b63b1a63bf1e2f0cc9d697c2ae9cd1ce4dd62e13a",
-    "scripts/ai_human.py": "3c9fcf54ebe1771cfe310adca7aff548d89a422f0444288571a2ce4e65d31e1b",
+    "scripts/ai_human.py": "3aa6a69392e0392e0d7265b60ea82f894381fb9f5a6c34a89c6b57c530aa13e6",
     "scripts/build_editions.py": "fa5eb072b037320e1646f705d2ac4142971320547c4f8b38b1ec30ed04c356f3",
     "scripts/build_public_release.py": "a98f6b6077bc13bece0610aee7d5ba94aa304e26ea614f597204ce53d41491f7",
     "scripts/build_release.py": "c2183751360b603d1333da23c0df3ed6c42683d0a97e23bbb8ccfe5330e35805",
@@ -290,7 +290,7 @@
     "starter/WORK-GATES.md": "1c0514cf811ecb1c995666964a3571ccd37c3058b22ae773ad9158fcf0c4377e",
     "starter/WORKSPACE-MAP.md": "37ece8ab2e3d994b3e84e9401b49a6cafa3310e3c5978e5c5c44c415bfb611d5",
     "tests/fixtures/macos-launchctl-27.0.1.json": "8fc273e51efdecd604aa776ce8109d71f62b75281983e638ce45accb05d7fffe",
-    "tests/test_lifecycle.py": "f46e0d500d06b0dceadf92af799aa941fe4eaa205b58441573a4fd902746f3d9"
+    "tests/test_lifecycle.py": "f518f0819e5c25059454166e2d269a09078bedebb5da149d9e639e11db8f24ea"
   },
   "release_status": "RELEASED",
   "repository": "kairali-digital/ai-human-workspace",

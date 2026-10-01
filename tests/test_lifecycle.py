@@ -9393,6 +9393,134 @@ class LifecycleTests(unittest.TestCase):
         ):
             self.assertIsNone(adapter.query(private)["definition_sha256"])
 
+    def test_macos_os_upgrade_allows_exact_schedule_safety_cleanup_only(self):
+        for action in ("PAUSE", "REMOVE", "RECOVER", "RECOVER_CRASH"):
+            with self.subTest(action=action):
+                worker = self.base / ("os-upgrade-" + action.lower())
+                self.install(worker)
+                with (
+                    mock.patch.object(AI_HUMAN, "native_update_adapter", side_effect=self.fake_native_factory({})),
+                    mock.patch("builtins.print"),
+                ):
+                    AI_HUMAN.update_schedule_configure(self.schedule_args(worker))
+                    if action.startswith("RECOVER"):
+                        with mock.patch.object(AI_HUMAN, "commit_update_schedule_local", side_effect=SystemExit("interrupted edit")):
+                            with self.assertRaisesRegex(SystemExit, "interrupted edit"):
+                                AI_HUMAN.update_schedule_configure(self.schedule_args(
+                                    worker, command="update-schedule-edit", local_time="03:15"
+                                ))
+                config = AI_HUMAN.update_schedule_config(worker.resolve(), required=True)
+                native = AI_HUMAN.native_update_schedule(worker.resolve(), required=True, config=config)
+                definition = worker / native["definition_path"]
+                target = worker / "synthetic-native.plist"
+                target.write_bytes(definition.read_bytes())
+                service = "gui/" + str(os.getuid()) + "/" + native["external_id"]
+                loaded = True
+                calls = []
+
+                def upgraded_os(command, **kwargs):
+                    nonlocal loaded
+                    calls.append(command)
+                    if command[0] == "/usr/bin/sw_vers":
+                        return SimpleNamespace(returncode=0, stdout="UNTESTED", stderr="")
+                    self.assertEqual(command, ["/bin/launchctl", command[1], service])
+                    if command[1] == "bootout":
+                        loaded = False
+                        return SimpleNamespace(returncode=0, stdout="", stderr="")
+                    self.assertEqual(command[1], "print")
+                    return SimpleNamespace(
+                        returncode=0 if loaded else 113,
+                        stdout="unsupported active format" if loaded else "",
+                        stderr="" if loaded else (
+                            'Bad request.\nCould not find service "' + native["external_id"]
+                            + '" in domain for user gui: ' + str(os.getuid()) + '\n'
+                        ),
+                    )
+
+                with (
+                    mock.patch.object(AI_HUMAN.sys, "platform", "darwin"),
+                    mock.patch.object(AI_HUMAN.NativeUpdateAdapter, "_macos_target", return_value=target),
+                    mock.patch.object(AI_HUMAN.NativeUpdateAdapter, "observed_timezone_id", return_value="Changed/Zone"),
+                    mock.patch.object(AI_HUMAN.subprocess, "run", side_effect=upgraded_os),
+                    mock.patch("builtins.print"),
+                ):
+                    if action == "PAUSE":
+                        with mock.patch.object(AI_HUMAN, "download_release") as download:
+                            with self.assertRaisesRegex(ValueError, "unsupported macOS"):
+                                AI_HUMAN.update_schedule_tick_internal(
+                                    worker.resolve(), config["schedule_id"],
+                                    AI_HUMAN.update_schedule_config_sha256(config),
+                                )
+                            download.assert_not_called()
+                    if action.startswith("RECOVER"):
+                        if action == "RECOVER_CRASH":
+                            original_apply = AI_HUMAN.apply_update_schedule_local_target
+
+                            def interrupt_safety_pause(path, content):
+                                original_apply(path, content)
+                                if Path(path) == worker.resolve() / AI_HUMAN.UPDATE_SCHEDULE_CONFIG_PATH:
+                                    raise SystemExit("interrupted safety pause")
+
+                            with mock.patch.object(AI_HUMAN, "apply_update_schedule_local_target", side_effect=interrupt_safety_pause):
+                                with self.assertRaisesRegex(SystemExit, "interrupted safety pause"):
+                                    AI_HUMAN.recover_update_schedule_internal(worker.resolve())
+                        AI_HUMAN.recover_update_schedule_internal(worker.resolve())
+                    else:
+                        AI_HUMAN.update_schedule_control(SimpleNamespace(
+                            worker=str(worker), action=action, approval_reference="owner safety cleanup",
+                        ))
+                    self.assertFalse(loaded)
+                    self.assertFalse(target.exists())
+                    self.assertEqual(AI_HUMAN.install_metadata(worker)["automatic_updates"], "DISABLED")
+                    updated = AI_HUMAN.update_schedule_config(worker.resolve(), required=True)
+                    self.assertEqual(updated["status"], "REMOVED" if action == "REMOVE" else "PAUSED")
+                    self.assertFalse((worker / AI_HUMAN.UPDATE_SCHEDULE_TRANSACTION_PATH).exists())
+                    AI_HUMAN.verify_update_schedule_native_readback(worker.resolve(), updated)
+                    with self.assertRaisesRegex(ValueError, "unsupported macOS"):
+                        AI_HUMAN.native_update_adapter(worker.resolve(), updated)
+                    with self.assertRaisesRegex(ValueError, "unsupported macOS"):
+                        AI_HUMAN.NativeUpdateAdapter(worker.resolve(), updated).install(definition)
+                    if action == "PAUSE":
+                        with self.assertRaisesRegex(ValueError, "unsupported macOS"):
+                            AI_HUMAN.update_schedule_control(SimpleNamespace(
+                                worker=str(worker), action="RESUME", approval_reference="must stay off",
+                            ))
+                self.assertTrue(any(command[1] == "bootout" for command in calls))
+                self.assertFalse(any(command[1] == "bootstrap" for command in calls))
+
+    def test_macos_cleanup_rejects_unbound_changed_and_other_worker_definitions(self):
+        worker = self.base / "cleanup-binding"
+        worker.mkdir()
+        config = {
+            "platform": "MACOS", "schedule_id": "synthetic-owned-schedule",
+            "python_executable": sys.executable, "cadence": "WEEKLY",
+            "weekday": "MONDAY", "local_time": "03:00",
+        }
+        adapter = AI_HUMAN.MacOSUpdateCleanupAdapter(worker, config)
+        definition = worker / "definition.plist"
+        target = worker / "native.plist"
+        definition.write_bytes(AI_HUMAN.render_macos_update_definition(worker, config))
+        target.write_bytes(definition.read_bytes())
+        with (
+            mock.patch.object(adapter, "_macos_target", return_value=target),
+            mock.patch.object(AI_HUMAN.subprocess, "run") as native,
+        ):
+            with self.assertRaisesRegex(ValueError, "exact owned definition"):
+                adapter.remove()
+            adapter.verify_cleanup_definition(definition, sha256(definition))
+            target.write_bytes(target.read_bytes() + b"\n")
+            with self.assertRaisesRegex(ValueError, "target differs"):
+                adapter.pause()
+            target.write_bytes(definition.read_bytes())
+            other_worker = AI_HUMAN.plistlib.loads(definition.read_bytes())
+            other_worker["ProgramArguments"][3] = str(self.base / "another-worker")
+            definition.write_bytes(AI_HUMAN.plistlib.dumps(other_worker))
+            with self.assertRaisesRegex(ValueError, "another worker"):
+                adapter.verify_cleanup_definition(definition, sha256(definition))
+            with self.assertRaisesRegex(ValueError, "cleanup only"):
+                adapter.resume(definition)
+            native.assert_not_called()
+
     def test_macos_native_adapter_rejects_untested_build_and_pause_is_persistent(self):
         worker = self.base / "mac-native-render-only"
         self.install(worker)

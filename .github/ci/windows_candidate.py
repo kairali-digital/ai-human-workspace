@@ -18,11 +18,11 @@ import zipfile
 
 
 # Update all five candidate pins together after freezing a new product commit.
-CANDIDATE = "5fa38f65d0bc9b4650968159e102f823866c740c"
-TREE = "726a091e8cf1f282133a55cfef9565f8d698914d"
-RUNTIME = "7ac940131ad6ac684c6772558fe448cf4258879be15dd2236a1c9a2053c1147d"
-EXPECTED_TEST_COUNT = 237
-EXPECTED_SUITE_SHA256 = "a1a12bf5b12e34839f84dfa9ee35e27e1470b9689d295ea9e5f0b2dd597fe944"
+CANDIDATE = "dd5b17bcba663bbe6a1c67398e64f75f975544c0"
+TREE = "2ac7623fa004c4053260e343cefc610687ae8292"
+RUNTIME = "b52f9ff2f2ce25a406a4cf1e89c7434bf0341e77eb1b702184b0ad4dd3bc1e69"
+EXPECTED_TEST_COUNT = 238
+EXPECTED_SUITE_SHA256 = "60121de3da773172fe0c3432ecdcc38a3fc0d85ac4df290a69eebf8d0f4ff024"
 SHARD_COUNT = 4
 # These POSIX-only tests are inapplicable on this Windows runner. Discovery uses
 # start_dir=tests, so canonical IDs start with test_private_files, not tests.

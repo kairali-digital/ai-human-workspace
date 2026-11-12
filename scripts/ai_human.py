@@ -715,6 +715,13 @@ def show_tree_proof(args):
         print(json.dumps(tree_proof(args.root, exclude=args.exclude), indent=2, sort_keys=True))
 
 
+def atomic_temp_file(target):
+    if os.name == "nt":
+        stage = target.with_name("." + target.name + "." + secrets.token_hex(16) + ".tmp")
+        return open_private_exclusive(stage), stage
+    return tempfile.mkstemp(prefix="." + target.name + ".", dir=target.parent)
+
+
 def atomic_text(path, content):
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -750,7 +757,7 @@ def atomic_text(path, content):
                 pass
             os.close(directory_fd)
         return
-    descriptor, temp_name = tempfile.mkstemp(prefix="." + path.name + ".", dir=path.parent)
+    descriptor, temp_name = atomic_temp_file(path)
     try:
         with os.fdopen(descriptor, "wb", closefd=True) as stream:
             stream.write(data)
@@ -778,9 +785,9 @@ def atomic_copy_file(source, target):
     target.parent.mkdir(parents=True, exist_ok=True)
     if target.is_symlink():
         raise ValueError("atomic copy target may not be a symbolic link: " + str(target))
-    descriptor, temp_name = tempfile.mkstemp(prefix="." + target.name + ".", dir=target.parent)
+    descriptor, temp_name = atomic_temp_file(target)
     try:
-        with source.open("rb") as input_stream, os.fdopen(descriptor, "wb") as output_stream:
+        with os.fdopen(descriptor, "wb") as output_stream, source.open("rb") as input_stream:
             shutil.copyfileobj(input_stream, output_stream)
             output_stream.flush()
             os.fsync(output_stream.fileno())

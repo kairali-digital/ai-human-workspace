@@ -147,6 +147,27 @@ class NativeWindowsPrivateFileTests(_PrivateFileFixture, unittest.TestCase):
             "fixture": "synthetic-broad-parent", "stage": before, "target": after,
         }, sort_keys=True))
 
+    def test_atomic_text_and_copy_keep_private_acl_before_and_after_replace(self):
+        self.broad_parent()
+        original_replace = os.replace
+        observed = []
+
+        def inspect_stage(stage, target):
+            self.assert_private_acl(stage)
+            observed.append(Path(target))
+            original_replace(stage, target)
+
+        target = self.root / "work-map.json"
+        target.write_bytes(b"ordinary previous file")
+        backup = self.root / "copy.json"
+        with mock.patch.object(os, "replace", side_effect=inspect_stage):
+            PRIVATE.atomic_text(target, "synthetic context")
+            PRIVATE.atomic_copy_file(target, backup)
+        self.assertEqual(observed, [target, backup])
+        for path in observed:
+            self.assert_private_acl(path)
+            self.assertEqual(path.read_bytes(), b"synthetic context")
+
     def test_explicit_broad_acl_tampering_is_refused_without_repair(self):
         stage = self.root / ".store.json.h53-stage"
         self.write_private(stage)
@@ -232,7 +253,8 @@ def accesscheck_read(path):
                   [w.LPWSTR, c.c_int, D, PP, PP, PP, PP, PP])
     process = bind(kernel, "GetCurrentProcess", w.HANDLE, [])
     open_token = bind(advapi, "OpenProcessToken", w.BOOL, [w.HANDLE, D, PP])
-    duplicate = bind(advapi, "DuplicateToken", w.BOOL, [w.HANDLE, c.c_int, PP])
+    duplicate = bind(advapi, "DuplicateTokenEx", w.BOOL,
+                     [w.HANDLE, D, P, c.c_int, c.c_int, PP])
     restrict = bind(advapi, "CreateRestrictedToken", w.BOOL,
                     [w.HANDLE, D, D, P, D, P, D, P, PP])
     make_sid = bind(advapi, "ConvertStringSidToSidW", w.BOOL, [w.LPCWSTR, PP])
@@ -254,7 +276,8 @@ def accesscheck_read(path):
         if error:
             raise c.WinError(error)
         check(open_token(process(), 0x000A, c.byref(token)))  # QUERY | DUPLICATE
-        check(duplicate(token, 2, c.byref(impersonation)))
+        # AccessCheck needs QUERY. CreateRestrictedToken also needs DUPLICATE.
+        check(duplicate(token, 0x000A, None, 2, 2, c.byref(impersonation)))
         check(make_sid("S-1-1-0", c.byref(world)))
         restriction = SID_AND_ATTRIBUTES(world, 0)
         check(restrict(impersonation, 1, 0, None, 0, None, 1,

@@ -2,6 +2,36 @@
 
 All notable changes are recorded here in plain language.
 
+## [2.5.0] Mac release candidate
+
+- Add an adaptive work governor that can lower the effective action batch while
+  retaining the hard maximum of 25; stored files and datasets are not action counts.
+- Add context checkpoints, identity-bound file/session handoffs and read-first resource
+  evidence. Missing signals stay unknown; no app is force-quit or tab silently closed.
+- Add an optional addressed Worker Exchange, with explicit acceptance, replay/tamper
+  rejection, bounded routing and separate worker-owned state.
+- Add a consented local work map and evidence-bound opportunity proposals. Discovery
+  and suggestions do not activate a skill, project, schedule or external effect.
+- Add an off-by-default, read-only Chief of Staff and layered, source-backed memory,
+  including correction, expiry, conflict and forgetting controls. Shared snapshots do
+  not confer access to private project data or authority over another worker.
+- Add optional owner-chosen weekly/monthly native update schedules, verified idle-only
+  updates, immutable release checks, isolated execution and safe pause/remove/recovery.
+  Mac registration is restricted to the tested OS build; Windows remains on v2.4.0 during the Mac rollout.
+- Add canonical receipt tree proofs without rewriting historical receipts, and preserve
+  the new private state through governed downgrade export and recovery.
+- Bind downgrade exports to the private features understood by the target version;
+  v2.5 memory and coordination state cannot be restored into v2.4. Preserve legacy
+  archive bytes and compatible state; rollback refuses active writers and requires
+  an explicit approved checkpoint when a task remains live.
+- Preserve exact LF, CRLF and mixed-newline automation bytes through downgrade
+  export, restoration and interrupted recovery; reject changed visible state.
+- Create H-53 memory/Chief staging files with owner-only Windows access controls
+  before writing content; verify protection again during commit and recovery.
+
+All new capabilities remain off by default. Automatic release eligibility is still off.
+The Mac rollout uses the versioned release and its signed source commit. Windows uses the common v2.4.0 release. The signed-off release packet identifies the exact approved bytes.
+
 ## [2.4.0] - 2026-09-03
 
 - Upgrade the personal improvement loop from quarterly-only to an owner-selected

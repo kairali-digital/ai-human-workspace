@@ -184,6 +184,9 @@ def build_kairali():
 
 
 def main():
+    if VERSION == "2.5.0" and RELEASE_STATUS == "RELEASED":
+        guide = ROOT / "packages/kairali/UPDATE-WORKFLOW.md"
+        (DOWNLOADS / "KAIRALI-MAC-v250-UPDATE-WORKFLOW.md").write_bytes(file_bytes(guide))
     reusable = build_reusable()
     kairali = build_kairali()
     all_names = {

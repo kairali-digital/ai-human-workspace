@@ -6,10 +6,10 @@
 2. Read the installed version from `.ai-human/VERSION`. The deterministic local task
    command checks the writer lease itself. Inspect the lease manually only when a live
    task, manual controlled-state change or consequential path makes it relevant.
-3. Only on the first calendar day at 10:00 AM, ask the approved scheduler adapter to supply
-   this worker's confirmed offset-aware local time to the lifecycle tool and run the
-   monthly read-only version check. Never substitute the lifecycle host's clock. At
-   other times, use the last report and do not create a duplicate monthly check.
+3. If the owner configured a native schedule, follow `UPDATE-SCHEDULER.md`. The native
+   runner supplies its schedule ID and exact config hash; the lifecycle tool validates
+   the confirmed host zone and calculates the due occurrence in the configured IANA
+   zone before any release network check. When not due, use the last report quietly.
 4. Report update details only when an update check actually ran or the user asked.
 5. If a live task or writer lease exists, report `DEFERRED` and wait for a safe
    checkpoint. Do not alter controlled state behind the active writer.
@@ -31,3 +31,7 @@
     lifecycle path; it auto-generates an ID when needed and owns the lease and exact
     state format. Use the manual lease path only for consequential or other controlled
     changes the task command does not cover.
+12. If the host exposes a trustworthy context-used signal, record it through the
+    Context Guard. If not, keep the status `UNKNOWN`; never estimate a percentage from
+    message count or files. When a checkpoint latch exists, accept no new work. In the
+    intended new session, verify and consume the exact packet before continuing.

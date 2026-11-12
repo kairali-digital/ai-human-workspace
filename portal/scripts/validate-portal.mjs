@@ -46,6 +46,30 @@ const actual = (await readdir(downloads)).sort();
 const listed = [...records.keys()].sort();
 if (JSON.stringify(actual) !== JSON.stringify(listed)) issues.push("download directory and manifest inventory differ");
 
+const macEditions = [
+  "KAIRALI-AI-HUMAN-v250-EMPLOYEE-EDITION-PUBLIC-KIT.zip",
+  "AI-HUMAN-v250-REUSABLE-EDITION-PUBLIC-KIT.zip",
+];
+if (macEditions.some(name => records.has(name) || records.has(name + ".sha256"))) {
+  const macGuide = "KAIRALI-MAC-v250-UPDATE-WORKFLOW.md";
+  const authoritativeGuide = await readFile(path.join(repositoryRoot, "packages/kairali/UPDATE-WORKFLOW.md"));
+  const servedGuide = await readFile(path.join(downloads, macGuide)).catch(() => null);
+  if (!records.has(macGuide) || !servedGuide?.equals(authoritativeGuide)) {
+    issues.push("Mac update guide differs from the employee edition workflow");
+  }
+  for (const name of macEditions) {
+    const zip = records.get(name);
+    const sidecar = name + ".sha256";
+    if (!zip || !records.has(sidecar)) {
+      issues.push(`Mac distribution lacks a matching edition and checksum: ${name}`);
+      continue;
+    }
+    const expected = zip.sha256 + "  " + name;
+    const checksum = await readFile(path.join(downloads, sidecar), "utf8").catch(() => "");
+    if (checksum.trimEnd() !== expected) issues.push(`Mac edition checksum differs: ${name}`);
+  }
+}
+
 for (const [name, record] of records) {
   const file = path.join(downloads, name);
   try {

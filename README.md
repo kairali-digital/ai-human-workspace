@@ -63,14 +63,9 @@ private improvement state or personal files.
 - Governed capability and fleet-update control plane:
   [`docs/GOVERNED-CAPABILITIES-AND-FLEET.md`](docs/GOVERNED-CAPABILITIES-AND-FLEET.md)
 
-v2.4.0 is the current owner-approved personal-improvement and lifecycle-hardening
-release. It is backward-compatible for configured v2.0.0 through v2.3.0 workers and
-keeps release-level automatic update eligibility off. A pre-v2 worker still needs the
-guided exact-scope Gate 0 setup migration before entering the v2 line. The release
-manifests are `APPROVED_BY_OWNER` / `RELEASED`; protected GitHub checks and live
-verification remain the publication evidence for each distribution channel.
+During the Mac rollout, choose the v2.5.0 download for Mac and the common v2.4.0 download for Windows. Follow the release notice for your platform and verify its signed source and checksums. Ask Setup Helper to match the employee or reusable edition ZIP to your installed worker, check the ZIP against the approved hash, and use the updater inside that ZIP’s workspace folder. Configured stable Mac workers from v2.0.0 through v2.4.0 can use the managed update path, excluding held v2.0.1. Pre-v2 workers first complete the guided exact-scope Gate 0 migration. Release-level automatic update eligibility is off.
 
-The component catalog remains inspectable, but v2.4 does not install a managed skill.
+The component catalog remains inspectable, and managed skill installation remains disabled.
 Neither Codex nor Claude currently supplies this runtime with a trusted pre-discovery
 loader plus a host-proven human-presence signal. External email/LinkedIn effects are
 also unavailable until a native credential and authority broker exists. These are

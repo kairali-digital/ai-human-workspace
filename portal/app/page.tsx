@@ -1,48 +1,16 @@
 import Image from "next/image";
 import { DownloadGroup } from "../components/download-group";
 import { downloadGroups } from "../content/site-data";
+import downloadManifest from "../content/download-manifest.json";
+import { commonVersion, macEditions, macVersion, platformReleases, releasePage, type Release } from "../content/platform-releases";
 
-type GithubAsset = {
-  name: string;
-  browser_download_url: string;
-};
-
-type GithubRelease = {
-  tag_name: string;
-  html_url: string;
-  published_at: string;
-  assets: GithubAsset[];
-};
-
-const fallbackRelease: GithubRelease = {
-  tag_name: "v2.4.0",
-  html_url: "https://github.com/kairali-digital/ai-human-workspace/releases/tag/v2.4.0",
-  published_at: "2026-09-03T00:00:00Z",
-  assets: [],
-};
-
-async function getLatestRelease() {
-  try {
-    const response = await fetch(
-      "https://api.github.com/repos/kairali-digital/ai-human-workspace/releases/latest",
-      {
-        headers: { Accept: "application/vnd.github+json" },
-        next: { revalidate: 300 },
-      },
-    );
-    if (!response.ok) return { release: fallbackRelease, live: false };
-    return { release: (await response.json()) as GithubRelease, live: true };
-  } catch {
-    return { release: fallbackRelease, live: false };
-  }
-}
-
-function assetLink(release: GithubRelease, prefix: string) {
-  return release.assets.find((asset) => asset.name.startsWith(prefix))?.browser_download_url ?? release.html_url;
+function assetLink(release: Release | null, prefix: string) {
+  const name = prefix + commonVersion + ".zip";
+  return release?.assets.find(asset => asset.name === name)?.browser_download_url ?? releasePage(commonVersion);
 }
 
 export default async function Home() {
-  const { release, live } = await getLatestRelease();
+  const { common: release, mac } = await platformReleases(downloadManifest.files);
 
   return (
     <main>
@@ -64,18 +32,18 @@ export default async function Home() {
 
       <section className="hero" id="start">
         <div className="hero-copy">
-          <p className="eyebrow">Released v2.4.0</p>
+          <p className="eyebrow">{mac ? "Mac v2.5.0 · Windows v2.4.0" : "Released v2.4.0"}</p>
           <h1>Know your work. Save your time.</h1>
           <p className="hero-summary">Build source-backed personal work memory, a fixed-time Email EA and a reconciled Drive master index, with visible controls and proof.</p>
           <div className="hero-actions">
-            <a className="button button-primary" href="/downloads/KAIRALI-AI-HUMAN-v240-EMPLOYEE-EDITION-PUBLIC-KIT.zip" download>
+            <a className="button button-primary" href="#company-edition">
               Kairali employee edition
             </a>
-            <a className="button button-secondary" href="/downloads/AI-HUMAN-v240-REUSABLE-EDITION-PUBLIC-KIT.zip" download>
+            <a className="button button-secondary" href="#reusable-edition">
               Reusable edition
             </a>
           </div>
-          <p className="release-note">These are separate, verified public downloads. Configured v2.0.0 through v2.3.0 workers can take v2.4.0 at a safe checkpoint with user-owned state preserved. Pre-v2 workers first use the guided exact-scope Gate 0 migration.</p>
+          <p className="release-note">Choose your edition below, then select the download for your computer. Existing workers update at a safe checkpoint with user-owned state preserved. Pre-v2 workers first use the guided exact-scope Gate 0 migration.</p>
         </div>
         <div className="hero-media">
           <Image
@@ -90,19 +58,19 @@ export default async function Home() {
 
       <section className="release-strip" aria-label="Current source status">
         <div>
-          <span>Current public workspace</span>
+          <span>Common Mac and Windows release</span>
           <strong>v2.4.0 RELEASED</strong>
         </div>
         <div>
-          <span>Latest approved GitHub release</span>
-          <strong>{release.tag_name}</strong>
+          <span>Mac download</span>
+          <strong>{mac?.tag_name ?? "v2.4.0"}</strong>
         </div>
         <div>
           <span>Existing-worker update</span>
-          <strong>Configured v2.0.0 through v2.3.0; pre-v2 migration</strong>
+          <strong>{mac ? "From v2.0.0 through v2.4.0 on Mac or v2.3.0 on Windows" : "Configured v2.0.0 through v2.3.0"}</strong>
         </div>
-        <a href={release.html_url} target="_blank" rel="noreferrer">View source release</a>
-        {!live ? <p className="release-fallback">Live release check is temporarily unavailable. The last approved release is shown.</p> : null}
+        <a href={releasePage(commonVersion)} target="_blank" rel="noreferrer">View source release</a>
+        {!release ? <p className="release-fallback">The common release could not be verified live. The v2.4.0 downloads remain available.</p> : null}
       </section>
 
       <section className="start-paths" id="editions" aria-labelledby="choose-heading">
@@ -112,17 +80,19 @@ export default async function Home() {
           <p>The editions are deliberately separate. Do not give the Kairali package to an outside user and do not give a Kairali employee the generic package.</p>
         </div>
         <div className="path-grid">
-          <article className="path path-employee">
+          <article id="company-edition" className="path path-employee">
             <span>For Kairali employees</span>
             <h3>Company edition.</h3>
             <p>Includes the Kairali Setup Helper, role prompts, Personal Work Memory + Daily Email EA, Drive Master Index, the human-only Saturday LinkedIn assistant and reference skill packages. v2.4 never activates a skill.</p>
-            <a href="/downloads/KAIRALI-AI-HUMAN-v240-EMPLOYEE-EDITION-PUBLIC-KIT.zip" download>Download Kairali employee edition</a>
+            {mac && <p><a href={"/downloads/" + macEditions.employee} download>Mac v{macVersion} download</a></p>}
+            <a href="/downloads/KAIRALI-AI-HUMAN-v240-EMPLOYEE-EDITION-PUBLIC-KIT.zip" download>{mac ? "Windows v2.4.0 download" : "Mac and Windows v2.4.0 download"}</a>
           </article>
-          <article className="path path-facilitator">
+          <article id="reusable-edition" className="path path-facilitator">
             <span>For everyone else</span>
             <h3>Reusable edition.</h3>
             <p>Contains only the company-neutral workspace, generic Setup Helper and reversible lifecycle controls. It is tested to contain no Kairali employee content.</p>
-            <a href="/downloads/AI-HUMAN-v240-REUSABLE-EDITION-PUBLIC-KIT.zip" download>Download reusable edition</a>
+            {mac && <p><a href={"/downloads/" + macEditions.reusable} download>Mac v{macVersion} download</a></p>}
+            <a href="/downloads/AI-HUMAN-v240-REUSABLE-EDITION-PUBLIC-KIT.zip" download>{mac ? "Windows v2.4.0 download" : "Mac and Windows v2.4.0 download"}</a>
           </article>
         </div>
       </section>
@@ -134,7 +104,7 @@ export default async function Home() {
           <p>No Terminal, PowerShell, Python, Git or typed command. The Setup Helper performs the internal work and gives you only an unavoidable click, login or permission.</p>
         </div>
         <div className="five-steps">
-          <article><span>1</span><h3>Choose one edition.</h3><p>Click the Kairali employee download or reusable download above.</p><strong>DONE WHEN: the ZIP is in Downloads.</strong></article>
+          <article><span>1</span><h3>Choose one edition.</h3><p>In your edition above, click the download labeled for your computer.</p><strong>DONE WHEN: the ZIP is in Downloads.</strong></article>
           <article><span>2</span><h3>Extract the ZIP.</h3><p>Mac: double-click the ZIP once. Windows: right-click it, select Extract All, then select Extract.</p><strong>DONE WHEN: the named edition folder appears.</strong></article>
           <article><span>3</span><h3>Open ChatGPT.</h3><p>Use the desktop app, sign in with the correct account and start a new chat.</p><strong>DONE WHEN: the new chat box is visible.</strong></article>
           <article><span>4</span><h3>Paste the Setup Helper message.</h3><p>It asks one question at a time for the exact company/entity, unit, jurisdictions, purpose, your relationship and compliance owner. It checks current sources before creating the working copy.</p><strong>DONE WHEN: Codex shows the correct local project and confirmed Gate 0 profile.</strong></article>
@@ -300,6 +270,7 @@ export default async function Home() {
           <article>
             <span>4</span>
             <h3>Prove the exact worker.</h3>
+            {mac && <p>For Mac v2.5.0, ask the Setup Helper to verify the signed v2.5.0 tag, verify its exact commit and approved checksums, then open the matching edition ZIP from that commit. The helper updates from its workspace folder after matching the release repository to your installed worker. For an approved update, use the updater bundled inside that verified edition so it makes the worker recovery snapshot. Windows uses the common v2.4.0 release.</p>}
             <p>A configured v2.0.0 through v2.3.0 worker moves to v2.4.0 with user-owned state preserved. A pre-v2 worker completes the guided Gate 0 migration first. Keep the version, validation receipt and preserved-state proof.</p>
           </article>
         </div>
@@ -307,7 +278,8 @@ export default async function Home() {
           <p><strong>Automatic:</strong> the stable portal follows the approved release and a session may check for a newer version.</p>
           <p><strong>Manual:</strong> the user approves the apply. GitHub Desktop Fetch/Pull synchronizes only the selected repository; it does not install this managed update.</p>
         </div>
-        <a className="access-link" href="/downloads/KAIRALI-MANAGED-UPDATE-WORKFLOW.md" download>Download the exact check prompt and recovery workflow</a>
+        {mac && <p><a className="access-link" href="/downloads/KAIRALI-MAC-v250-UPDATE-WORKFLOW.md" download>Mac v2.5.0 employee update and recovery guide</a></p>}
+        <a className="access-link" href="/downloads/KAIRALI-MANAGED-UPDATE-WORKFLOW.md" download>{mac ? "Windows v2.4.0 employee update and recovery guide" : "Download the exact check prompt and recovery workflow"}</a>
       </section>
 
       <section className="access-boundary" id="access" aria-labelledby="access-heading">
@@ -360,16 +332,17 @@ export default async function Home() {
         <div>
           <p className="eyebrow">Technical and owner path</p>
           <h2 id="technical-heading">GitHub stays the approved source of truth.</h2>
-          <p>v2.4.0 is the approved public release. Its exact source, checksums and release evidence are published together. Fetch/Pull updates a repository checkout, not an installed worker; configured v2.0.0 through v2.3.0 workers use the checked update path and pre-v2 workers use the guided migration. Interrupted managed updates stop ordinary work until the checked recovery path completes.</p>
+          <p>v2.4.0 is the common Mac and Windows release. Its exact source, checksums and release evidence are published together. Fetch/Pull updates a repository checkout, not an installed worker; configured v2.0.0 through v2.3.0 workers use the checked update path and pre-v2 workers use the guided migration. Interrupted managed updates stop ordinary work until the checked recovery path completes.</p>
         </div>
         <div className="technical-links">
+          {mac && <a href={releasePage(macVersion)} target="_blank" rel="noreferrer"><span>Mac v2.5.0</span><strong>Release files and checksums</strong></a>}
           <a href={assetLink(release, "ai-human-workspace-")} target="_blank" rel="noreferrer">
             <span>Workspace core</span>
-            <strong>Download latest approved ZIP</strong>
+            <strong>Download v2.4.0 ZIP</strong>
           </a>
           <a href={assetLink(release, "kairali-company-rollout-")} target="_blank" rel="noreferrer">
             <span>Company kit and reference skill packages</span>
-            <strong>Download latest approved ZIP</strong>
+            <strong>Download v2.4.0 ZIP</strong>
           </a>
           <a href="https://github.com/kairali-digital/ai-human-workspace" target="_blank" rel="noreferrer">
             <span>Public repository</span>
@@ -401,7 +374,7 @@ export default async function Home() {
       </section>
 
       <footer>
-        <p>Public v2.4.0. Choose one edition, verify setup, and keep company Gate 0 profiles isolated.</p>
+        <p>{mac ? "Mac v2.5.0 · Windows v2.4.0." : "Public v2.4.0."} Choose one edition, verify setup, and keep company Gate 0 profiles isolated.</p>
         <a href="#troubleshooting">Stuck? Start with troubleshooting.</a>
       </footer>
     </main>

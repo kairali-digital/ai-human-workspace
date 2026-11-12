@@ -2,16 +2,20 @@
 """Install and manage a durable, company-neutral AI-human workspace."""
 
 import argparse
+import csv
 import contextlib
 import datetime
 import decimal
 import hashlib
 import json
 import os
+import platform
+import plistlib
 import re
 import secrets
 import shutil
 import stat
+import subprocess
 import sys
 import tempfile
 import time
@@ -19,6 +23,7 @@ import unicodedata
 import urllib.parse
 import urllib.request
 import zipfile
+import xml.etree.ElementTree as ET
 from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -40,6 +45,240 @@ BATCH_KINDS = (
     "external-record-write",
 )
 INTACT_ARTIFACT_BATCH_KINDS = {"artifact-upload", "assignment-intake"}
+GOVERNOR_ROOT = Path(".ai-human/governor")
+GOVERNOR_POLICY_PATH = GOVERNOR_ROOT / "policy.json"
+GOVERNOR_POLICIES_ROOT = GOVERNOR_ROOT / "policies"
+GOVERNOR_PLANS_ROOT = GOVERNOR_ROOT / "plans"
+GOVERNOR_OUTCOMES_ROOT = GOVERNOR_ROOT / "outcomes"
+GOVERNOR_SIGNAL_NAMES = (
+    "worker_policy",
+    "action_risk",
+    "provider_api",
+    "rollback_evidence",
+    "context_budget",
+    "computer_resource",
+    "healthy_throughput",
+)
+GOVERNOR_EFFECTS = {
+    "READ_ONLY",
+    "LOCAL_REVERSIBLE",
+    "EXTERNAL_IDEMPOTENT",
+    "EXTERNAL_NON_IDEMPOTENT",
+    "GATE_ZERO",
+}
+GOVERNOR_STATES = {"PILOT", "STEADY", "BACKOFF", "HALT"}
+GOVERNOR_HALT_OBSERVATIONS = {
+    "PERMISSION_UNCERTAIN",
+    "GATE_ZERO",
+    "STATE_DIVERGENCE",
+    "ROLLBACK_MISSING",
+    "WRONG_TARGET",
+    "NON_IDEMPOTENT_RETRY",
+}
+GOVERNOR_BACKOFF_OBSERVATIONS = {
+    "PROVIDER_THROTTLED",
+    "CONTEXT_PRESSURE",
+    "RESOURCE_PRESSURE",
+    "AMBIGUOUS_OUTPUT",
+    "SLOW_EVIDENCE",
+    "PARTIAL_FAILURE",
+    "EVIDENCE_BACKLOG",
+}
+GOVERNOR_OUTCOME_STATUSES = {
+    "SUCCESS",
+    "FAILED",
+    "THROTTLED",
+    "PARTIAL",
+    "EVIDENCE_FAILED",
+    "ROLLBACK_FAILED",
+    "STATE_DIVERGED",
+    "CANCELLED",
+}
+GOVERNOR_FATAL_OUTCOMES = {"ROLLBACK_FAILED", "STATE_DIVERGED"}
+GOVERNOR_POLICY_FIELDS = {
+    "approval_reference", "hard_ceiling", "owner", "pilot_size", "policy_id",
+    "policy_version", "promotion_successes", "schema", "unknown_external",
+    "unknown_local_reversible", "unknown_read_only",
+}
+GOVERNOR_REQUEST_FIELDS = {
+    "effect", "embedded_entries", "independent_units", "kind", "observations",
+    "request_id", "schema", "signals",
+}
+GOVERNOR_SIGNAL_CONFIRMED_FIELDS = {"allowance", "evidence", "status"}
+GOVERNOR_SIGNAL_UNKNOWN_FIELDS = {"reason", "status"}
+GOVERNOR_OBSERVATION_FIELDS = {"code", "evidence"}
+GOVERNOR_OUTCOME_REQUEST_FIELDS = {
+    "completed_units", "evidence", "plan_id", "schema", "status",
+}
+CONTINUITY_ROOT = Path(".ai-human/continuity")
+CONTINUITY_POLICY_PATH = CONTINUITY_ROOT / "policy.json"
+CONTINUITY_POLICIES_ROOT = CONTINUITY_ROOT / "policies"
+CONTEXT_OBSERVATIONS_ROOT = CONTINUITY_ROOT / "context"
+CONTINUITY_OUTBOX_ROOT = CONTINUITY_ROOT / "outbox"
+CONTINUITY_ACKS_ROOT = CONTINUITY_ROOT / "acknowledgements"
+CONTEXT_CHECKPOINT_LATCH_PATH = CONTINUITY_ROOT / "checkpoint-required.json"
+CONTINUITY_POLICY_FIELDS = {
+    "approval_reference", "context_signal_max_age_seconds", "context_soft_limit_used_percent",
+    "handoff_max_age_minutes", "owner", "policy_id", "policy_version", "schema",
+    "unknown_context_action",
+}
+CONTEXT_OBSERVATION_FIELDS = {
+    "atomic_state", "observation_id", "schema", "signal", "task_id", "worker_id",
+}
+CONTEXT_SIGNAL_AVAILABLE_FIELDS = {
+    "evidence", "metric", "observed_utc", "source", "status", "value",
+}
+CONTEXT_SIGNAL_UNKNOWN_FIELDS = {"observed_utc", "reason", "status"}
+CONTEXT_ATOMIC_STATES = {
+    "BEFORE_WORK", "SAFE_ATOMIC_STEP_IN_PROGRESS", "CONSEQUENTIAL_STEP_IN_PROGRESS",
+}
+CONTEXT_DIRECTIVES = {
+    "CONTINUE", "CHECKPOINT_SOON", "HALT_NEW_WORK_AND_CHECKPOINT",
+    "CHECKPOINT_NOW", "FINISH_SAFE_ATOMIC_STEP_THEN_CHECKPOINT",
+    "HALT_CONSEQUENTIAL_STEP_AND_CHECKPOINT",
+}
+CONTEXT_NEW_WORK_COMMANDS = {
+    "task-start", "governor-plan", "action-execute", "improvement-run",
+    "autonomy-skill-install", "resource-snapshot", "resource-plan",
+    "work-map-discover", "work-map-record", "radar-run",
+    "exchange-send", "exchange-mission-create",
+    "memory-record", "portfolio-snapshot", "portfolio-export-artifact",
+    "chief-portfolio-upsert", "chief-portfolio-import-exchange", "chief-brief",
+}
+HANDOFF_REQUEST_FIELDS = {
+    "active_gates", "approval_boundaries", "done_condition", "expires_utc",
+    "handoff_id", "intended_recipient_identity_sha256",
+    "intended_recipient_state_sha256", "intended_recipient_task_id",
+    "intended_recipient_worker_id", "last_completed_step", "mission", "next_action",
+    "purpose", "read_boundaries", "required_evidence", "required_files", "schema",
+    "sender_task_id", "tool_boundaries", "unresolved_decisions", "withheld_actions",
+    "write_boundaries",
+}
+HANDOFF_REQUIRED_FILE_FIELDS = {"path", "schema", "sha256"}
+HANDOFF_PACKET_FILE_FIELDS = {"bundle_path", "path", "schema", "sha256", "size_bytes"}
+HANDOFF_PURPOSES = {"SESSION_CONTINUATION", "WORKER_HANDOFF"}
+RESOURCE_ROOT = Path(".ai-human/resources")
+RESOURCE_POLICY_PATH = RESOURCE_ROOT / "policy.json"
+RESOURCE_POLICIES_ROOT = RESOURCE_ROOT / "policies"
+RESOURCE_SNAPSHOTS_ROOT = RESOURCE_ROOT / "snapshots"
+RESOURCE_PLANS_ROOT = RESOURCE_ROOT / "plans"
+RESOURCE_OUTCOMES_ROOT = RESOURCE_ROOT / "outcomes"
+RESOURCE_POLICY_FIELDS = {
+    "allow_browser_discard", "allow_tabs_not_opened_by_ai", "approval_reference",
+    "max_tab_candidates", "observation_max_age_minutes", "owner", "policy_id",
+    "policy_version", "retain_reopen_locator", "schema",
+}
+RESOURCE_OBSERVATION_FIELDS = {
+    "browser", "captured_utc", "host", "memory", "observation_id", "pressure",
+    "processes", "schema", "swap",
+}
+RESOURCE_TAB_FIELDS = {
+    "active_download", "auth_payment_admin", "classification", "discard_supported",
+    "estimated_memory_bytes", "inactive", "meeting", "opened_by_ai", "playing_audio",
+    "reopen_locator", "tab_id", "unsaved_form",
+}
+RESOURCE_OUTCOME_REQUEST_FIELDS = {
+    "after_snapshot_id", "evidence", "plan_id", "schema", "status",
+}
+RESOURCE_OUTCOME_STATUSES = {
+    "NOT_EXECUTED", "USER_REFUSED", "ADAPTER_UNAVAILABLE",
+    "EXECUTED_NO_IMPROVEMENT", "EXECUTED_IMPROVED",
+}
+EXCHANGE_LOCAL_ROOT = Path(".ai-human/exchange")
+EXCHANGE_JOIN_PATH = EXCHANGE_LOCAL_ROOT / "join.json"
+EXCHANGE_LEAVE_PATH = EXCHANGE_LOCAL_ROOT / "leave.json"
+EXCHANGE_PROTOCOL = "ai-human.worker-exchange/v1"
+EXCHANGE_CONFIG_FIELDS = {
+    "access_classes", "approval_reference", "directory_max_age_minutes", "exchange_id", "max_attachment_bytes",
+    "max_attachments", "max_conversation_messages", "max_fanout", "max_hops",
+    "max_message_bytes", "owner", "schema", "status_repeat_window_seconds",
+}
+EXCHANGE_DIRECTORY_FIELDS = {
+    "accepted_message_types", "access_class", "address", "company", "human_owner",
+    "identity_sha256", "joined_utc", "legal_entity", "name", "operating_unit",
+    "protocols", "purpose", "schema", "status", "supervisor", "verified_utc",
+    "worker_id",
+}
+EXCHANGE_ROUTE_POLICY_FIELDS = {
+    "access_classes", "allowed_message_types", "allowed_modes", "approval_reference",
+    "cross_boundary_authorization_reference", "expires_utc", "policy_id",
+    "recipient_worker_id", "schema", "sender_worker_id", "status",
+}
+EXCHANGE_MISSION_FIELDS = {
+    "dependencies", "done_condition", "expires_utc", "integration_owner_worker_id",
+    "max_messages", "members", "mission_id", "name", "purpose",
+    "required_result_worker_ids", "schema", "source_owner_worker_id", "status",
+}
+EXCHANGE_REQUEST_FIELDS = {
+    "active_gates", "approval_boundaries", "attachments", "confidentiality",
+    "conversation_id", "created_utc", "done_condition", "expires_utc", "fanout_count",
+    "hop_count", "idempotency_key", "message_id", "message_type", "mission_id",
+    "priority", "priority_source", "purpose", "read_boundaries", "recipients",
+    "reply_expectation", "reply_to_id", "requested_result", "route", "schema",
+    "source_references", "tool_boundaries", "write_boundaries",
+}
+EXCHANGE_ENVELOPE_FIELDS = {
+    "attachments", "authority", "delivery_locations", "envelope_sha256",
+    "material_fingerprint", "message_id", "mission_sha256", "protocol", "request",
+    "request_sha256", "route_policies", "schema", "sender_identity_sha256",
+    "sender_state_sha256", "sender_task_id", "sender_worker_id",
+    "transport_receipt_location", "trusted_transport_receipt",
+}
+EXCHANGE_ATTACHMENT_FIELDS = {"media_type", "path", "sha256"}
+EXCHANGE_EVENT_FIELDS = {
+    "actor_worker_id", "created_utc", "event_id", "event_sha256", "evidence",
+    "message_id", "recipient_worker_id", "schema", "state",
+}
+EXCHANGE_RESULT_FIELDS = {
+    "artifacts", "evidence", "fact_claims", "message_id", "result_id",
+    "result_version", "schema", "source_owner_worker_id",
+}
+EXCHANGE_FACT_FIELDS = {"fact_id", "owner_worker_id", "value_sha256"}
+EXCHANGE_INTEGRATION_FIELDS = {"expected", "mission_id", "schema"}
+EXCHANGE_EXPECTED_RESULT_FIELDS = {
+    "message_id", "result_id", "result_sha256", "result_version", "worker_id",
+}
+EXCHANGE_MESSAGE_TYPES = {
+    "NOTE", "REQUEST", "RESPONSE", "STATUS", "BLOCKER", "HANDOFF",
+    "FACT_PROPOSAL", "DECISION_REQUEST", "RESULT",
+}
+EXCHANGE_ROUTES = {"DIRECT", "CHIEF_MEDIATED", "MISSION_ROOM"}
+EXCHANGE_TERMINAL_STATES = {"REJECTED", "EXPIRED", "COMPLETED", "FAILED", "CANCELLED"}
+EXCHANGE_LIFECYCLE_STATES = {
+    "QUEUED", "DELIVERED", "ACKNOWLEDGED", "ACCEPTED", "REJECTED", "EXPIRED",
+    "COMPLETED", "FAILED", "CANCELLED",
+}
+EXCHANGE_MUTATION_COMMANDS = {
+    "exchange-ack", "exchange-decide", "exchange-result", "exchange-integrate",
+    "exchange-leave", "exchange-local-recover",
+}
+EXCHANGE_TRANSITIONS = {
+    None: {"QUEUED"},
+    "QUEUED": {"DELIVERED", "FAILED", "CANCELLED", "EXPIRED"},
+    "DELIVERED": {"ACKNOWLEDGED", "FAILED", "CANCELLED", "EXPIRED"},
+    "ACKNOWLEDGED": {"ACCEPTED", "REJECTED", "CANCELLED", "EXPIRED"},
+    "ACCEPTED": {"COMPLETED", "FAILED", "CANCELLED"},
+}
+UPDATE_SCHEDULE_ROOT = Path(".ai-human/update-schedule")
+UPDATE_SCHEDULE_CONFIG_PATH = UPDATE_SCHEDULE_ROOT / "config.json"
+UPDATE_SCHEDULE_NATIVE_PATH = UPDATE_SCHEDULE_ROOT / "native.json"
+UPDATE_SCHEDULE_DEFINITIONS_ROOT = UPDATE_SCHEDULE_ROOT / "definitions"
+UPDATE_SCHEDULE_BACKUPS_ROOT = UPDATE_SCHEDULE_ROOT / "backups"
+UPDATE_SCHEDULE_TRANSACTION_PATH = Path(
+    ".ai-human/control/update-schedule-transaction.json"
+)
+UPDATE_PILOT_APPROVAL_PATH = UPDATE_SCHEDULE_ROOT / "pilot-approval.json"
+UPDATE_LEGACY_MIGRATION_PATH = UPDATE_SCHEDULE_ROOT / "legacy-migration.json"
+UPDATE_SCHEDULE_CADENCES = {"WEEKLY", "MONTHLY"}
+UPDATE_SCHEDULE_PLATFORMS = {"MACOS", "WINDOWS"}
+UPDATE_SCHEDULE_STATUSES = {"DISABLED", "ENABLED", "PAUSED", "REMOVED"}
+UPDATE_NATIVE_STATUSES = {
+    "VERIFIED_ACTIVE", "VERIFIED_PAUSED", "VERIFIED_REMOVED", "UNAVAILABLE",
+}
+UPDATE_WEEKDAYS = {
+    "MONDAY": 0, "TUESDAY": 1, "WEDNESDAY": 2, "THURSDAY": 3,
+    "FRIDAY": 4, "SATURDAY": 5, "SUNDAY": 6,
+}
 LEASE_PATH = Path(".ai-human/control/session-lease.json")
 CONTROL_RECEIPTS = Path(".ai-human/control/receipts")
 CAPABILITY_ROOT = Path(".ai-human/capabilities")
@@ -56,6 +295,7 @@ AUTONOMY_SKILL_LOCK_PATH = AUTONOMY_ROOT / "skill.lock"
 AUTONOMY_FAULT_LATCH_PATH = AUTONOMY_ROOT / "EMERGENCY-STOP"
 WORKER_OPERATION_MUTEX_PATH = Path(".ai-human-operation.mutex")
 LIFECYCLE_TRANSACTION_PATH = Path(".ai-human/control/lifecycle-transaction.json")
+EXCHANGE_MUTATION_PATH = Path(".ai-human/control/exchange-mutation.json")
 MODE_PATH = Path(".ai-human/control/mode.json")
 GATE_PROFILE_PATH = Path(".ai-human/control/gate-profile.json")
 MODE_ACTIVE = "ACTIVE"
@@ -83,6 +323,20 @@ MODE_GUARDED_COMMANDS = {
     "improvement-decision", "improvement-value", "improvement-show", "autonomy-choice", "autonomy-show",
     "action-execute",
     "autonomy-skill-install",
+    "governor-configure", "governor-plan", "governor-record",
+    "continuity-configure", "context-check", "handoff-create", "handoff-consume",
+    "continuity-recover",
+    "resource-configure", "resource-snapshot", "resource-plan", "resource-record",
+    "work-map-consent", "work-map-discover", "work-map-record", "radar-configure",
+    "radar-verify", "radar-run", "radar-decide",
+    "exchange-join", "exchange-directory-refresh", "exchange-leave", "exchange-local-recover",
+    "exchange-send", "exchange-ack", "exchange-decide",
+    "exchange-result", "exchange-mission-create", "exchange-integrate",
+    "update-schedule-configure", "update-schedule-edit",
+    "update-schedule-legacy-disable", "update-pilot-approve",
+    "memory-configure", "memory-record", "memory-control", "memory-rebuild",
+    "chief-configure", "portfolio-snapshot", "portfolio-export-artifact",
+    "chief-portfolio-upsert", "chief-portfolio-import-exchange", "chief-portfolio-control", "chief-brief",
 }
 COORDINATION_STATE_FILES = (
     "MASTER_CURSOR.md", "OPEN_REGISTER.md", "TODAY.md",
@@ -104,10 +358,18 @@ STATE_FILES = (
     "AUTOMATIONS.md", "START-HERE.md", "READ-ME-FIRST.txt",
 )
 INTRINSIC_NEVER_MANAGED = set(STATE_FILES) | {
+    ".ai-human/personal/",
     ".ai-human/control/",
     ".ai-human/capabilities/",
     ".ai-human/improvement/",
     ".ai-human/autonomy/",
+    ".ai-human/governor/",
+    ".ai-human/continuity/",
+    ".ai-human/resources/",
+    ".ai-human/exchange/",
+    ".ai-human/update-schedule/",
+    ".ai-human/memory/",
+    ".ai-human/chief/",
     ".ai-human/backups/",
     ".ai-human/downgrade-exports/",
     ".ai-human/install.json",
@@ -171,6 +433,10 @@ def now_utc():
     return datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
 
 
+class WorkerOperationBusy(ValueError):
+    """Another process holds the worker's operation lock."""
+
+
 @contextlib.contextmanager
 def worker_operation_mutex(worker, wait_seconds=0):
     """Serialize every worker command with a crash-released OS advisory lock."""
@@ -201,6 +467,8 @@ def worker_operation_mutex(worker, wait_seconds=0):
                     break
                 except OSError as exc:
                     if time.monotonic() >= deadline:
+                        if isinstance(exc, BlockingIOError):
+                            raise WorkerOperationBusy("another worker operation is already in progress") from exc
                         raise ValueError("another worker operation is already in progress") from exc
                     time.sleep(0.1)
         yield
@@ -381,23 +649,83 @@ def sha256(path):
     return digest.hexdigest()
 
 
-def tree_sha256(root, ignore_receipt=False):
+TREE_PROOF_ALGORITHM = "sha256-posix-path-nul-raw-sha256-lf/v1"
+
+
+def tree_proof(root, *, targets=None, exclude=()):
+    """Describe exact bytes without timestamps, absolute paths or receipt recursion."""
     root = Path(root)
+    if root.is_symlink() or not root.is_dir():
+        raise ValueError("tree proof root must be a real directory")
+    root = root.resolve()
+    exclusions = sorted(safe_relative(item, "tree proof exclusion").as_posix() for item in exclude)
+    if len(exclusions) != len(set(exclusions)):
+        raise ValueError("duplicate tree proof exclusion")
+    if targets is not None and exclusions:
+        raise ValueError("selected-file proofs may not exclude files")
+    if targets is None:
+        paths = sorted(root.rglob("*"), key=lambda item: item.relative_to(root).as_posix())
+    else:
+        names = [safe_relative(item, "tree proof target").as_posix() for item in targets]
+        if len(names) != len(set(names)):
+            raise ValueError("duplicate tree proof target")
+        paths = [release_file(root, name, "tree proof target") for name in sorted(names)]
     digest = hashlib.sha256()
-    count = 0
-    paths = sorted(root.rglob("*"), key=lambda item: item.relative_to(root).as_posix())
+    files = []
     for path in paths:
         if path.is_symlink():
             raise ValueError("component trees may not contain symbolic links: " + str(path))
-        if not path.is_file():
-            continue
         relative = path.relative_to(root).as_posix()
-        if ignore_receipt and relative == COMPONENT_RECEIPT:
+        if relative in exclusions:
+            if not path.is_file():
+                raise ValueError("tree proof exclusions must name files")
             continue
+        if not path.is_file():
+            if not path.is_dir():
+                raise ValueError("tree proof contains a non-regular file: " + relative)
+            continue
+        file_digest = sha256(path)
         digest.update(relative.encode("utf-8") + b"\0")
-        digest.update(bytes.fromhex(sha256(path)) + b"\n")
-        count += 1
-    return digest.hexdigest(), count
+        digest.update(bytes.fromhex(file_digest) + b"\n")
+        files.append({"path": relative, "sha256": file_digest})
+    return {
+        "algorithm": TREE_PROOF_ALGORITHM,
+        "excluded_files": exclusions,
+        "file_count": len(files),
+        "files": files,
+        "schema": "ai-human.tree-proof/v1",
+        "scope": "TREE" if targets is None else "SELECTED_FILES",
+        "tree_sha256": digest.hexdigest(),
+    }
+
+
+def verify_tree_proof(root, proof, *, targets=None, exclude=()):
+    """The verifier's expected scope comes from the caller, never the receipt."""
+    expected = tree_proof(root, targets=targets, exclude=exclude)
+    # Canonical JSON also distinguishes JSON booleans from integer file counts.
+    if json.dumps(proof, sort_keys=True) != json.dumps(expected, sort_keys=True):
+        raise ValueError("tree proof integrity or scope mismatch")
+    return expected
+
+
+def tree_sha256(root, ignore_receipt=False):
+    proof = tree_proof(root, exclude=(COMPONENT_RECEIPT,) if ignore_receipt else ())
+    return proof["tree_sha256"], proof["file_count"]
+
+
+def show_tree_proof(args):
+    if args.verify:
+        verify_tree_proof(args.root, read_json(Path(args.verify)), exclude=args.exclude)
+        print("AI-HUMAN TREE PROOF: PASS")
+    else:
+        print(json.dumps(tree_proof(args.root, exclude=args.exclude), indent=2, sort_keys=True))
+
+
+def atomic_temp_file(target):
+    if os.name == "nt":
+        stage = target.with_name("." + target.name + "." + secrets.token_hex(16) + ".tmp")
+        return open_private_exclusive(stage), stage
+    return tempfile.mkstemp(prefix="." + target.name + ".", dir=target.parent)
 
 
 def atomic_text(path, content):
@@ -435,7 +763,7 @@ def atomic_text(path, content):
                 pass
             os.close(directory_fd)
         return
-    descriptor, temp_name = tempfile.mkstemp(prefix="." + path.name + ".", dir=path.parent)
+    descriptor, temp_name = atomic_temp_file(path)
     try:
         with os.fdopen(descriptor, "wb", closefd=True) as stream:
             stream.write(data)
@@ -451,15 +779,21 @@ def atomic_json(path, value):
     atomic_text(path, json.dumps(value, indent=2, sort_keys=True) + "\n")
 
 
+def atomic_json_sha256(value):
+    return hashlib.sha256(
+        (json.dumps(value, indent=2, sort_keys=True) + "\n").encode("utf-8")
+    ).hexdigest()
+
+
 def atomic_copy_file(source, target):
     source = Path(source)
     target = Path(target)
     target.parent.mkdir(parents=True, exist_ok=True)
     if target.is_symlink():
         raise ValueError("atomic copy target may not be a symbolic link: " + str(target))
-    descriptor, temp_name = tempfile.mkstemp(prefix="." + target.name + ".", dir=target.parent)
+    descriptor, temp_name = atomic_temp_file(target)
     try:
-        with source.open("rb") as input_stream, os.fdopen(descriptor, "wb") as output_stream:
+        with os.fdopen(descriptor, "wb") as output_stream, source.open("rb") as input_stream:
             shutil.copyfileobj(input_stream, output_stream)
             output_stream.flush()
             os.fsync(output_stream.fileno())
@@ -630,6 +964,2526 @@ def require_exact_fields(data, expected, label):
     extra = set(data) - expected
     if extra:
         raise ValueError(label + " contains unexpected fields: " + ", ".join(sorted(extra)))
+
+
+def canonical_json_sha256(value):
+    encoded = json.dumps(
+        value, ensure_ascii=False, separators=(",", ":"), sort_keys=True
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def governed_record_sha256(record):
+    payload = dict(record)
+    payload.pop("record_sha256", None)
+    return canonical_json_sha256(payload)
+
+
+def positive_integer(value, label, maximum=None, allow_zero=False):
+    lower = 0 if allow_zero else 1
+    if isinstance(value, bool) or not isinstance(value, int) or value < lower:
+        qualifier = "a non-negative" if allow_zero else "a positive"
+        raise ValueError(label + " must be " + qualifier + " integer")
+    if maximum is not None and value > maximum:
+        raise ValueError(label + " must not exceed " + str(maximum))
+    return value
+
+
+def governor_safe_id(value, label):
+    value = safe_identity(str(value), label)
+    if len(value.encode("utf-8")) > 100:
+        raise ValueError(label + " exceeds 100 bytes")
+    return value
+
+
+def validate_governor_policy(data):
+    if not isinstance(data, dict):
+        raise ValueError("governor policy must be a JSON object")
+    require_exact_fields(data, GOVERNOR_POLICY_FIELDS, "governor policy")
+    if data.get("schema") != "ai-human.work-governor-policy/v1":
+        raise ValueError("unsupported governor policy schema")
+    governor_safe_id(data.get("policy_id", ""), "governor policy id")
+    positive_integer(data.get("policy_version"), "governor policy version")
+    for field in ("owner", "approval_reference"):
+        if not isinstance(data.get(field), str):
+            raise ValueError("governor policy " + field.replace("_", " ") + " must be text")
+        bounded_clean(data[field], "governor policy " + field.replace("_", " "), 500)
+    hard_ceiling = data.get("hard_ceiling")
+    if (
+        isinstance(hard_ceiling, bool)
+        or not isinstance(hard_ceiling, int)
+        or not 1 <= hard_ceiling <= BATCH_CAP
+    ):
+        raise ValueError(
+            "governor hard ceiling must be between 1 and " + str(BATCH_CAP)
+        )
+    pilot_size = positive_integer(data.get("pilot_size"), "governor pilot size")
+    if pilot_size > hard_ceiling:
+        raise ValueError("governor pilot size cannot exceed its hard ceiling")
+    positive_integer(
+        data.get("promotion_successes"), "governor promotion successes", BATCH_CAP
+    )
+    for field in (
+        "unknown_external", "unknown_local_reversible", "unknown_read_only",
+    ):
+        if data.get(field) not in {"PILOT", "HALT"}:
+            raise ValueError(field + " must be PILOT or HALT")
+    return data
+
+
+def validate_governor_request(data):
+    if not isinstance(data, dict):
+        raise ValueError("governor request must be a JSON object")
+    require_exact_fields(data, GOVERNOR_REQUEST_FIELDS, "governor request")
+    if data.get("schema") != "ai-human.work-governor-request/v1":
+        raise ValueError("unsupported governor request schema")
+    governor_safe_id(data.get("request_id", ""), "governor request id")
+    if data.get("kind") not in BATCH_KINDS:
+        raise ValueError("unsupported governor batch kind: " + repr(data.get("kind")))
+    if data.get("effect") not in GOVERNOR_EFFECTS:
+        raise ValueError("unsupported governor effect: " + repr(data.get("effect")))
+    positive_integer(data.get("independent_units"), "governor independent units")
+    embedded = positive_integer(
+        data.get("embedded_entries"), "governor embedded entries", allow_zero=True
+    )
+    preserve_artifact = data["kind"] in INTACT_ARTIFACT_BATCH_KINDS
+    if embedded and not preserve_artifact:
+        raise ValueError(
+            "governor embedded entries apply only to an intact artifact action"
+        )
+    signals = data.get("signals")
+    if not isinstance(signals, dict):
+        raise ValueError("governor signals must be a JSON object")
+    require_exact_fields(signals, set(GOVERNOR_SIGNAL_NAMES), "governor signals")
+    for name in GOVERNOR_SIGNAL_NAMES:
+        signal = signals[name]
+        if not isinstance(signal, dict):
+            raise ValueError("governor signal " + name + " must be a JSON object")
+        status = signal.get("status")
+        if status == "CONFIRMED":
+            require_exact_fields(
+                signal, GOVERNOR_SIGNAL_CONFIRMED_FIELDS, "confirmed governor signal " + name
+            )
+            positive_integer(
+                signal.get("allowance"), "governor signal allowance " + name, BATCH_CAP
+            )
+            if not isinstance(signal.get("evidence"), str):
+                raise ValueError("governor signal evidence " + name + " must be text")
+            bounded_clean(signal["evidence"], "governor signal evidence " + name, 1000)
+        elif status == "UNKNOWN":
+            require_exact_fields(
+                signal, GOVERNOR_SIGNAL_UNKNOWN_FIELDS, "unknown governor signal " + name
+            )
+            if not isinstance(signal.get("reason"), str):
+                raise ValueError("governor unknown reason " + name + " must be text")
+            bounded_clean(signal["reason"], "governor unknown reason " + name, 1000)
+        else:
+            raise ValueError("governor signal " + name + " must be CONFIRMED or UNKNOWN")
+    observations = data.get("observations")
+    if not isinstance(observations, list) or len(observations) > BATCH_CAP:
+        raise ValueError("governor observations must be a list within the safety ceiling")
+    allowed_observations = GOVERNOR_HALT_OBSERVATIONS | GOVERNOR_BACKOFF_OBSERVATIONS
+    for index, observation in enumerate(observations, start=1):
+        if not isinstance(observation, dict):
+            raise ValueError("governor observation must be a JSON object")
+        require_exact_fields(
+            observation, GOVERNOR_OBSERVATION_FIELDS,
+            "governor observation " + str(index),
+        )
+        if observation.get("code") not in allowed_observations:
+            raise ValueError("unsupported governor observation: " + repr(observation.get("code")))
+        if not isinstance(observation.get("evidence"), str):
+            raise ValueError("governor observation evidence must be text")
+        bounded_clean(
+            observation["evidence"], "governor observation evidence", 1000
+        )
+    return data
+
+
+def validate_governor_outcome_request(data):
+    if not isinstance(data, dict):
+        raise ValueError("governor outcome must be a JSON object")
+    require_exact_fields(data, GOVERNOR_OUTCOME_REQUEST_FIELDS, "governor outcome")
+    if data.get("schema") != "ai-human.work-governor-outcome-request/v1":
+        raise ValueError("unsupported governor outcome request schema")
+    governor_safe_id(data.get("plan_id", ""), "governor plan id")
+    if data.get("status") not in GOVERNOR_OUTCOME_STATUSES:
+        raise ValueError("unsupported governor outcome status: " + repr(data.get("status")))
+    positive_integer(
+        data.get("completed_units"), "governor completed units", allow_zero=True
+    )
+    if not isinstance(data.get("evidence"), str):
+        raise ValueError("governor outcome evidence must be text")
+    bounded_clean(data["evidence"], "governor outcome evidence", 2000)
+    return data
+
+
+def governor_path(worker, relative, label):
+    relative = safe_relative(relative, label)
+    key = portable_key(relative)
+    prefix = portable_key(GOVERNOR_ROOT) + "/"
+    if not key.startswith(prefix):
+        raise ValueError(label + " is outside the governor state")
+    return worker_target(worker, relative, label)
+
+
+def governor_policy(worker, required=True):
+    path = worker / GOVERNOR_POLICY_PATH
+    if not path.is_file():
+        if required:
+            raise ValueError("work governor is not configured")
+        return None
+    if path.is_symlink():
+        raise ValueError("governor policy may not be a symbolic link")
+    return validate_governor_policy(read_json(path))
+
+
+def governor_record_files(worker, relative_root):
+    root = worker / relative_root
+    if not root.exists():
+        return []
+    if root.is_symlink() or not root.is_dir():
+        raise ValueError(str(relative_root) + " must be a real directory")
+    paths = []
+    for path in sorted(root.iterdir(), key=lambda item: item.name.casefold()):
+        if path.is_symlink() or not path.is_file() or path.suffix.casefold() != ".json":
+            raise ValueError("governor state contains a forbidden entry: " + str(path))
+        paths.append(path)
+    return paths
+
+
+def governor_policy_catalog(worker):
+    catalog = {}
+    current = governor_policy(worker, required=False)
+    if current:
+        catalog[canonical_json_sha256(current)] = current
+    versions = {}
+    for path in governor_record_files(worker, GOVERNOR_POLICIES_ROOT):
+        policy = validate_governor_policy(read_json(path))
+        digest = canonical_json_sha256(policy)
+        expected_name = (
+            f"v{policy['policy_version']:06d}-{policy['policy_id']}-{digest[:12]}.json"
+        )
+        if path.name != expected_name:
+            raise ValueError("governor policy history filename does not match its content")
+        if policy["policy_version"] in versions and versions[policy["policy_version"]] != digest:
+            raise ValueError("governor policy version is ambiguous")
+        versions[policy["policy_version"]] = digest
+        if digest in catalog and catalog[digest] != policy:
+            raise ValueError("governor policy digest collision")
+        catalog[digest] = policy
+    if current:
+        current_version = current["policy_version"]
+        required_versions = set(range(1, current_version + 1))
+        if not required_versions.issubset(versions):
+            raise ValueError("governor policy history is incomplete")
+        if versions and max(versions) > current_version + 1:
+            raise ValueError("governor policy history advances beyond one pending version")
+        for policy in catalog.values():
+            if policy["policy_id"] != current["policy_id"] or policy["owner"] != current["owner"]:
+                raise ValueError("governor policy history changed its identity or owner")
+    return catalog
+
+
+def governor_plan_records(worker, validate=True):
+    plans = []
+    previous_hash = "NONE"
+    catalog = governor_policy_catalog(worker)
+    for sequence, path in enumerate(
+        governor_record_files(worker, GOVERNOR_PLANS_ROOT), start=1
+    ):
+        record = read_json(path)
+        expected_fields = {
+            "batch_sizes", "created_utc", "decision_reasons", "effective_batch",
+            "embedded_entries_are_batch_units", "governor_state", "independent_units",
+            "kind", "limiting_signals", "plan_id", "policy_id", "policy_sha256",
+            "policy_version", "preserve_artifact_intact", "prior_plan_sha256",
+            "record_sha256", "request", "request_sha256", "safety_ceiling", "schema",
+            "sequence",
+        }
+        require_exact_fields(record, expected_fields, "governor plan record")
+        if record.get("schema") != "ai-human.work-governor-plan/v1":
+            raise ValueError("unsupported governor plan record schema")
+        if record.get("sequence") != sequence:
+            raise ValueError("governor plan sequence is not contiguous")
+        plan_id = governor_safe_id(record.get("plan_id", ""), "governor plan id")
+        if path.name != f"{sequence:06d}-{plan_id}.json":
+            raise ValueError("governor plan filename does not match its record")
+        if record.get("prior_plan_sha256") != previous_hash:
+            raise ValueError("governor plan hash chain is broken")
+        if record.get("record_sha256") != governed_record_sha256(record):
+            raise ValueError("governor plan record hash mismatch")
+        request = validate_governor_request(record.get("request"))
+        if record.get("request_sha256") != canonical_json_sha256(request):
+            raise ValueError("governor request hash mismatch")
+        policy = catalog.get(record.get("policy_sha256"))
+        if not policy:
+            raise ValueError("governor plan references an unknown policy")
+        if (
+            record.get("policy_id") != policy["policy_id"]
+            or record.get("policy_version") != policy["policy_version"]
+            or record.get("safety_ceiling") != policy["hard_ceiling"]
+        ):
+            raise ValueError("governor plan policy identity mismatch")
+        if record.get("governor_state") not in GOVERNOR_STATES:
+            raise ValueError("governor plan contains an invalid state")
+        effective = positive_integer(
+            record.get("effective_batch"), "governor effective batch", allow_zero=True
+        )
+        if effective > policy["hard_ceiling"]:
+            raise ValueError("governor effective batch exceeds its hard ceiling")
+        sizes = record.get("batch_sizes")
+        if not isinstance(sizes, list) or any(
+            isinstance(size, bool) or not isinstance(size, int) or size < 1 or size > effective
+            for size in sizes
+        ):
+            if sizes or effective:
+                raise ValueError("governor batch sizes are invalid")
+        if effective == 0:
+            if record["governor_state"] != "HALT" or sizes:
+                raise ValueError("only a HALT plan may have no effective batch")
+        elif sum(sizes) != request["independent_units"]:
+            raise ValueError("governor batch sizes do not cover the requested work")
+        if record.get("independent_units") != request["independent_units"]:
+            raise ValueError("governor plan unit count differs from its request")
+        if record.get("kind") != request["kind"]:
+            raise ValueError("governor plan kind differs from its request")
+        preserve = request["kind"] in INTACT_ARTIFACT_BATCH_KINDS
+        if record.get("preserve_artifact_intact") is not preserve:
+            raise ValueError("governor artifact-preservation flag is invalid")
+        if record.get("embedded_entries_are_batch_units") is not False:
+            raise ValueError("governor counted embedded entries as batch units")
+        reasons = record.get("decision_reasons")
+        if not isinstance(reasons, list) or not reasons or any(
+            not isinstance(reason, str) or not reason.strip() for reason in reasons
+        ):
+            raise ValueError("governor plan must retain decision reasons")
+        limiting = record.get("limiting_signals")
+        if not isinstance(limiting, list) or any(
+            signal not in GOVERNOR_SIGNAL_NAMES for signal in limiting
+        ):
+            raise ValueError("governor limiting signals are invalid")
+        parse_recorded_utc(record.get("created_utc"), "governor plan created_utc")
+        previous_hash = record["record_sha256"]
+        plans.append(record)
+    return plans
+
+
+def governor_outcome_records(worker, plans=None):
+    plans = governor_plan_records(worker) if plans is None else plans
+    plan_by_id = {record["plan_id"]: record for record in plans}
+    outcomes = []
+    seen_plans = set()
+    previous_hash = "NONE"
+    for sequence, path in enumerate(
+        governor_record_files(worker, GOVERNOR_OUTCOMES_ROOT), start=1
+    ):
+        record = read_json(path)
+        expected_fields = {
+            "completed_units", "created_utc", "evidence", "plan_id",
+            "plan_record_sha256", "prior_outcome_sha256", "record_sha256", "schema",
+            "sequence", "status",
+        }
+        require_exact_fields(record, expected_fields, "governor outcome record")
+        if record.get("schema") != "ai-human.work-governor-outcome/v1":
+            raise ValueError("unsupported governor outcome record schema")
+        if record.get("sequence") != sequence:
+            raise ValueError("governor outcome sequence is not contiguous")
+        plan_id = governor_safe_id(record.get("plan_id", ""), "governor outcome plan id")
+        if path.name != f"{sequence:06d}-{plan_id}.json":
+            raise ValueError("governor outcome filename does not match its record")
+        if plan_id in seen_plans:
+            raise ValueError("governor plan has more than one outcome")
+        seen_plans.add(plan_id)
+        plan = plan_by_id.get(plan_id)
+        if not plan:
+            raise ValueError("governor outcome references an unknown plan")
+        if plan["effective_batch"] == 0:
+            raise ValueError("a halted governor plan cannot have an execution outcome")
+        if record.get("plan_record_sha256") != plan["record_sha256"]:
+            raise ValueError("governor outcome plan hash mismatch")
+        if record.get("prior_outcome_sha256") != previous_hash:
+            raise ValueError("governor outcome hash chain is broken")
+        if record.get("record_sha256") != governed_record_sha256(record):
+            raise ValueError("governor outcome record hash mismatch")
+        if record.get("status") not in GOVERNOR_OUTCOME_STATUSES:
+            raise ValueError("governor outcome status is invalid")
+        completed = positive_integer(
+            record.get("completed_units"), "governor completed units", allow_zero=True
+        )
+        if completed > plan["independent_units"]:
+            raise ValueError("governor outcome completed units exceed the plan")
+        if record["status"] == "SUCCESS" and completed != plan["independent_units"]:
+            raise ValueError("a successful governor outcome must complete every planned unit")
+        if record["status"] == "PARTIAL" and not 0 < completed < plan["independent_units"]:
+            raise ValueError("a partial governor outcome must complete some but not all units")
+        if not isinstance(record.get("evidence"), str):
+            raise ValueError("governor outcome evidence must be text")
+        bounded_clean(record["evidence"], "governor outcome evidence", 2000)
+        parse_recorded_utc(record.get("created_utc"), "governor outcome created_utc")
+        previous_hash = record["record_sha256"]
+        outcomes.append(record)
+    return outcomes
+
+
+def validate_governor_decision_replay(worker, plans, outcomes):
+    catalog = governor_policy_catalog(worker)
+    plan_sequence = {record["plan_id"]: record["sequence"] for record in plans}
+    for index, plan in enumerate(plans):
+        policy = catalog[plan["policy_sha256"]]
+        prior_outcomes = [
+            outcome for outcome in outcomes
+            if plan_sequence[outcome["plan_id"]] < plan["sequence"]
+        ]
+        replay = governor_decision(policy, plan["request"], plans[:index], prior_outcomes)
+        for field in (
+            "batch_sizes", "decision_reasons", "effective_batch", "governor_state",
+            "limiting_signals",
+        ):
+            if plan[field] != replay[field]:
+                raise ValueError("governor plan decision replay mismatch: " + field)
+
+
+def validate_governor_state(worker):
+    failures = []
+    root = worker / GOVERNOR_ROOT
+    if not root.exists():
+        return failures
+    if root.is_symlink() or not root.is_dir():
+        return ["governor state root must be a real directory"]
+    allowed = {"policy.json", "policies", "plans", "outcomes"}
+    for path in root.iterdir():
+        if path.name not in allowed:
+            failures.append("governor state contains a forbidden entry: " + path.name)
+        elif path.is_symlink():
+            failures.append("governor state may not contain symbolic links: " + path.name)
+    try:
+        if not (worker / GOVERNOR_POLICY_PATH).is_file():
+            raise ValueError("governor policy is missing")
+        governor_policy(worker)
+        plans = governor_plan_records(worker)
+        outcomes = governor_outcome_records(worker, plans)
+        validate_governor_decision_replay(worker, plans, outcomes)
+    except Exception as exc:
+        failures.append("invalid work governor state: " + str(exc))
+    return failures
+
+
+def validate_continuity_policy(data):
+    if not isinstance(data, dict):
+        raise ValueError("continuity policy must be a JSON object")
+    require_exact_fields(data, CONTINUITY_POLICY_FIELDS, "continuity policy")
+    if data.get("schema") != "ai-human.continuity-policy/v1":
+        raise ValueError("unsupported continuity policy schema")
+    governor_safe_id(data.get("policy_id", ""), "continuity policy id")
+    positive_integer(data.get("policy_version"), "continuity policy version")
+    for field in ("owner", "approval_reference"):
+        if not isinstance(data.get(field), str):
+            raise ValueError("continuity policy " + field.replace("_", " ") + " must be text")
+        bounded_clean(data[field], "continuity policy " + field.replace("_", " "), 500)
+    soft_limit = data.get("context_soft_limit_used_percent")
+    if (
+        isinstance(soft_limit, bool)
+        or not isinstance(soft_limit, int)
+        or not 1 <= soft_limit <= 99
+    ):
+        raise ValueError("context soft limit must be an integer from 1 through 99")
+    positive_integer(
+        data.get("handoff_max_age_minutes"), "handoff maximum age minutes", 10_080
+    )
+    positive_integer(
+        data.get("context_signal_max_age_seconds"),
+        "context signal maximum age seconds", 3_600,
+    )
+    if data.get("unknown_context_action") not in {
+        "CHECKPOINT_SOON", "HALT_NEW_WORK_AND_CHECKPOINT",
+    }:
+        raise ValueError(
+            "unknown context action must be CHECKPOINT_SOON or HALT_NEW_WORK_AND_CHECKPOINT"
+        )
+    return data
+
+
+def context_percent(value):
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError("context percentage must be a number")
+    try:
+        number = decimal.Decimal(str(value))
+    except decimal.InvalidOperation as exc:
+        raise ValueError("context percentage is invalid") from exc
+    if not number.is_finite() or not decimal.Decimal("0") <= number <= decimal.Decimal("100"):
+        raise ValueError("context percentage must be between 0 and 100")
+    return number
+
+
+def validate_context_observation(data):
+    if not isinstance(data, dict):
+        raise ValueError("context observation must be a JSON object")
+    require_exact_fields(data, CONTEXT_OBSERVATION_FIELDS, "context observation")
+    if data.get("schema") != "ai-human.context-observation/v1":
+        raise ValueError("unsupported context observation schema")
+    governor_safe_id(data.get("observation_id", ""), "context observation id")
+    governor_safe_id(data.get("worker_id", ""), "context worker id")
+    governor_safe_id(data.get("task_id", ""), "context task id")
+    if data.get("atomic_state") not in CONTEXT_ATOMIC_STATES:
+        raise ValueError("unsupported context atomic state: " + repr(data.get("atomic_state")))
+    signal = data.get("signal")
+    if not isinstance(signal, dict):
+        raise ValueError("context signal must be a JSON object")
+    if signal.get("status") == "AVAILABLE":
+        require_exact_fields(
+            signal, CONTEXT_SIGNAL_AVAILABLE_FIELDS, "available context signal"
+        )
+        if signal.get("metric") != "USED_PERCENT":
+            raise ValueError("context signal metric must be USED_PERCENT")
+        context_percent(signal.get("value"))
+        if signal.get("source") not in {"HOST_REPORTED", "PROVIDER_REPORTED"}:
+            raise ValueError("context signal source is not a trusted source class")
+        if not isinstance(signal.get("evidence"), str):
+            raise ValueError("context signal evidence must be text")
+        bounded_clean(signal["evidence"], "context signal evidence", 1000)
+    elif signal.get("status") == "UNKNOWN":
+        require_exact_fields(
+            signal, CONTEXT_SIGNAL_UNKNOWN_FIELDS, "unknown context signal"
+        )
+        if not isinstance(signal.get("reason"), str):
+            raise ValueError("unknown context reason must be text")
+        bounded_clean(signal["reason"], "unknown context reason", 1000)
+    else:
+        raise ValueError("context signal status must be AVAILABLE or UNKNOWN")
+    parse_recorded_utc(signal.get("observed_utc"), "context signal observed_utc")
+    return data
+
+
+def handoff_text_list(values, label, allow_empty=False):
+    if not isinstance(values, list) or (not values and not allow_empty):
+        qualifier = "a list" if allow_empty else "a non-empty list"
+        raise ValueError(label + " must be " + qualifier)
+    if len(values) > BATCH_CAP:
+        raise ValueError(label + " exceeds the hard safety ceiling")
+    cleaned = []
+    seen = set()
+    for value in values:
+        if not isinstance(value, str):
+            raise ValueError(label + " entries must be text")
+        item = bounded_clean(value, label + " entry", 1000)
+        if item.casefold() in seen:
+            raise ValueError(label + " contains a duplicate")
+        seen.add(item.casefold())
+        cleaned.append(item)
+    return cleaned
+
+
+def validate_handoff_request(data):
+    if not isinstance(data, dict):
+        raise ValueError("handoff request must be a JSON object")
+    require_exact_fields(data, HANDOFF_REQUEST_FIELDS, "handoff request")
+    if data.get("schema") != "ai-human.handoff-request/v1":
+        raise ValueError("unsupported handoff request schema")
+    for field in (
+        "handoff_id", "intended_recipient_worker_id", "intended_recipient_task_id",
+        "sender_task_id",
+    ):
+        governor_safe_id(data.get(field, ""), "handoff " + field.replace("_", " "))
+    if data.get("purpose") not in HANDOFF_PURPOSES:
+        raise ValueError("unsupported handoff purpose: " + repr(data.get("purpose")))
+    for field in (
+        "intended_recipient_identity_sha256", "intended_recipient_state_sha256",
+    ):
+        if not SHA256_HEX.fullmatch(str(data.get(field, ""))):
+            raise ValueError("handoff " + field.replace("_", " ") + " is not SHA-256")
+    for field in (
+        "mission", "done_condition", "last_completed_step", "next_action",
+    ):
+        if not isinstance(data.get(field), str):
+            raise ValueError("handoff " + field.replace("_", " ") + " must be text")
+        bounded_clean(data[field], "handoff " + field.replace("_", " "), 2000)
+    parse_recorded_utc(data.get("expires_utc"), "handoff expires_utc")
+    for field in (
+        "active_gates", "approval_boundaries", "read_boundaries", "required_evidence",
+        "tool_boundaries", "withheld_actions", "write_boundaries",
+    ):
+        handoff_text_list(data.get(field), "handoff " + field.replace("_", " "))
+    handoff_text_list(
+        data.get("unresolved_decisions"), "handoff unresolved decisions", allow_empty=True
+    )
+    files = data.get("required_files")
+    minimum_files = 0 if data["purpose"] == "SESSION_CONTINUATION" else 1
+    if (
+        not isinstance(files, list)
+        or len(files) < minimum_files
+        or len(files) > BATCH_CAP
+    ):
+        raise ValueError(
+            "handoff required files must contain " + str(minimum_files)
+            + " through 25 records"
+        )
+    seen = set()
+    for index, record in enumerate(files, start=1):
+        if not isinstance(record, dict):
+            raise ValueError("handoff required file must be a JSON object")
+        require_exact_fields(
+            record, HANDOFF_REQUIRED_FILE_FIELDS,
+            "handoff required file " + str(index),
+        )
+        relative = safe_relative(record.get("path"), "handoff required file path")
+        key = portable_key(relative)
+        if key in seen:
+            raise ValueError("handoff required file path is duplicated: " + key)
+        seen.add(key)
+        if relative.parts[0] == ".ai-human" or (
+            len(relative.parts) == 1
+            and key in {portable_key(name) for name in STATE_FILES}
+        ):
+            raise ValueError("handoff may not copy controlled worker state: " + key)
+        if not SHA256_HEX.fullmatch(str(record.get("sha256", ""))):
+            raise ValueError("handoff required file hash is not SHA-256")
+        if not isinstance(record.get("schema"), str):
+            raise ValueError("handoff required file schema must be text")
+        bounded_clean(record["schema"], "handoff required file schema", 200)
+    return data
+
+
+def validate_resource_policy(data):
+    if not isinstance(data, dict):
+        raise ValueError("resource policy must be a JSON object")
+    require_exact_fields(data, RESOURCE_POLICY_FIELDS, "resource policy")
+    if data.get("schema") != "ai-human.resource-policy/v1":
+        raise ValueError("unsupported resource policy schema")
+    governor_safe_id(data.get("policy_id", ""), "resource policy id")
+    positive_integer(data.get("policy_version"), "resource policy version")
+    for field in ("owner", "approval_reference"):
+        if not isinstance(data.get(field), str):
+            raise ValueError("resource policy " + field.replace("_", " ") + " must be text")
+        bounded_clean(data[field], "resource policy " + field.replace("_", " "), 500)
+    for field in (
+        "allow_browser_discard", "allow_tabs_not_opened_by_ai", "retain_reopen_locator",
+    ):
+        if not isinstance(data.get(field), bool):
+            raise ValueError("resource policy " + field.replace("_", " ") + " must be true or false")
+    positive_integer(data.get("max_tab_candidates"), "maximum tab candidates", BATCH_CAP)
+    positive_integer(
+        data.get("observation_max_age_minutes"),
+        "resource observation maximum age minutes", 1_440,
+    )
+    return data
+
+
+def validate_unknown_or_fields(data, available_fields, label):
+    if not isinstance(data, dict):
+        raise ValueError(label + " must be a JSON object")
+    if data.get("status") == "UNKNOWN":
+        require_exact_fields(data, {"reason", "status"}, label)
+        if not isinstance(data.get("reason"), str):
+            raise ValueError(label + " unknown reason must be text")
+        bounded_clean(data["reason"], label + " unknown reason", 1000)
+        return False
+    if data.get("status") != "AVAILABLE":
+        raise ValueError(label + " status must be AVAILABLE or UNKNOWN")
+    require_exact_fields(data, available_fields, label)
+    return True
+
+
+def validate_resource_observation(data):
+    if not isinstance(data, dict):
+        raise ValueError("resource observation must be a JSON object")
+    require_exact_fields(data, RESOURCE_OBSERVATION_FIELDS, "resource observation")
+    if data.get("schema") != "ai-human.resource-observation/v1":
+        raise ValueError("unsupported resource observation schema")
+    governor_safe_id(data.get("observation_id", ""), "resource observation id")
+    parse_recorded_utc(data.get("captured_utc"), "resource observation captured_utc")
+    host = data.get("host")
+    if validate_unknown_or_fields(
+        host, {"platform", "source", "status"}, "resource host"
+    ):
+        if host.get("platform") not in {"macOS", "Windows", "Linux", "UNKNOWN"}:
+            raise ValueError("unsupported resource host platform")
+        if not isinstance(host.get("source"), str):
+            raise ValueError("resource host source must be text")
+        bounded_clean(host["source"], "resource host source", 500)
+    memory = data.get("memory")
+    if validate_unknown_or_fields(
+        memory,
+        {"available_bytes", "evidence", "status", "total_bytes", "used_percent"},
+        "resource memory",
+    ):
+        total = positive_integer(memory.get("total_bytes"), "resource total memory bytes")
+        available = positive_integer(
+            memory.get("available_bytes"), "resource available memory bytes", allow_zero=True
+        )
+        if available > total:
+            raise ValueError("resource available memory exceeds total memory")
+        context_percent(memory.get("used_percent"))
+        if not isinstance(memory.get("evidence"), str):
+            raise ValueError("resource memory evidence must be text")
+        bounded_clean(memory["evidence"], "resource memory evidence", 1000)
+    pressure = data.get("pressure")
+    if validate_unknown_or_fields(
+        pressure, {"evidence", "level", "status"}, "resource pressure"
+    ):
+        if pressure.get("level") not in {"NORMAL", "WARN", "CRITICAL"}:
+            raise ValueError("resource pressure level is invalid")
+        if not isinstance(pressure.get("evidence"), str):
+            raise ValueError("resource pressure evidence must be text")
+        bounded_clean(pressure["evidence"], "resource pressure evidence", 1000)
+    swap = data.get("swap")
+    if validate_unknown_or_fields(
+        swap, {"evidence", "status", "total_bytes", "used_bytes"}, "resource swap"
+    ):
+        total = positive_integer(
+            swap.get("total_bytes"), "resource total swap bytes", allow_zero=True
+        )
+        used = positive_integer(
+            swap.get("used_bytes"), "resource used swap bytes", allow_zero=True
+        )
+        if used > total:
+            raise ValueError("resource used swap exceeds total swap")
+        if not isinstance(swap.get("evidence"), str):
+            raise ValueError("resource swap evidence must be text")
+        bounded_clean(swap["evidence"], "resource swap evidence", 1000)
+    processes = data.get("processes")
+    if validate_unknown_or_fields(
+        processes, {"items", "source", "status"}, "resource processes"
+    ):
+        items = processes.get("items")
+        if not isinstance(items, list) or len(items) > BATCH_CAP:
+            raise ValueError("resource process list exceeds the safety ceiling")
+        seen_pids = set()
+        for item in items:
+            if not isinstance(item, dict):
+                raise ValueError("resource process must be a JSON object")
+            require_exact_fields(item, {"name", "pid", "rss_bytes"}, "resource process")
+            pid = positive_integer(item.get("pid"), "resource process pid")
+            if pid in seen_pids:
+                raise ValueError("resource process pid is duplicated")
+            seen_pids.add(pid)
+            positive_integer(
+                item.get("rss_bytes"), "resource process RSS bytes", allow_zero=True
+            )
+            if not isinstance(item.get("name"), str):
+                raise ValueError("resource process name must be text")
+            bounded_clean(item["name"], "resource process name", 500)
+        if not isinstance(processes.get("source"), str):
+            raise ValueError("resource process source must be text")
+        bounded_clean(processes["source"], "resource process source", 500)
+    browser = data.get("browser")
+    if validate_unknown_or_fields(
+        browser, {"evidence", "source", "status", "tabs"}, "resource browser"
+    ):
+        tabs = browser.get("tabs")
+        if not isinstance(tabs, list) or len(tabs) > BATCH_CAP:
+            raise ValueError("resource browser tab list exceeds the safety ceiling")
+        seen_tabs = set()
+        for tab in tabs:
+            if not isinstance(tab, dict):
+                raise ValueError("resource browser tab must be a JSON object")
+            require_exact_fields(tab, RESOURCE_TAB_FIELDS, "resource browser tab")
+            tab_id = governor_safe_id(tab.get("tab_id", ""), "resource browser tab id")
+            if tab_id in seen_tabs:
+                raise ValueError("resource browser tab id is duplicated")
+            seen_tabs.add(tab_id)
+            if tab.get("classification") not in {"PUBLIC_NON_SENSITIVE", "SENSITIVE", "UNKNOWN"}:
+                raise ValueError("resource browser tab classification is invalid")
+            for field in (
+                "active_download", "auth_payment_admin", "discard_supported", "inactive",
+                "meeting", "opened_by_ai", "playing_audio", "unsaved_form",
+            ):
+                if not isinstance(tab.get(field), bool):
+                    raise ValueError("resource browser tab " + field + " must be true or false")
+            estimated = tab.get("estimated_memory_bytes")
+            if estimated != "UNKNOWN":
+                positive_integer(estimated, "resource tab estimated memory bytes", allow_zero=True)
+            if not isinstance(tab.get("reopen_locator"), str):
+                raise ValueError("resource tab reopen locator must be text")
+            bounded_clean(tab["reopen_locator"], "resource tab reopen locator", 2000)
+        for field in ("source", "evidence"):
+            if not isinstance(browser.get(field), str):
+                raise ValueError("resource browser " + field + " must be text")
+            bounded_clean(browser[field], "resource browser " + field, 1000)
+    return data
+
+
+def validate_resource_outcome_request(data):
+    if not isinstance(data, dict):
+        raise ValueError("resource outcome must be a JSON object")
+    require_exact_fields(data, RESOURCE_OUTCOME_REQUEST_FIELDS, "resource outcome")
+    if data.get("schema") != "ai-human.resource-outcome-request/v1":
+        raise ValueError("unsupported resource outcome request schema")
+    governor_safe_id(data.get("plan_id", ""), "resource outcome plan id")
+    if data.get("status") not in RESOURCE_OUTCOME_STATUSES:
+        raise ValueError("unsupported resource outcome status")
+    after = data.get("after_snapshot_id")
+    if data["status"].startswith("EXECUTED_"):
+        governor_safe_id(after, "resource after snapshot id")
+    elif after != "NONE":
+        raise ValueError("an unexecuted resource outcome must use after_snapshot_id NONE")
+    if not isinstance(data.get("evidence"), str):
+        raise ValueError("resource outcome evidence must be text")
+    bounded_clean(data["evidence"], "resource outcome evidence", 2000)
+    return data
+
+
+def exchange_digest(value):
+    return canonical_json_sha256(value)
+
+
+def exchange_record_sha256(record, field):
+    payload = dict(record)
+    payload.pop(field, None)
+    return canonical_json_sha256(payload)
+
+
+def exchange_text_list(values, label, allow_empty=False, maximum=25):
+    if not isinstance(values, list) or len(values) > maximum:
+        raise ValueError(label + " must be a list with at most " + str(maximum) + " entries")
+    if not values and not allow_empty:
+        raise ValueError(label + " cannot be empty")
+    result = []
+    seen = set()
+    for index, value in enumerate(values):
+        if not isinstance(value, str):
+            raise ValueError(label + " entry " + str(index) + " must be text")
+        cleaned = bounded_clean(value, label + " entry " + str(index), 1000)
+        key = cleaned.casefold()
+        if key in seen:
+            raise ValueError(label + " contains a duplicate entry")
+        seen.add(key)
+        result.append(cleaned)
+    return result
+
+
+def validate_exchange_config(data):
+    if not isinstance(data, dict):
+        raise ValueError("exchange config must be a JSON object")
+    require_exact_fields(data, EXCHANGE_CONFIG_FIELDS, "exchange config")
+    if data.get("schema") != "ai-human.exchange-config/v1":
+        raise ValueError("unsupported exchange config schema")
+    governor_safe_id(data.get("exchange_id", ""), "exchange id")
+    for field in ("owner", "approval_reference"):
+        bounded_clean(data.get(field, ""), "exchange " + field.replace("_", " "), 1000)
+    exchange_text_list(data.get("access_classes"), "exchange access classes")
+    for field, maximum in (
+        ("directory_max_age_minutes", 525_600),
+        ("max_attachment_bytes", 100 * 1024 * 1024),
+        ("max_attachments", BATCH_CAP),
+        ("max_conversation_messages", 10_000),
+        ("max_fanout", BATCH_CAP),
+        ("max_hops", BATCH_CAP),
+        ("max_message_bytes", 10 * 1024 * 1024),
+        ("status_repeat_window_seconds", 86_400),
+    ):
+        positive_integer(data.get(field), "exchange " + field.replace("_", " "), maximum)
+    if data["max_attachment_bytes"] > data["max_message_bytes"]:
+        raise ValueError("exchange attachment limit cannot exceed the message limit")
+    return data
+
+
+def validate_exchange_directory_entry(data):
+    if not isinstance(data, dict):
+        raise ValueError("exchange directory entry must be a JSON object")
+    require_exact_fields(data, EXCHANGE_DIRECTORY_FIELDS, "exchange directory entry")
+    if data.get("schema") != "ai-human.exchange-directory-entry/v1":
+        raise ValueError("unsupported exchange directory entry schema")
+    governor_safe_id(data.get("worker_id", ""), "directory worker id")
+    for field in (
+        "name", "purpose", "company", "legal_entity", "operating_unit", "human_owner",
+        "supervisor", "address", "access_class",
+    ):
+        bounded_clean(data.get(field, ""), "directory " + field.replace("_", " "), 1000)
+    if data.get("status") not in {"ACTIVE", "PAUSED", "RETIRED"}:
+        raise ValueError("directory worker status is invalid")
+    if not SHA256_HEX.fullmatch(str(data.get("identity_sha256", ""))):
+        raise ValueError("directory worker identity hash is invalid")
+    accepted = exchange_text_list(
+        data.get("accepted_message_types"), "directory accepted message types"
+    )
+    if any(value not in EXCHANGE_MESSAGE_TYPES for value in accepted):
+        raise ValueError("directory accepted message type is invalid")
+    protocols = exchange_text_list(data.get("protocols"), "directory protocols")
+    if EXCHANGE_PROTOCOL not in protocols:
+        raise ValueError("directory entry does not support this exchange protocol")
+    joined = parse_recorded_utc(data.get("joined_utc"), "directory joined_utc")
+    verified = parse_recorded_utc(data.get("verified_utc"), "directory verified_utc")
+    if verified < joined:
+        raise ValueError("directory verification predates join")
+    return data
+
+
+def validate_exchange_route_policy(data):
+    if not isinstance(data, dict):
+        raise ValueError("exchange route policy must be a JSON object")
+    require_exact_fields(data, EXCHANGE_ROUTE_POLICY_FIELDS, "exchange route policy")
+    if data.get("schema") != "ai-human.exchange-route-policy/v1":
+        raise ValueError("unsupported exchange route policy schema")
+    for field in ("policy_id", "sender_worker_id", "recipient_worker_id"):
+        governor_safe_id(data.get(field, ""), "route " + field.replace("_", " "))
+    bounded_clean(data.get("approval_reference", ""), "route approval reference", 1000)
+    cross_reference = data.get("cross_boundary_authorization_reference")
+    if cross_reference != "NONE":
+        bounded_clean(cross_reference, "route cross-boundary authorization reference", 1000)
+    if data.get("status") not in {"ACTIVE", "REVOKED"}:
+        raise ValueError("route policy status is invalid")
+    if any(value not in EXCHANGE_ROUTES for value in exchange_text_list(
+        data.get("allowed_modes"), "route allowed modes"
+    )):
+        raise ValueError("route policy mode is invalid")
+    if any(value not in EXCHANGE_MESSAGE_TYPES for value in exchange_text_list(
+        data.get("allowed_message_types"), "route allowed message types"
+    )):
+        raise ValueError("route policy message type is invalid")
+    exchange_text_list(data.get("access_classes"), "route access classes")
+    parse_recorded_utc(data.get("expires_utc"), "route policy expires_utc")
+    return data
+
+
+def validate_exchange_mission(data):
+    if not isinstance(data, dict):
+        raise ValueError("exchange mission must be a JSON object")
+    require_exact_fields(data, EXCHANGE_MISSION_FIELDS, "exchange mission")
+    if data.get("schema") != "ai-human.exchange-mission/v1":
+        raise ValueError("unsupported exchange mission schema")
+    governor_safe_id(data.get("mission_id", ""), "mission id")
+    for field in ("name", "purpose", "done_condition"):
+        bounded_clean(data.get(field, ""), "mission " + field.replace("_", " "), 2000)
+    members = exchange_text_list(data.get("members"), "mission members")
+    for member in members:
+        governor_safe_id(member, "mission member")
+    for field in ("source_owner_worker_id", "integration_owner_worker_id"):
+        governor_safe_id(data.get(field, ""), "mission " + field.replace("_", " "))
+        if data[field] not in members:
+            raise ValueError("mission " + field.replace("_", " ") + " is not a member")
+    required_results = exchange_text_list(
+        data.get("required_result_worker_ids"), "mission required result workers"
+    )
+    for worker_id in required_results:
+        governor_safe_id(worker_id, "mission required result worker")
+        if worker_id not in members:
+            raise ValueError("mission required result worker is not a member")
+    if data.get("status") not in {"ACTIVE", "PAUSED", "CLOSED"}:
+        raise ValueError("mission status is invalid")
+    positive_integer(data.get("max_messages"), "mission message budget", 10_000)
+    parse_recorded_utc(data.get("expires_utc"), "mission expires_utc")
+    dependencies = data.get("dependencies")
+    if not isinstance(dependencies, list) or len(dependencies) > BATCH_CAP:
+        raise ValueError("mission dependencies must be a bounded list")
+    graph = {member: [] for member in members}
+    seen = set()
+    for index, dependency in enumerate(dependencies):
+        if not isinstance(dependency, dict) or set(dependency) != {"from_worker_id", "to_worker_id"}:
+            raise ValueError("mission dependency " + str(index) + " is invalid")
+        source = governor_safe_id(dependency["from_worker_id"], "dependency source")
+        target = governor_safe_id(dependency["to_worker_id"], "dependency target")
+        if source not in graph or target not in graph or source == target:
+            raise ValueError("mission dependency has an invalid member")
+        edge = (source, target)
+        if edge in seen:
+            raise ValueError("mission dependency is duplicated")
+        seen.add(edge)
+        graph[source].append(target)
+    visiting = set()
+    visited = set()
+
+    def visit(node):
+        if node in visiting:
+            raise ValueError("mission dependencies contain a cycle")
+        if node in visited:
+            return
+        visiting.add(node)
+        for target in graph[node]:
+            visit(target)
+        visiting.remove(node)
+        visited.add(node)
+
+    for member in members:
+        visit(member)
+    return data
+
+
+def validate_exchange_attachment(record, label="exchange attachment"):
+    if not isinstance(record, dict):
+        raise ValueError(label + " must be a JSON object")
+    require_exact_fields(record, EXCHANGE_ATTACHMENT_FIELDS, label)
+    safe_relative(record.get("path"), label + " path")
+    bounded_clean(record.get("media_type", ""), label + " media type", 200)
+    if not SHA256_HEX.fullmatch(str(record.get("sha256", ""))):
+        raise ValueError(label + " hash is invalid")
+    return record
+
+
+def validate_exchange_request(data, config, allow_expired=False):
+    if not isinstance(data, dict):
+        raise ValueError("exchange request must be a JSON object")
+    require_exact_fields(data, EXCHANGE_REQUEST_FIELDS, "exchange request")
+    if data.get("schema") != "ai-human.exchange-request/v1":
+        raise ValueError("unsupported exchange request schema")
+    for field in ("message_id", "idempotency_key", "conversation_id"):
+        governor_safe_id(data.get(field, ""), "exchange " + field.replace("_", " "))
+    if data.get("message_type") not in EXCHANGE_MESSAGE_TYPES:
+        raise ValueError("exchange message type is invalid")
+    if data.get("route") not in EXCHANGE_ROUTES:
+        raise ValueError("exchange route is invalid")
+    mission_id = data.get("mission_id")
+    if data["route"] == "MISSION_ROOM":
+        governor_safe_id(mission_id, "exchange mission id")
+    elif mission_id != "NONE":
+        raise ValueError("non-mission messages must use mission_id NONE")
+    reply = data.get("reply_to_id")
+    if reply != "NONE":
+        governor_safe_id(reply, "exchange reply message id")
+        if reply == data["message_id"]:
+            raise ValueError("a message cannot reply to itself")
+    if data.get("reply_expectation") not in {"NONE", "OPTIONAL", "REQUIRED"}:
+        raise ValueError("exchange reply expectation is invalid")
+    recipients = exchange_text_list(
+        data.get("recipients"), "exchange recipients", maximum=config["max_fanout"]
+    )
+    for recipient in recipients:
+        governor_safe_id(recipient, "exchange recipient")
+    fanout = positive_integer(data.get("fanout_count"), "exchange fanout", config["max_fanout"])
+    if fanout != len(recipients):
+        raise ValueError("exchange fanout count differs from the recipient list")
+    hop = positive_integer(data.get("hop_count"), "exchange hop count", config["max_hops"], allow_zero=True)
+    if reply == "NONE" and hop != 0:
+        raise ValueError("a root exchange message must have hop_count zero")
+    if reply != "NONE" and hop == 0:
+        raise ValueError("an exchange reply must increment hop_count")
+    for field in (
+        "purpose", "requested_result", "done_condition", "confidentiality",
+        "priority_source",
+    ):
+        bounded_clean(data.get(field, ""), "exchange " + field.replace("_", " "), 2000)
+    priority = positive_integer(data.get("priority"), "exchange priority", 5)
+    if priority < 1:
+        raise ValueError("exchange priority is invalid")
+    for field in (
+        "active_gates", "approval_boundaries", "read_boundaries", "source_references",
+        "tool_boundaries", "write_boundaries",
+    ):
+        exchange_text_list(data.get(field), "exchange " + field.replace("_", " "))
+    attachments = data.get("attachments")
+    if not isinstance(attachments, list) or len(attachments) > config["max_attachments"]:
+        raise ValueError("exchange attachments exceed the configured count")
+    seen = set()
+    for index, record in enumerate(attachments):
+        validate_exchange_attachment(record, "exchange attachment " + str(index))
+        key = portable_key(record["path"])
+        if key in seen:
+            raise ValueError("exchange attachment path is duplicated")
+        seen.add(key)
+    created = parse_recorded_utc(data.get("created_utc"), "exchange created_utc")
+    expires = parse_recorded_utc(data.get("expires_utc"), "exchange expires_utc")
+    now = datetime.datetime.now(datetime.timezone.utc)
+    if created > now + MAX_MANUAL_RUN_CLOCK_SKEW:
+        raise ValueError("exchange message creation time is in the future")
+    if expires <= created:
+        raise ValueError("exchange message expiry must be after creation")
+    if expires <= now and not allow_expired:
+        raise ValueError("exchange message is expired")
+    return data
+
+
+def safe_exchange_root(raw, must_exist=True):
+    candidate = Path(raw).expanduser()
+    if candidate.exists() and candidate.is_symlink():
+        raise ValueError("exchange root may not be a symbolic link")
+    return safe_worker(raw, must_exist=must_exist)
+
+
+def exchange_config(exchange):
+    path = exchange / "config.json"
+    if not path.is_file() or path.is_symlink():
+        raise ValueError("exchange is not configured")
+    return validate_exchange_config(read_json(path))
+
+
+def exchange_control(exchange):
+    path = exchange / "control.json"
+    if not path.is_file() or path.is_symlink():
+        raise ValueError("exchange control state is missing")
+    value = read_json(path)
+    if not isinstance(value, dict) or set(value) != {"schema", "status", "updated_utc"}:
+        raise ValueError("exchange control state is invalid")
+    if value.get("schema") != "ai-human.exchange-control/v1" or value.get("status") not in {
+        "ACTIVE", "PAUSED", "ARCHIVED",
+    }:
+        raise ValueError("exchange control state is invalid")
+    parse_recorded_utc(value.get("updated_utc"), "exchange control updated_utc")
+    return value
+
+
+def exchange_require_status(exchange, allowed):
+    status = exchange_control(exchange)["status"]
+    if status not in set(allowed):
+        raise ValueError("exchange status " + status + " does not allow this operation")
+    return status
+
+
+def exchange_directory(exchange):
+    root = exchange / "directory"
+    if not root.is_dir() or root.is_symlink():
+        raise ValueError("exchange directory is missing")
+    entries = {}
+    names = {}
+    for path in sorted(root.iterdir(), key=lambda item: item.name.casefold()):
+        if path.is_symlink() or not path.is_file() or path.suffix.casefold() != ".json":
+            raise ValueError("exchange directory contains a forbidden entry")
+        entry = validate_exchange_directory_entry(read_json(path))
+        if path.name != entry["worker_id"] + ".json":
+            raise ValueError("exchange directory filename differs from worker id")
+        if entry["worker_id"] in entries:
+            raise ValueError("exchange directory contains a duplicate worker id")
+        names.setdefault(entry["name"].casefold(), []).append(entry["worker_id"])
+        entries[entry["worker_id"]] = entry
+    return entries
+
+
+def exchange_route_policies(exchange):
+    root = exchange / "policies"
+    if not root.is_dir() or root.is_symlink():
+        raise ValueError("exchange policy directory is missing")
+    policies = {}
+    for path in sorted(root.iterdir(), key=lambda item: item.name.casefold()):
+        if path.is_symlink() or not path.is_file() or path.suffix.casefold() != ".json":
+            raise ValueError("exchange policy directory contains a forbidden entry")
+        policy = validate_exchange_route_policy(read_json(path))
+        if path.name != policy["policy_id"] + ".json" or policy["policy_id"] in policies:
+            raise ValueError("exchange route policy identity is duplicated")
+        policies[policy["policy_id"]] = policy
+    return policies
+
+
+def exchange_policy_revocations(exchange):
+    root = exchange / "policy-revocations"
+    if not root.is_dir() or root.is_symlink():
+        raise ValueError("exchange policy revocation directory is missing")
+    records = {}
+    for path in sorted(root.iterdir(), key=lambda item: item.name.casefold()):
+        if path.is_symlink() or not path.is_file() or path.suffix.casefold() != ".json":
+            raise ValueError("exchange policy revocations contain a forbidden entry")
+        record = validate_exchange_policy_revocation(read_json(path))
+        policy_id = record["policy_id"]
+        if path.name != policy_id + ".json" or policy_id in records:
+            raise ValueError("exchange policy revocation identity is duplicated")
+        records[policy_id] = record
+    return records
+
+
+def exchange_missions(exchange):
+    root = exchange / "missions"
+    if not root.is_dir() or root.is_symlink():
+        raise ValueError("exchange mission directory is missing")
+    missions = {}
+    for path in sorted(root.iterdir(), key=lambda item: item.name.casefold()):
+        if path.is_symlink() or not path.is_file() or path.suffix.casefold() != ".json":
+            raise ValueError("exchange mission directory contains a forbidden entry")
+        mission = validate_exchange_mission(read_json(path))
+        if path.name != mission["mission_id"] + ".json" or mission["mission_id"] in missions:
+            raise ValueError("exchange mission identity is duplicated")
+        missions[mission["mission_id"]] = mission
+    return missions
+
+
+def exchange_worker_join(worker, required=True):
+    path = worker / EXCHANGE_JOIN_PATH
+    if not path.is_file():
+        if required:
+            raise ValueError("worker has not joined a Worker Exchange")
+        return None
+    if path.is_symlink():
+        raise ValueError("worker exchange join proof may not be a symbolic link")
+    proof = validate_exchange_join_proof(read_json(path))
+    return proof
+
+
+def validate_exchange_join_proof(proof):
+    fields = {"config_sha256", "directory_entry", "exchange_id", "joined_utc", "proof_sha256", "schema"}
+    require_exact_fields(proof, fields, "worker exchange join proof")
+    if proof.get("schema") != "ai-human.exchange-join-proof/v1":
+        raise ValueError("unsupported worker exchange join proof schema")
+    governor_safe_id(proof.get("exchange_id", ""), "joined exchange id")
+    if not SHA256_HEX.fullmatch(str(proof.get("config_sha256", ""))):
+        raise ValueError("worker exchange config hash is invalid")
+    validate_exchange_directory_entry(proof.get("directory_entry"))
+    parse_recorded_utc(proof.get("joined_utc"), "worker exchange joined_utc")
+    if proof.get("proof_sha256") != exchange_record_sha256(proof, "proof_sha256"):
+        raise ValueError("worker exchange join proof hash mismatch")
+    return proof
+
+
+def validate_exchange_leave_receipt(receipt):
+    fields = {
+        "config_sha256", "directory_entry_sha256", "directory_status",
+        "exchange_id", "exchange_path", "join_proof_sha256", "record_sha256",
+        "route_policy_count", "route_policy_inventory_sha256", "schema",
+        "verified_utc", "worker_id",
+    }
+    require_exact_fields(receipt, fields, "worker exchange leave receipt")
+    if receipt.get("schema") != "ai-human.exchange-leave/v1":
+        raise ValueError("unsupported worker exchange leave receipt schema")
+    for field in ("exchange_id", "worker_id"):
+        governor_safe_id(receipt.get(field, ""), "exchange leave " + field.replace("_", " "))
+    for field in (
+        "config_sha256", "directory_entry_sha256", "join_proof_sha256", "record_sha256",
+    ):
+        if not SHA256_HEX.fullmatch(str(receipt.get(field, ""))):
+            raise ValueError("exchange leave " + field.replace("_", " ") + " is invalid")
+    if receipt.get("directory_status") not in {"PAUSED", "RETIRED"}:
+        raise ValueError("exchange leave directory status is not inactive")
+    exchange_path = bounded_clean(
+        receipt.get("exchange_path", ""), "exchange leave transport path", 4096
+    )
+    if not Path(exchange_path).is_absolute():
+        raise ValueError("exchange leave transport path must be absolute")
+    positive_integer(
+        receipt.get("route_policy_count"), "exchange leave route policy count", allow_zero=True
+    )
+    if not SHA256_HEX.fullmatch(str(receipt.get("route_policy_inventory_sha256", ""))):
+        raise ValueError("exchange leave route policy inventory hash is invalid")
+    parse_recorded_utc(receipt.get("verified_utc"), "exchange leave verified_utc")
+    if receipt.get("record_sha256") != exchange_record_sha256(receipt, "record_sha256"):
+        raise ValueError("worker exchange leave receipt hash mismatch")
+    return receipt
+
+
+def exchange_active_entry(exchange, worker_id):
+    entries = exchange_directory(exchange)
+    if worker_id not in entries:
+        raise ValueError("exchange recipient is missing from the stable directory: " + worker_id)
+    entry = entries[worker_id]
+    if entry["status"] != "ACTIVE":
+        raise ValueError("exchange directory worker is not active: " + worker_id)
+    maximum_age = datetime.timedelta(
+        minutes=exchange_config(exchange)["directory_max_age_minutes"]
+    )
+    verified = parse_recorded_utc(entry["verified_utc"], "directory verified_utc")
+    if datetime.datetime.now(datetime.timezone.utc) - verified > maximum_age:
+        raise ValueError("exchange directory entry is stale: " + worker_id)
+    return entry
+
+
+def verify_joined_worker(worker, exchange):
+    config = exchange_config(exchange)
+    proof = exchange_worker_join(worker)
+    entry = proof["directory_entry"]
+    if proof["exchange_id"] != config["exchange_id"]:
+        raise ValueError("worker joined a different exchange")
+    if proof["config_sha256"] != canonical_json_sha256(config):
+        raise ValueError("worker join proof references a different exchange configuration")
+    if entry["worker_id"] != installed_worker_id(worker):
+        raise ValueError("worker join proof belongs to another worker")
+    if entry["identity_sha256"] != worker_identity_sha256(worker):
+        raise ValueError("worker identity differs from its exchange join proof")
+    current = exchange_active_entry(exchange, entry["worker_id"])
+    if current != entry:
+        raise ValueError("exchange directory differs from the worker join proof")
+    relay_path = exchange / "join-receipts" / (entry["worker_id"] + ".json")
+    if not relay_path.is_file() or relay_path.is_symlink() or read_json(relay_path) != proof:
+        raise ValueError("exchange current join receipt differs from the worker proof")
+    return config, entry
+
+
+def exchange_join_catalog(exchange, worker_id):
+    catalog = {}
+    current = exchange / "join-receipts" / (worker_id + ".json")
+    paths = [current] if current.is_file() else []
+    history = exchange / "join-history"
+    if history.is_dir() and not history.is_symlink():
+        paths.extend(path for path in history.iterdir() if path.is_file())
+    for path in paths:
+        if path.is_symlink():
+            raise ValueError("exchange join proof history may not use symbolic links")
+        proof = validate_exchange_join_proof(read_json(path))
+        entry = proof["directory_entry"]
+        if entry["worker_id"] != worker_id:
+            if path == current:
+                raise ValueError("exchange current join receipt belongs to another worker")
+            continue
+        existing = catalog.get(proof["proof_sha256"])
+        if existing and existing != proof:
+            raise ValueError("exchange join proof hash is duplicated with different bytes")
+        catalog[proof["proof_sha256"]] = proof
+    return catalog
+
+
+def exchange_policy_for(exchange, sender, recipient, mode, message_type, access_class):
+    now = datetime.datetime.now(datetime.timezone.utc)
+    revoked = set(exchange_policy_revocations(exchange))
+    candidates = []
+    for policy in exchange_route_policies(exchange).values():
+        if (
+            policy["policy_id"] not in revoked
+            and
+            policy["sender_worker_id"] == sender
+            and policy["recipient_worker_id"] == recipient
+            and policy["status"] == "ACTIVE"
+            and mode in policy["allowed_modes"]
+            and message_type in policy["allowed_message_types"]
+            and access_class in policy["access_classes"]
+            and parse_recorded_utc(policy["expires_utc"], "route policy expires_utc") > now
+        ):
+            candidates.append(policy)
+    if len(candidates) != 1:
+        raise ValueError("delivery requires exactly one active exact route policy")
+    return candidates[0]
+
+
+def exchange_message_root(exchange, message_id):
+    governor_safe_id(message_id, "exchange message id")
+    return path_without_symlinks(exchange / "messages", Path(message_id), "exchange message")
+
+
+def exchange_envelope_sha256(envelope):
+    return exchange_record_sha256(envelope, "envelope_sha256")
+
+
+def exchange_material_fingerprint(request, sender_worker_id):
+    mechanical = {
+        "conversation_id", "created_utc", "expires_utc", "idempotency_key",
+        "message_id", "reply_to_id",
+    }
+    return canonical_json_sha256({
+        "request": {
+            field: value for field, value in request.items() if field not in mechanical
+        },
+        "sender_worker_id": sender_worker_id,
+    })
+
+
+def exchange_load_envelope(exchange, message_id):
+    root = exchange_message_root(exchange, message_id)
+    path = root / "envelope.json"
+    if not path.is_file() or path.is_symlink():
+        raise ValueError("exchange message is missing: " + message_id)
+    envelope = read_json(path)
+    if not isinstance(envelope, dict) or envelope.get("schema") != "ai-human.exchange-envelope/v1":
+        raise ValueError("exchange envelope schema is invalid")
+    require_exact_fields(envelope, EXCHANGE_ENVELOPE_FIELDS, "exchange envelope")
+    if envelope.get("message_id") != message_id:
+        raise ValueError("exchange message directory differs from its envelope")
+    if envelope.get("envelope_sha256") != exchange_envelope_sha256(envelope):
+        raise ValueError("exchange envelope hash mismatch")
+    config = exchange_config(exchange)
+    validate_exchange_request(envelope.get("request"), config, allow_expired=True)
+    if envelope["request"]["message_id"] != message_id:
+        raise ValueError("exchange request message id differs from its envelope")
+    if envelope.get("request_sha256") != canonical_json_sha256(envelope["request"]):
+        raise ValueError("exchange request hash mismatch")
+    request = envelope["request"]
+    if contains_secret_material(request):
+        raise ValueError("exchange immutable request appears to contain secret material")
+    if envelope.get("protocol") != EXCHANGE_PROTOCOL:
+        raise ValueError("exchange envelope protocol is invalid")
+    if envelope.get("authority") != "DATA_ONLY_NO_PERMISSION_TRANSFER":
+        raise ValueError("exchange envelope authority boundary is invalid")
+    if envelope.get("transport_receipt_location") != "journal/":
+        raise ValueError("exchange envelope transport receipt location is invalid")
+    expected_locations = {
+        recipient: "inboxes/" + recipient + "/" + message_id + ".json"
+        for recipient in request["recipients"]
+    }
+    if envelope.get("delivery_locations") != expected_locations:
+        raise ValueError("exchange envelope delivery locations are invalid")
+    if envelope.get("material_fingerprint") != exchange_material_fingerprint(
+        request, envelope.get("sender_worker_id")
+    ):
+        raise ValueError("exchange envelope material fingerprint is invalid")
+    route_policies = envelope.get("route_policies")
+    if not isinstance(route_policies, dict) or set(route_policies) != set(request["recipients"]):
+        raise ValueError("exchange envelope route policy targets are invalid")
+    for recipient, snapshot in route_policies.items():
+        require_exact_fields(
+            snapshot, {"policy_id", "policy_sha256"},
+            "exchange envelope route policy for " + recipient,
+        )
+        governor_safe_id(snapshot.get("policy_id", ""), "exchange envelope route policy id")
+        if not SHA256_HEX.fullmatch(str(snapshot.get("policy_sha256", ""))):
+            raise ValueError("exchange envelope route policy hash is invalid")
+    if request["route"] == "MISSION_ROOM":
+        if not SHA256_HEX.fullmatch(str(envelope.get("mission_sha256", ""))):
+            raise ValueError("mission-room envelope mission hash is invalid")
+    elif envelope.get("mission_sha256") != "NONE":
+        raise ValueError("non-mission exchange envelope claims a mission hash")
+    if not SHA256_HEX.fullmatch(str(envelope.get("sender_identity_sha256", ""))):
+        raise ValueError("exchange sender identity hash is invalid")
+    if not SHA256_HEX.fullmatch(str(envelope.get("sender_state_sha256", ""))):
+        raise ValueError("exchange sender state hash is invalid")
+    governor_safe_id(envelope.get("sender_worker_id", ""), "exchange sender worker id")
+    governor_safe_id(envelope.get("sender_task_id", ""), "exchange sender task id")
+    authentication = envelope.get("trusted_transport_receipt")
+    require_exact_fields(
+        authentication,
+        {
+            "config_sha256", "join_proof_sha256", "lease_proof_sha256", "trust_mode",
+            "verified_utc",
+        },
+        "exchange trusted transport receipt",
+    )
+    if (
+        authentication.get("config_sha256") != canonical_json_sha256(config)
+        or authentication.get("trust_mode")
+        != "LOCAL_RELAY_VERIFIED_CURRENT_JOIN_AND_WRITER_LEASE"
+        or not SHA256_HEX.fullmatch(str(authentication.get("join_proof_sha256", "")))
+        or not SHA256_HEX.fullmatch(str(authentication.get("lease_proof_sha256", "")))
+    ):
+        raise ValueError("exchange trusted transport receipt semantics are invalid")
+    verified = parse_recorded_utc(
+        authentication.get("verified_utc"), "transport receipt verified_utc"
+    )
+    if verified > datetime.datetime.now(datetime.timezone.utc) + MAX_MANUAL_RUN_CLOCK_SKEW:
+        raise ValueError("exchange trusted transport receipt is from the future")
+    join = exchange_join_catalog(exchange, envelope["sender_worker_id"]).get(
+        authentication["join_proof_sha256"]
+    )
+    if (
+        not join
+        or join["directory_entry"]["worker_id"] != envelope["sender_worker_id"]
+        or join["directory_entry"]["identity_sha256"] != envelope["sender_identity_sha256"]
+    ):
+        raise ValueError("exchange trusted transport receipt lacks its exact sender join proof")
+    bundled = envelope.get("attachments")
+    if not isinstance(bundled, list) or len(bundled) != len(envelope["request"]["attachments"]):
+        raise ValueError("exchange bundled attachments differ from the request")
+    expected_files = {"envelope.json"}
+    total = len(json.dumps(
+        envelope, ensure_ascii=False, separators=(",", ":"), sort_keys=True
+    ).encode("utf-8"))
+    for index, record in enumerate(bundled):
+        fields = set(EXCHANGE_ATTACHMENT_FIELDS) | {"bundle_path", "size_bytes"}
+        require_exact_fields(record, fields, "exchange bundled attachment " + str(index))
+        validate_exchange_attachment(
+            {key: record[key] for key in EXCHANGE_ATTACHMENT_FIELDS},
+            "exchange bundled attachment " + str(index),
+        )
+        if {key: record[key] for key in EXCHANGE_ATTACHMENT_FIELDS} != request["attachments"][index]:
+            raise ValueError("exchange bundled attachment differs from its signed request descriptor")
+        bundle = safe_relative(record["bundle_path"], "exchange bundle path")
+        expected_bundle = Path("attachments") / (
+            f"{index:03d}-" + Path(request["attachments"][index]["path"]).name
+        )
+        if bundle != expected_bundle:
+            raise ValueError("exchange bundle path differs from its signed request position")
+        attachment = path_without_symlinks(root, bundle, "exchange bundled attachment")
+        if not attachment.is_file():
+            raise ValueError("exchange bundled attachment is missing")
+        reject_exchange_sensitive_source(
+            safe_relative(record["path"], "exchange signed attachment source path"),
+            attachment, "exchange bundled attachment",
+        )
+        size = positive_integer(
+            record["size_bytes"], "exchange attachment size",
+            config["max_attachment_bytes"], allow_zero=True,
+        )
+        if attachment.stat().st_size != size or sha256(attachment) != record["sha256"]:
+            raise ValueError("exchange bundled attachment integrity mismatch")
+        total += size
+        expected_files.add(bundle.as_posix())
+    if total > config["max_message_bytes"]:
+        raise ValueError("exchange message exceeds the configured byte limit")
+    for path in root.rglob("*"):
+        if path.is_symlink():
+            raise ValueError("exchange message may not contain symbolic links")
+        if path.is_file() and path.relative_to(root).as_posix() not in expected_files and "events" not in path.relative_to(root).parts and "results" not in path.relative_to(root).parts:
+            raise ValueError("exchange message package contains an unsigned file")
+    return envelope
+
+
+def exchange_events(exchange, message_id, recipient_id=None):
+    root = exchange_message_root(exchange, message_id) / "events"
+    if not root.exists():
+        return []
+    if root.is_symlink() or not root.is_dir():
+        raise ValueError("exchange message event root is invalid")
+    events = []
+    for path in sorted(root.iterdir(), key=lambda item: item.name.casefold()):
+        if path.is_symlink() or not path.is_file() or path.suffix.casefold() != ".json":
+            raise ValueError("exchange message events contain a forbidden entry")
+        event = read_json(path)
+        require_exact_fields(event, EXCHANGE_EVENT_FIELDS, "exchange message event")
+        if event.get("schema") != "ai-human.exchange-event/v1":
+            raise ValueError("unsupported exchange event schema")
+        for field in ("event_id", "message_id", "recipient_worker_id", "actor_worker_id"):
+            governor_safe_id(event.get(field, ""), "exchange event " + field.replace("_", " "))
+        if event["message_id"] != message_id or path.name != event["event_id"] + ".json":
+            raise ValueError("exchange event identity mismatch")
+        if event.get("state") not in EXCHANGE_LIFECYCLE_STATES:
+            raise ValueError("exchange event state is invalid")
+        bounded_clean(event.get("evidence", ""), "exchange event evidence", 2000)
+        parse_recorded_utc(event.get("created_utc"), "exchange event created_utc")
+        if event.get("event_sha256") != exchange_record_sha256(event, "event_sha256"):
+            raise ValueError("exchange event hash mismatch")
+        events.append(event)
+    if events:
+        envelope = exchange_load_envelope(exchange, message_id)
+        sender = envelope["sender_worker_id"]
+        recipients = set(envelope["request"]["recipients"])
+        for event in events:
+            recipient = event["recipient_worker_id"]
+            if recipient not in recipients:
+                raise ValueError("exchange event recipient is outside the exact envelope")
+            state = event["state"]
+            actor = event["actor_worker_id"]
+            if state == "QUEUED" and actor != sender:
+                raise ValueError("exchange QUEUED event actor must be the sender")
+            if state in {"DELIVERED", "EXPIRED", "FAILED", "CANCELLED"} and actor != "relay":
+                raise ValueError("exchange relay lifecycle event has an invalid actor")
+            if state in {"ACKNOWLEDGED", "ACCEPTED", "REJECTED", "COMPLETED"} and actor != recipient:
+                raise ValueError("exchange recipient lifecycle event has an invalid actor")
+        for recipient in recipients:
+            recipient_events = sorted(
+                (event for event in events if event["recipient_worker_id"] == recipient),
+                key=lambda event: event["event_id"],
+            )
+            prior_created = None
+            for sequence, event in enumerate(recipient_events, start=1):
+                expected_id = f"{recipient}-{sequence:06d}-{event['state'].casefold()}"
+                if event["event_id"] != expected_id:
+                    raise ValueError("exchange event sequence or identity is invalid")
+                created = parse_recorded_utc(
+                    event["created_utc"], "exchange event created_utc"
+                )
+                if prior_created is not None and created < prior_created:
+                    raise ValueError("exchange event timestamps are not chronological")
+                prior_created = created
+    events.sort(key=lambda event: (event["created_utc"], event["event_id"]))
+    filtered = [event for event in events if recipient_id is None or event["recipient_worker_id"] == recipient_id]
+    if recipient_id is not None:
+        state = None
+        for event in filtered:
+            allowed = EXCHANGE_TRANSITIONS.get(state, set())
+            if event["state"] not in allowed:
+                raise ValueError("invalid exchange lifecycle transition from " + str(state) + " to " + event["state"])
+            state = event["state"]
+    return filtered
+
+
+def exchange_current_state(exchange, message_id, recipient_id):
+    events = exchange_events(exchange, message_id, recipient_id)
+    return events[-1]["state"] if events else None
+
+
+def exchange_journal_records(exchange):
+    root = exchange / "journal"
+    if not root.is_dir() or root.is_symlink():
+        raise ValueError("exchange journal is missing")
+    records = []
+    previous = "GENESIS"
+    for path in sorted(root.iterdir(), key=lambda item: item.name):
+        if path.is_symlink() or not path.is_file() or path.suffix.casefold() != ".json":
+            raise ValueError("exchange journal contains a forbidden entry")
+        record = read_json(path)
+        fields = {"created_utc", "event_sha256", "journal_sha256", "kind", "message_id", "previous_sha256", "recipient_worker_id", "schema", "sequence"}
+        require_exact_fields(record, fields, "exchange journal record")
+        if record.get("schema") != "ai-human.exchange-journal/v1":
+            raise ValueError("unsupported exchange journal schema")
+        sequence = positive_integer(record.get("sequence"), "exchange journal sequence")
+        if sequence != len(records) + 1 or path.name != f"{sequence:012d}.json":
+            raise ValueError("exchange journal sequence is not contiguous")
+        if record.get("previous_sha256") != previous:
+            raise ValueError("exchange journal chain is broken")
+        if record.get("journal_sha256") != exchange_record_sha256(record, "journal_sha256"):
+            raise ValueError("exchange journal record hash mismatch")
+        parse_recorded_utc(record.get("created_utc"), "exchange journal created_utc")
+        previous = record["journal_sha256"]
+        records.append(record)
+    return records
+
+
+def exchange_append_journal(exchange, kind, message_id, recipient_id, event_sha256):
+    records = exchange_journal_records(exchange)
+    sequence = len(records) + 1
+    record = {
+        "created_utc": now_utc(),
+        "event_sha256": event_sha256,
+        "journal_sha256": "",
+        "kind": governor_safe_id(kind, "exchange journal kind"),
+        "message_id": governor_safe_id(message_id, "exchange journal message id"),
+        "previous_sha256": records[-1]["journal_sha256"] if records else "GENESIS",
+        "recipient_worker_id": governor_safe_id(recipient_id, "exchange journal recipient"),
+        "schema": "ai-human.exchange-journal/v1",
+        "sequence": sequence,
+    }
+    record["journal_sha256"] = exchange_record_sha256(record, "journal_sha256")
+    atomic_json(exchange / "journal" / f"{sequence:012d}.json", record)
+    return record
+
+
+def exchange_build_event(exchange, message_id, recipient_id, actor_id, state, evidence):
+    current = exchange_current_state(exchange, message_id, recipient_id)
+    if state not in EXCHANGE_TRANSITIONS.get(current, set()):
+        raise ValueError("invalid exchange lifecycle transition from " + str(current) + " to " + state)
+    event_id = (
+        recipient_id + "-"
+        + f"{len(exchange_events(exchange, message_id, recipient_id)) + 1:06d}-"
+        + state.casefold()
+    )
+    event = {
+        "actor_worker_id": governor_safe_id(actor_id, "exchange event actor"),
+        "created_utc": now_utc(),
+        "event_id": event_id,
+        "event_sha256": "",
+        "evidence": bounded_clean(evidence, "exchange event evidence", 2000),
+        "message_id": message_id,
+        "recipient_worker_id": recipient_id,
+        "schema": "ai-human.exchange-event/v1",
+        "state": state,
+    }
+    event["event_sha256"] = exchange_record_sha256(event, "event_sha256")
+    return event
+
+
+def exchange_commit_event(exchange, event):
+    require_exact_fields(event, EXCHANGE_EVENT_FIELDS, "prepared exchange event")
+    if event.get("event_sha256") != exchange_record_sha256(event, "event_sha256"):
+        raise ValueError("prepared exchange event hash mismatch")
+    message_id = event["message_id"]
+    recipient_id = event["recipient_worker_id"]
+    envelope = exchange_load_envelope(exchange, message_id)
+    if recipient_id not in envelope["request"]["recipients"]:
+        raise ValueError("prepared exchange event recipient is outside the exact envelope")
+    state = event["state"]
+    actor = event["actor_worker_id"]
+    if state == "QUEUED" and actor != envelope["sender_worker_id"]:
+        raise ValueError("prepared QUEUED event actor must be the sender")
+    if state in {"DELIVERED", "EXPIRED", "FAILED", "CANCELLED"} and actor != "relay":
+        raise ValueError("prepared relay lifecycle event has an invalid actor")
+    if state in {"ACKNOWLEDGED", "ACCEPTED", "REJECTED", "COMPLETED"} and actor != recipient_id:
+        raise ValueError("prepared recipient lifecycle event has an invalid actor")
+    path = exchange_message_root(exchange, message_id) / "events" / (event["event_id"] + ".json")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if path.exists():
+        if path.is_symlink() or not path.is_file() or read_json(path) != event:
+            raise ValueError("prepared exchange event conflicts with immutable transport state")
+    else:
+        prior_events = exchange_events(exchange, message_id, recipient_id)
+        current = prior_events[-1]["state"] if prior_events else None
+        expected_id = recipient_id + "-" + f"{len(prior_events) + 1:06d}-" + state.casefold()
+        if event["event_id"] != expected_id:
+            raise ValueError("prepared exchange event sequence is not the exact next event")
+        if prior_events and parse_recorded_utc(
+            event["created_utc"], "prepared exchange event created_utc"
+        ) < parse_recorded_utc(
+            prior_events[-1]["created_utc"], "prior exchange event created_utc"
+        ):
+            raise ValueError("prepared exchange event timestamp predates its lifecycle")
+        if event["state"] not in EXCHANGE_TRANSITIONS.get(current, set()):
+            raise ValueError(
+                "prepared exchange event cannot advance lifecycle from " + str(current)
+            )
+        atomic_json(path, event)
+    journal_hashes = {record["event_sha256"] for record in exchange_journal_records(exchange)}
+    if event["event_sha256"] not in journal_hashes:
+        exchange_append_journal(
+            exchange, "MESSAGE_EVENT", message_id, recipient_id, event["event_sha256"]
+        )
+    return event
+
+
+def exchange_append_event(exchange, message_id, recipient_id, actor_id, state, evidence):
+    return exchange_commit_event(
+        exchange,
+        exchange_build_event(exchange, message_id, recipient_id, actor_id, state, evidence),
+    )
+
+
+def handoff_packet_sha256(packet):
+    payload = dict(packet)
+    payload.pop("packet_sha256", None)
+    return canonical_json_sha256(payload)
+
+
+def verify_handoff_file_schema(path, declared_schema):
+    if path.suffix.casefold() != ".json":
+        return
+    try:
+        data = read_json(path)
+    except Exception as exc:
+        raise ValueError("handoff JSON attachment is invalid: " + path.name + ": " + str(exc))
+    if not isinstance(data, dict) or data.get("schema") != declared_schema:
+        raise ValueError("handoff JSON attachment schema differs from its envelope: " + path.name)
+
+
+def worker_identity_sha256(worker):
+    metadata = install_metadata(worker)
+    fields = {
+        "company": metadata.get("company"),
+        "gate_profile_id": metadata.get("gate_profile_id"),
+        "gate_profile_sha256": metadata.get("gate_profile_sha256"),
+        "legal_entity": metadata.get("legal_entity"),
+        "purpose_scope": metadata.get("purpose_scope"),
+        "schema": "ai-human.worker-identity/v1",
+        "worker_id": installed_worker_id(worker),
+    }
+    if any(not isinstance(value, str) or not value for value in fields.values()):
+        raise ValueError("worker identity is incomplete")
+    return canonical_json_sha256(fields)
+
+
+def resume_state_sha256(worker):
+    digest = hashlib.sha256()
+    continuity_prefix = portable_key(CONTINUITY_ROOT) + "/"
+    for path in controlled_state_paths(worker):
+        relative = path.relative_to(worker).as_posix()
+        if portable_key(relative).startswith(continuity_prefix):
+            continue
+        digest.update(relative.encode("utf-8") + b"\0")
+        digest.update(bytes.fromhex(sha256(path)) if path.is_file() else b"MISSING")
+        digest.update(b"\n")
+    return digest.hexdigest()
+
+
+def active_gate_ids(worker):
+    profile = validate_gate_profile(read_json(worker / GATE_PROFILE_PATH))
+    return sorted(rule["gate_id"] for rule in profile["gates"])
+
+
+def continuity_policy(worker, required=True):
+    path = worker / CONTINUITY_POLICY_PATH
+    if not path.is_file():
+        if required:
+            raise ValueError("continuity guard is not configured")
+        return None
+    if path.is_symlink():
+        raise ValueError("continuity policy may not be a symbolic link")
+    return validate_continuity_policy(read_json(path))
+
+
+def continuity_record_files(worker, relative_root):
+    root = worker / relative_root
+    if not root.exists():
+        return []
+    if root.is_symlink() or not root.is_dir():
+        raise ValueError(str(relative_root) + " must be a real directory")
+    paths = []
+    for path in sorted(root.iterdir(), key=lambda item: item.name.casefold()):
+        if path.is_symlink() or not path.is_file() or path.suffix.casefold() != ".json":
+            raise ValueError("continuity state contains a forbidden entry: " + str(path))
+        paths.append(path)
+    return paths
+
+
+def continuity_policy_catalog(worker):
+    catalog = {}
+    versions = {}
+    current = continuity_policy(worker, required=False)
+    if current:
+        catalog[canonical_json_sha256(current)] = current
+    for path in continuity_record_files(worker, CONTINUITY_POLICIES_ROOT):
+        policy = validate_continuity_policy(read_json(path))
+        digest = canonical_json_sha256(policy)
+        expected_name = (
+            f"v{policy['policy_version']:06d}-{policy['policy_id']}-{digest[:12]}.json"
+        )
+        if path.name != expected_name:
+            raise ValueError("continuity policy history filename does not match its content")
+        if policy["policy_version"] in versions and versions[policy["policy_version"]] != digest:
+            raise ValueError("continuity policy version is ambiguous")
+        versions[policy["policy_version"]] = digest
+        catalog[digest] = policy
+    if current:
+        required_versions = set(range(1, current["policy_version"] + 1))
+        if not required_versions.issubset(versions):
+            raise ValueError("continuity policy history is incomplete")
+        if versions and max(versions) > current["policy_version"] + 1:
+            raise ValueError("continuity policy history advances beyond one pending version")
+        for policy in catalog.values():
+            if policy["policy_id"] != current["policy_id"] or policy["owner"] != current["owner"]:
+                raise ValueError("continuity policy history changed its identity or owner")
+    return catalog
+
+
+def context_decision(policy, observation):
+    signal = observation["signal"]
+    if signal["status"] == "UNKNOWN":
+        return {
+            "accept_new_work": False,
+            "context_status": "UNKNOWN",
+            "context_used_percent": "UNKNOWN",
+            "decision_reason": "No trustworthy live context percentage is available",
+            "directive": policy["unknown_context_action"],
+        }
+    used = context_percent(signal["value"])
+    soft_limit = decimal.Decimal(str(policy["context_soft_limit_used_percent"]))
+    if used < soft_limit:
+        directive = "CONTINUE"
+        accept_new_work = True
+        reason = "Trusted context use is below the owner-configured soft limit"
+    elif observation["atomic_state"] == "BEFORE_WORK":
+        directive = "CHECKPOINT_NOW"
+        accept_new_work = False
+        reason = "The soft limit was reached before starting another atomic step"
+    elif observation["atomic_state"] == "SAFE_ATOMIC_STEP_IN_PROGRESS":
+        directive = "FINISH_SAFE_ATOMIC_STEP_THEN_CHECKPOINT"
+        accept_new_work = False
+        reason = "Finish only the current safe atomic step, then checkpoint"
+    else:
+        directive = "HALT_CONSEQUENTIAL_STEP_AND_CHECKPOINT"
+        accept_new_work = False
+        reason = "Do not continue a consequential step after the context soft limit"
+    return {
+        "accept_new_work": accept_new_work,
+        "context_status": "AVAILABLE",
+        "context_used_percent": int(used) if used == used.to_integral() else float(used),
+        "decision_reason": reason,
+        "directive": directive,
+    }
+
+
+def context_records(worker):
+    records = []
+    prior_hash = "NONE"
+    catalog = continuity_policy_catalog(worker)
+    for sequence, path in enumerate(
+        continuity_record_files(worker, CONTEXT_OBSERVATIONS_ROOT), start=1
+    ):
+        record = read_json(path)
+        fields = {
+            "accept_new_work", "context_status", "context_used_percent", "created_utc",
+            "decision_reason", "directive", "observation", "observation_sha256",
+            "policy_sha256", "prior_record_sha256", "record_sha256", "schema", "sequence",
+        }
+        require_exact_fields(record, fields, "context decision record")
+        if record.get("schema") != "ai-human.context-decision/v1":
+            raise ValueError("unsupported context decision record schema")
+        if record.get("sequence") != sequence:
+            raise ValueError("context decision sequence is not contiguous")
+        observation = validate_context_observation(record.get("observation"))
+        observation_id = observation["observation_id"]
+        if path.name != f"{sequence:06d}-{observation_id}.json":
+            raise ValueError("context decision filename does not match its record")
+        if record.get("observation_sha256") != canonical_json_sha256(observation):
+            raise ValueError("context observation hash mismatch")
+        if record.get("policy_sha256") not in catalog:
+            raise ValueError("context decision references an unknown continuity policy")
+        if record.get("prior_record_sha256") != prior_hash:
+            raise ValueError("context decision hash chain is broken")
+        if record.get("record_sha256") != governed_record_sha256(record):
+            raise ValueError("context decision record hash mismatch")
+        replay = context_decision(catalog[record["policy_sha256"]], observation)
+        for field in (
+            "accept_new_work", "context_status", "context_used_percent",
+            "decision_reason", "directive",
+        ):
+            if record.get(field) != replay[field]:
+                raise ValueError("context decision replay mismatch: " + field)
+        parse_recorded_utc(record.get("created_utc"), "context decision created_utc")
+        prior_hash = record["record_sha256"]
+        records.append(record)
+    return records
+
+
+def context_checkpoint_latch(worker, records=None, required=False):
+    path = worker / CONTEXT_CHECKPOINT_LATCH_PATH
+    if not path.is_file():
+        if required:
+            raise ValueError("context checkpoint latch is missing")
+        return None
+    if path.is_symlink():
+        raise ValueError("context checkpoint latch may not be a symbolic link")
+    record = read_json(path)
+    fields = {
+        "context_record_sha256", "created_utc", "directive", "observation_id",
+        "record_sha256", "schema", "task_id", "worker_id",
+    }
+    require_exact_fields(record, fields, "context checkpoint latch")
+    if record.get("schema") != "ai-human.context-checkpoint-required/v1":
+        raise ValueError("unsupported context checkpoint latch schema")
+    if record.get("directive") not in CONTEXT_DIRECTIVES - {"CONTINUE"}:
+        raise ValueError("context checkpoint latch directive is invalid")
+    if record.get("record_sha256") != governed_record_sha256(record):
+        raise ValueError("context checkpoint latch hash mismatch")
+    governor_safe_id(record.get("worker_id", ""), "context checkpoint worker id")
+    governor_safe_id(record.get("task_id", ""), "context checkpoint task id")
+    governor_safe_id(record.get("observation_id", ""), "context checkpoint observation id")
+    parse_recorded_utc(record.get("created_utc"), "context checkpoint created_utc")
+    records = context_records(worker) if records is None else records
+    source = next(
+        (
+            item for item in records
+            if item["record_sha256"] == record["context_record_sha256"]
+        ),
+        None,
+    )
+    if not source:
+        raise ValueError("context checkpoint latch references an unknown decision")
+    observation = source["observation"]
+    if (
+        source["directive"] != record["directive"]
+        or observation["observation_id"] != record["observation_id"]
+        or observation["worker_id"] != record["worker_id"]
+        or observation["task_id"] != record["task_id"]
+    ):
+        raise ValueError("context checkpoint latch differs from its decision")
+    return record
+
+
+def validate_handoff_packet(packet, package_root, expected_digest=None):
+    if not isinstance(packet, dict):
+        raise ValueError("handoff packet must be a JSON object")
+    fields = {
+        *HANDOFF_REQUEST_FIELDS,
+        "checkpoint_latch_sha256", "created_utc", "delivery_state", "packet_sha256",
+        "policy", "policy_sha256", "result_location", "sender_identity_sha256",
+        "sender_state_sha256", "sender_worker_id",
+    }
+    require_exact_fields(packet, fields, "handoff packet")
+    if packet.get("schema") != "ai-human.handoff-packet/v1":
+        raise ValueError("unsupported handoff packet schema")
+    request_view = {
+        field: packet[field] for field in HANDOFF_REQUEST_FIELDS if field != "schema"
+    }
+    request_view["schema"] = "ai-human.handoff-request/v1"
+    required_files = packet.get("required_files")
+    if not isinstance(required_files, list):
+        raise ValueError("handoff packet required files must be a list")
+    request_view["required_files"] = [
+        {field: record.get(field) for field in HANDOFF_REQUIRED_FILE_FIELDS}
+        if isinstance(record, dict) else record
+        for record in required_files
+    ]
+    validate_handoff_request(request_view)
+    governor_safe_id(packet.get("sender_worker_id", ""), "handoff sender worker id")
+    for field in (
+        "sender_identity_sha256", "sender_state_sha256", "checkpoint_latch_sha256",
+    ):
+        value = str(packet.get(field, ""))
+        if field == "checkpoint_latch_sha256" and value == "NONE":
+            continue
+        if not SHA256_HEX.fullmatch(value):
+            raise ValueError("handoff packet " + field.replace("_", " ") + " is invalid")
+    if packet.get("delivery_state") != "QUEUED":
+        raise ValueError("handoff packet delivery state must remain QUEUED")
+    if packet.get("result_location") != "NOT_RECORDED":
+        raise ValueError("handoff packet result location must start as NOT_RECORDED")
+    created = parse_recorded_utc(packet.get("created_utc"), "handoff packet created_utc")
+    expires = parse_recorded_utc(packet.get("expires_utc"), "handoff packet expires_utc")
+    if expires <= created:
+        raise ValueError("handoff packet expiry must be after creation")
+    policy = validate_continuity_policy(packet.get("policy"))
+    policy_hash = canonical_json_sha256(policy)
+    if packet.get("policy_sha256") != policy_hash:
+        raise ValueError("handoff packet policy hash mismatch")
+    if expires - created > datetime.timedelta(minutes=policy["handoff_max_age_minutes"]):
+        raise ValueError("handoff packet exceeds the policy maximum age")
+    digest = handoff_packet_sha256(packet)
+    if packet.get("packet_sha256") != digest:
+        raise ValueError("handoff packet self-hash mismatch")
+    if expected_digest is not None:
+        if not SHA256_HEX.fullmatch(str(expected_digest)):
+            raise ValueError("expected handoff packet digest is not SHA-256")
+        if digest != expected_digest:
+            raise ValueError("handoff packet does not match the separately supplied digest")
+    package_root = Path(package_root).resolve()
+    expected_files = {"handoff.json"}
+    total_size = 0
+    seen_bundle_paths = set()
+    for index, record in enumerate(required_files, start=1):
+        if not isinstance(record, dict):
+            raise ValueError("handoff packet file must be a JSON object")
+        require_exact_fields(
+            record, HANDOFF_PACKET_FILE_FIELDS, "handoff packet file " + str(index)
+        )
+        bundle = safe_relative(record.get("bundle_path"), "handoff bundle path")
+        if not portable_key(bundle).startswith("attachments/"):
+            raise ValueError("handoff bundle path must be under attachments")
+        bundle_key = portable_key(bundle)
+        if bundle_key in seen_bundle_paths:
+            raise ValueError("handoff bundle path is duplicated")
+        seen_bundle_paths.add(bundle_key)
+        expected_files.add(bundle.as_posix())
+        positive_integer(
+            record.get("size_bytes"), "handoff attachment size", allow_zero=True
+        )
+        attachment = path_without_symlinks(
+            package_root, bundle, "handoff attachment"
+        )
+        if not attachment.is_file():
+            raise ValueError("handoff attachment is missing: " + bundle.as_posix())
+        if attachment.stat().st_size != record["size_bytes"]:
+            raise ValueError("handoff attachment size mismatch: " + bundle.as_posix())
+        if sha256(attachment) != record["sha256"]:
+            raise ValueError("handoff attachment hash mismatch: " + bundle.as_posix())
+        verify_handoff_file_schema(attachment, record["schema"])
+        total_size += record["size_bytes"]
+    if total_size > MAX_ARCHIVE_UNCOMPRESSED_BYTES:
+        raise ValueError("handoff attachments exceed the safe payload size")
+    actual_files = set()
+    for path in package_root.rglob("*"):
+        if path.is_symlink():
+            raise ValueError("handoff package may not contain symbolic links")
+        if path.is_file():
+            actual_files.add(path.relative_to(package_root).as_posix())
+    if actual_files != expected_files:
+        raise ValueError("handoff package files differ from the signed envelope")
+    return packet
+
+
+def handoff_packets(worker):
+    root = worker / CONTINUITY_OUTBOX_ROOT
+    if not root.exists():
+        return []
+    if root.is_symlink() or not root.is_dir():
+        raise ValueError("handoff outbox must be a real directory")
+    catalog = continuity_policy_catalog(worker)
+    packets = []
+    seen = set()
+    for package in sorted(root.iterdir(), key=lambda item: item.name.casefold()):
+        if package.is_symlink() or not package.is_dir():
+            raise ValueError("handoff outbox contains a forbidden entry")
+        packet_path = package / "handoff.json"
+        if not packet_path.is_file() or packet_path.is_symlink():
+            raise ValueError("handoff package is incomplete: " + package.name)
+        packet = validate_handoff_packet(read_json(packet_path), package)
+        if package.name != packet["handoff_id"]:
+            raise ValueError("handoff package directory differs from its id")
+        if packet["handoff_id"] in seen:
+            raise ValueError("duplicate handoff id in outbox")
+        seen.add(packet["handoff_id"])
+        if packet["policy_sha256"] not in catalog:
+            raise ValueError("handoff packet references unknown local continuity policy")
+        if catalog[packet["policy_sha256"]] != packet["policy"]:
+            raise ValueError("handoff packet policy differs from local policy history")
+        packets.append(packet)
+    return packets
+
+
+def incomplete_handoff_packages(worker):
+    """Return only uncommitted outbox directories that are safe to quarantine."""
+    root = worker / CONTINUITY_OUTBOX_ROOT
+    if not root.exists():
+        return []
+    if root.is_symlink() or not root.is_dir():
+        raise ValueError("handoff outbox must be a real directory")
+    packages = []
+    for package in sorted(root.iterdir(), key=lambda item: item.name.casefold()):
+        if package.is_symlink() or not package.is_dir():
+            raise ValueError("handoff outbox contains a forbidden entry")
+        packet_path = package / "handoff.json"
+        if packet_path.is_file() and not packet_path.is_symlink():
+            continue
+        for child in package.rglob("*"):
+            if child.is_symlink() or not (child.is_file() or child.is_dir()):
+                raise ValueError(
+                    "incomplete handoff contains an unsafe entry: " + package.name
+                )
+        packages.append(package)
+    return packages
+
+
+def handoff_acknowledgements(worker):
+    records = []
+    seen = set()
+    for path in continuity_record_files(worker, CONTINUITY_ACKS_ROOT):
+        record = read_json(path)
+        fields = {
+            "accepted_utc", "handoff_id", "packet_sha256", "recipient_identity_sha256",
+            "recipient_state_sha256", "recipient_task_id", "recipient_worker_id",
+            "record_sha256", "schema", "status",
+        }
+        require_exact_fields(record, fields, "handoff acknowledgement")
+        if record.get("schema") != "ai-human.handoff-acknowledgement/v1":
+            raise ValueError("unsupported handoff acknowledgement schema")
+        handoff_id = governor_safe_id(record.get("handoff_id", ""), "acknowledged handoff id")
+        if path.name != handoff_id + ".json":
+            raise ValueError("handoff acknowledgement filename differs from its id")
+        if handoff_id in seen:
+            raise ValueError("duplicate handoff acknowledgement")
+        seen.add(handoff_id)
+        if record.get("status") != "ACCEPTED":
+            raise ValueError("handoff acknowledgement status must be ACCEPTED")
+        for field in (
+            "packet_sha256", "recipient_identity_sha256", "recipient_state_sha256",
+        ):
+            if not SHA256_HEX.fullmatch(str(record.get(field, ""))):
+                raise ValueError("handoff acknowledgement hash is invalid: " + field)
+        governor_safe_id(record.get("recipient_worker_id", ""), "handoff recipient worker id")
+        governor_safe_id(record.get("recipient_task_id", ""), "handoff recipient task id")
+        parse_recorded_utc(record.get("accepted_utc"), "handoff accepted_utc")
+        if record.get("record_sha256") != governed_record_sha256(record):
+            raise ValueError("handoff acknowledgement hash mismatch")
+        records.append(record)
+    return records
+
+
+def validate_continuity_state(worker):
+    failures = []
+    root = worker / CONTINUITY_ROOT
+    if not root.exists():
+        return failures
+    if root.is_symlink() or not root.is_dir():
+        return ["continuity state root must be a real directory"]
+    allowed = {
+        "policy.json", "policies", "context", "outbox", "acknowledgements",
+        "resources", "checkpoint-required.json",
+    }
+    for path in root.iterdir():
+        if path.name not in allowed:
+            failures.append("continuity state contains a forbidden entry: " + path.name)
+        elif path.is_symlink():
+            failures.append("continuity state may not contain symbolic links: " + path.name)
+    try:
+        if not (worker / CONTINUITY_POLICY_PATH).is_file():
+            raise ValueError("continuity policy is missing")
+        continuity_policy(worker)
+        continuity_policy_catalog(worker)
+        records = context_records(worker)
+        context_checkpoint_latch(worker, records=records)
+        handoff_packets(worker)
+        handoff_acknowledgements(worker)
+    except Exception as exc:
+        failures.append("invalid continuity state: " + str(exc))
+    return failures
+
+
+def resource_policy(worker, required=True):
+    path = worker / RESOURCE_POLICY_PATH
+    if not path.is_file():
+        if required:
+            raise ValueError("resource steward is not configured")
+        return None
+    if path.is_symlink():
+        raise ValueError("resource policy may not be a symbolic link")
+    return validate_resource_policy(read_json(path))
+
+
+def resource_record_files(worker, relative_root):
+    root = worker / relative_root
+    if not root.exists():
+        return []
+    if root.is_symlink() or not root.is_dir():
+        raise ValueError(str(relative_root) + " must be a real directory")
+    paths = []
+    for path in sorted(root.iterdir(), key=lambda item: item.name.casefold()):
+        if path.is_symlink() or not path.is_file() or path.suffix.casefold() != ".json":
+            raise ValueError("resource state contains a forbidden entry: " + str(path))
+        paths.append(path)
+    return paths
+
+
+def resource_policy_catalog(worker):
+    catalog = {}
+    versions = {}
+    current = resource_policy(worker, required=False)
+    if current:
+        catalog[canonical_json_sha256(current)] = current
+    for path in resource_record_files(worker, RESOURCE_POLICIES_ROOT):
+        policy = validate_resource_policy(read_json(path))
+        digest = canonical_json_sha256(policy)
+        expected_name = (
+            f"v{policy['policy_version']:06d}-{policy['policy_id']}-{digest[:12]}.json"
+        )
+        if path.name != expected_name:
+            raise ValueError("resource policy history filename does not match its content")
+        if policy["policy_version"] in versions and versions[policy["policy_version"]] != digest:
+            raise ValueError("resource policy version is ambiguous")
+        versions[policy["policy_version"]] = digest
+        catalog[digest] = policy
+    if current:
+        required_versions = set(range(1, current["policy_version"] + 1))
+        if not required_versions.issubset(versions):
+            raise ValueError("resource policy history is incomplete")
+        if versions and max(versions) > current["policy_version"] + 1:
+            raise ValueError("resource policy history advances beyond one pending version")
+        for policy in catalog.values():
+            if policy["policy_id"] != current["policy_id"] or policy["owner"] != current["owner"]:
+                raise ValueError("resource policy history changed its identity or owner")
+    return catalog
+
+
+def resource_snapshots(worker):
+    records = []
+    prior_hash = "NONE"
+    catalog = resource_policy_catalog(worker)
+    for sequence, path in enumerate(
+        resource_record_files(worker, RESOURCE_SNAPSHOTS_ROOT), start=1
+    ):
+        record = read_json(path)
+        fields = {
+            "created_utc", "observation", "observation_sha256", "policy_sha256",
+            "prior_snapshot_sha256", "record_sha256", "schema", "sequence", "snapshot_id",
+        }
+        require_exact_fields(record, fields, "resource snapshot")
+        if record.get("schema") != "ai-human.resource-snapshot/v1":
+            raise ValueError("unsupported resource snapshot schema")
+        if record.get("sequence") != sequence:
+            raise ValueError("resource snapshot sequence is not contiguous")
+        observation = validate_resource_observation(record.get("observation"))
+        if record.get("snapshot_id") != observation["observation_id"]:
+            raise ValueError("resource snapshot id differs from its observation")
+        if path.name != f"{sequence:06d}-{record['snapshot_id']}.json":
+            raise ValueError("resource snapshot filename differs from its record")
+        if record.get("observation_sha256") != canonical_json_sha256(observation):
+            raise ValueError("resource observation hash mismatch")
+        if record.get("policy_sha256") not in catalog:
+            raise ValueError("resource snapshot references an unknown policy")
+        if record.get("prior_snapshot_sha256") != prior_hash:
+            raise ValueError("resource snapshot hash chain is broken")
+        if record.get("record_sha256") != governed_record_sha256(record):
+            raise ValueError("resource snapshot record hash mismatch")
+        parse_recorded_utc(record.get("created_utc"), "resource snapshot created_utc")
+        prior_hash = record["record_sha256"]
+        records.append(record)
+    return records
+
+
+def safe_resource_tab(policy, tab):
+    return (
+        policy["allow_browser_discard"]
+        and tab["classification"] == "PUBLIC_NON_SENSITIVE"
+        and tab["discard_supported"]
+        and tab["inactive"]
+        and (tab["opened_by_ai"] or policy["allow_tabs_not_opened_by_ai"])
+        and not any(
+            tab[field] for field in (
+                "active_download", "auth_payment_admin", "meeting", "playing_audio",
+                "unsaved_form",
+            )
+        )
+    )
+
+
+def resource_plan_decision(policy, observation):
+    browser = observation["browser"]
+    pressure = observation["pressure"]
+    candidates = []
+    if browser["status"] == "AVAILABLE":
+        for tab in browser["tabs"]:
+            if not safe_resource_tab(policy, tab):
+                continue
+            candidates.append(
+                {
+                    "action": "DISCARD_TAB",
+                    "estimated_memory_bytes": tab["estimated_memory_bytes"],
+                    "reopen_locator": (
+                        tab["reopen_locator"]
+                        if policy["retain_reopen_locator"] else "NOT_RETAINED"
+                    ),
+                    "tab_id": tab["tab_id"],
+                }
+            )
+            if len(candidates) >= policy["max_tab_candidates"]:
+                break
+    processes = observation["processes"]
+    application_review = []
+    if processes["status"] == "AVAILABLE":
+        application_review = sorted(
+            processes["items"], key=lambda item: (-item["rss_bytes"], item["pid"])
+        )[: policy["max_tab_candidates"]]
+    reasons = []
+    if pressure["status"] == "UNKNOWN":
+        decision = "DIAGNOSIS_INCOMPLETE"
+        candidates = []
+        reasons.append("Current memory pressure is UNKNOWN; no cleanup action is inferred")
+    elif pressure["level"] == "NORMAL":
+        decision = "NO_CLEANUP_NEEDED"
+        candidates = []
+        reasons.append("The host reports NORMAL current memory pressure")
+        if observation["swap"]["status"] == "AVAILABLE" and observation["swap"]["used_bytes"]:
+            reasons.append("Non-zero swap alone does not prove current pressure")
+    elif candidates:
+        decision = "CLEANUP_CANDIDATES"
+        reasons.append("The host reports pressure and every proposed tab passes the safe-discard policy")
+    else:
+        decision = "HUMAN_REVIEW_REQUIRED"
+        reasons.append("The host reports pressure but no browser tab passes every safe-discard condition")
+    if browser["status"] == "UNKNOWN":
+        reasons.append("Browser resource data is UNKNOWN; no tab is proposed")
+    return {
+        "application_action": "HUMAN_REVIEW_ONLY",
+        "application_review": application_review,
+        "decision": decision,
+        "execution": "APPROVED_HOST_ADAPTER_REQUIRED" if candidates else "NONE",
+        "reasons": reasons,
+        "tab_candidates": candidates,
+    }
+
+
+def resource_plan_records(worker, snapshots=None):
+    snapshots = resource_snapshots(worker) if snapshots is None else snapshots
+    snapshot_by_id = {item["snapshot_id"]: item for item in snapshots}
+    catalog = resource_policy_catalog(worker)
+    records = []
+    prior_hash = "NONE"
+    for sequence, path in enumerate(
+        resource_record_files(worker, RESOURCE_PLANS_ROOT), start=1
+    ):
+        record = read_json(path)
+        fields = {
+            "application_action", "application_review", "created_utc", "decision",
+            "execution", "plan_id", "policy_sha256", "prior_plan_sha256", "reasons",
+            "record_sha256", "schema", "sequence", "snapshot_id", "snapshot_sha256",
+            "tab_candidates",
+        }
+        require_exact_fields(record, fields, "resource plan")
+        if record.get("schema") != "ai-human.resource-plan/v1":
+            raise ValueError("unsupported resource plan schema")
+        if record.get("sequence") != sequence:
+            raise ValueError("resource plan sequence is not contiguous")
+        plan_id = governor_safe_id(record.get("plan_id", ""), "resource plan id")
+        if path.name != f"{sequence:06d}-{plan_id}.json":
+            raise ValueError("resource plan filename differs from its record")
+        snapshot = snapshot_by_id.get(record.get("snapshot_id"))
+        if not snapshot or snapshot["record_sha256"] != record.get("snapshot_sha256"):
+            raise ValueError("resource plan snapshot reference is invalid")
+        policy = catalog.get(record.get("policy_sha256"))
+        if not policy:
+            raise ValueError("resource plan references an unknown policy")
+        if record.get("prior_plan_sha256") != prior_hash:
+            raise ValueError("resource plan hash chain is broken")
+        if record.get("record_sha256") != governed_record_sha256(record):
+            raise ValueError("resource plan record hash mismatch")
+        replay = resource_plan_decision(policy, snapshot["observation"])
+        for field in (
+            "application_action", "application_review", "decision", "execution", "reasons",
+            "tab_candidates",
+        ):
+            if record.get(field) != replay[field]:
+                raise ValueError("resource plan decision replay mismatch: " + field)
+        parse_recorded_utc(record.get("created_utc"), "resource plan created_utc")
+        prior_hash = record["record_sha256"]
+        records.append(record)
+    return records
+
+
+def resource_outcome_records(worker, plans=None, snapshots=None):
+    snapshots = resource_snapshots(worker) if snapshots is None else snapshots
+    plans = resource_plan_records(worker, snapshots) if plans is None else plans
+    plan_by_id = {item["plan_id"]: item for item in plans}
+    snapshot_by_id = {item["snapshot_id"]: item for item in snapshots}
+    records = []
+    seen = set()
+    prior_hash = "NONE"
+    for sequence, path in enumerate(
+        resource_record_files(worker, RESOURCE_OUTCOMES_ROOT), start=1
+    ):
+        record = read_json(path)
+        fields = {
+            "after_snapshot_id", "created_utc", "evidence", "plan_id",
+            "plan_record_sha256", "prior_outcome_sha256", "record_sha256", "schema",
+            "sequence", "status",
+        }
+        require_exact_fields(record, fields, "resource outcome")
+        if record.get("schema") != "ai-human.resource-outcome/v1":
+            raise ValueError("unsupported resource outcome schema")
+        if record.get("sequence") != sequence:
+            raise ValueError("resource outcome sequence is not contiguous")
+        plan_id = governor_safe_id(record.get("plan_id", ""), "resource outcome plan id")
+        if path.name != f"{sequence:06d}-{plan_id}.json":
+            raise ValueError("resource outcome filename differs from its record")
+        if plan_id in seen:
+            raise ValueError("resource plan has more than one outcome")
+        seen.add(plan_id)
+        plan = plan_by_id.get(plan_id)
+        if not plan or plan["record_sha256"] != record.get("plan_record_sha256"):
+            raise ValueError("resource outcome plan reference is invalid")
+        if record.get("status") not in RESOURCE_OUTCOME_STATUSES:
+            raise ValueError("resource outcome status is invalid")
+        if record["status"].startswith("EXECUTED_") and plan["decision"] != "CLEANUP_CANDIDATES":
+            raise ValueError("resource outcome claims execution without cleanup candidates")
+        after_id = record.get("after_snapshot_id")
+        if record["status"].startswith("EXECUTED_"):
+            if after_id not in snapshot_by_id:
+                raise ValueError("resource outcome after snapshot is missing")
+            before = snapshot_by_id[plan["snapshot_id"]]
+            after = snapshot_by_id[after_id]
+            if after["sequence"] <= before["sequence"]:
+                raise ValueError("resource outcome after snapshot is not later than its baseline")
+            improved = resource_measurably_improved(
+                before["observation"], after["observation"]
+            )
+            if record["status"] == "EXECUTED_IMPROVED" and not improved:
+                raise ValueError("resource outcome falsely claims measurable improvement")
+            if record["status"] == "EXECUTED_NO_IMPROVEMENT" and improved:
+                raise ValueError("resource outcome falsely claims no improvement")
+        elif after_id != "NONE":
+            raise ValueError("unexecuted resource outcome has an after snapshot")
+        if record.get("prior_outcome_sha256") != prior_hash:
+            raise ValueError("resource outcome hash chain is broken")
+        if record.get("record_sha256") != governed_record_sha256(record):
+            raise ValueError("resource outcome record hash mismatch")
+        if not isinstance(record.get("evidence"), str):
+            raise ValueError("resource outcome evidence must be text")
+        bounded_clean(record["evidence"], "resource outcome evidence", 2000)
+        parse_recorded_utc(record.get("created_utc"), "resource outcome created_utc")
+        prior_hash = record["record_sha256"]
+        records.append(record)
+    return records
+
+
+def validate_resource_state(worker):
+    failures = []
+    root = worker / RESOURCE_ROOT
+    if not root.exists():
+        return failures
+    if root.is_symlink() or not root.is_dir():
+        return ["resource state root must be a real directory"]
+    allowed = {"policy.json", "policies", "snapshots", "plans", "outcomes"}
+    for path in root.iterdir():
+        if path.name not in allowed:
+            failures.append("resource state contains a forbidden entry: " + path.name)
+        elif path.is_symlink():
+            failures.append("resource state may not contain symbolic links: " + path.name)
+    try:
+        if not (worker / RESOURCE_POLICY_PATH).is_file():
+            raise ValueError("resource policy is missing")
+        resource_policy(worker)
+        resource_policy_catalog(worker)
+        snapshots = resource_snapshots(worker)
+        plans = resource_plan_records(worker, snapshots)
+        resource_outcome_records(worker, plans, snapshots)
+    except Exception as exc:
+        failures.append("invalid resource state: " + str(exc))
+    return failures
+
+
+def validate_exchange_local_state(worker):
+    failures = []
+    root = worker / EXCHANGE_LOCAL_ROOT
+    if not root.exists():
+        return failures
+    if root.is_symlink() or not root.is_dir():
+        return ["worker exchange state root must be a real directory"]
+    allowed = {
+        "join.json", "leave.json", "received", "accepted", "rejected", "results",
+        "integration",
+    }
+    for path in root.iterdir():
+        if path.name not in allowed:
+            failures.append("worker exchange state contains a forbidden entry: " + path.name)
+        elif path.is_symlink():
+            failures.append("worker exchange state may not contain symbolic links: " + path.name)
+    try:
+        join = exchange_worker_join(worker)
+        leave_path = worker / EXCHANGE_LEAVE_PATH
+        if leave_path.exists():
+            if leave_path.is_symlink() or not leave_path.is_file():
+                raise ValueError("worker exchange leave receipt must be a real file")
+            leave = validate_exchange_leave_receipt(read_json(leave_path))
+            if (
+                leave["worker_id"] != join["directory_entry"]["worker_id"]
+                or leave["exchange_id"] != join["exchange_id"]
+                or leave["join_proof_sha256"] != join["proof_sha256"]
+            ):
+                raise ValueError("worker exchange leave receipt differs from its join proof")
+        for directory in allowed - {"join.json", "leave.json"}:
+            child = root / directory
+            if not child.exists():
+                continue
+            if child.is_symlink() or not child.is_dir():
+                raise ValueError("worker exchange " + directory + " must be a real directory")
+            for path in child.iterdir():
+                if path.is_symlink() or not path.is_file() or path.suffix.casefold() != ".json":
+                    raise ValueError("worker exchange " + directory + " contains a forbidden entry")
+                record = read_json(path)
+                validate_exchange_local_record(record, directory, path.stem, join)
+    except Exception as exc:
+        failures.append("invalid worker exchange state: " + str(exc))
+    return failures
+
+
+def validate_exchange_local_record(record, directory, stem, join):
+    if not isinstance(record, dict):
+        raise ValueError("worker exchange local receipt must be a JSON object")
+    schema = record.get("schema")
+    worker_id = join["directory_entry"]["worker_id"]
+    if directory == "received":
+        fields = {
+            "acknowledged_utc", "envelope_sha256", "message_id",
+            "recipient_worker_id", "record_sha256", "schema", "transport_state",
+        }
+        require_exact_fields(record, fields, "worker exchange acknowledgement receipt")
+        if schema != "ai-human.exchange-local-receipt/v1" or record.get("transport_state") != "ACKNOWLEDGED":
+            raise ValueError("worker exchange acknowledgement receipt semantics are invalid")
+        parse_recorded_utc(record.get("acknowledged_utc"), "exchange acknowledgement UTC")
+        if record.get("recipient_worker_id") != worker_id:
+            raise ValueError("worker exchange acknowledgement belongs to another worker")
+    elif directory in {"accepted", "rejected"}:
+        fields = {
+            "decided_utc", "decision", "envelope_sha256", "message_id", "reason",
+            "recipient_worker_id", "record_sha256", "schema", "work_queue_effect",
+        }
+        require_exact_fields(record, fields, "worker exchange decision receipt")
+        expected_decision = "ACCEPT" if directory == "accepted" else "REJECT"
+        expected_effect = "QUEUED_NOT_LIVE_TASK" if directory == "accepted" else "NONE"
+        if (
+            schema != "ai-human.exchange-local-decision/v1"
+            or record.get("decision") != expected_decision
+            or record.get("work_queue_effect") != expected_effect
+            or record.get("recipient_worker_id") != worker_id
+        ):
+            raise ValueError("worker exchange decision receipt semantics are invalid")
+        bounded_clean(record.get("reason", ""), "exchange decision reason", 2000)
+        parse_recorded_utc(record.get("decided_utc"), "exchange decision UTC")
+    elif directory == "results":
+        fields = {
+            "envelope_sha256", "message_id", "record_sha256", "result_id",
+            "result_sha256", "schema",
+        }
+        require_exact_fields(record, fields, "worker exchange result receipt")
+        if schema != "ai-human.exchange-local-result/v1":
+            raise ValueError("worker exchange result receipt schema is invalid")
+        governor_safe_id(record.get("result_id", ""), "exchange local result id")
+        if not SHA256_HEX.fullmatch(str(record.get("result_sha256", ""))):
+            raise ValueError("worker exchange local result hash is invalid")
+    elif directory == "integration":
+        fields = {
+            "created_utc", "inputs", "integration_owner_worker_id", "mission_id",
+            "mission_sha256", "record_sha256", "schema", "status",
+        }
+        require_exact_fields(record, fields, "worker exchange integration proof")
+        if (
+            schema != "ai-human.exchange-integration-proof/v1"
+            or record.get("status") != "INPUTS_VERIFIED_CONFLICT_FREE"
+            or record.get("integration_owner_worker_id") != worker_id
+        ):
+            raise ValueError("worker exchange integration proof semantics are invalid")
+        inputs = record.get("inputs")
+        if not isinstance(inputs, list) or not inputs or len(inputs) > BATCH_CAP:
+            raise ValueError("worker exchange integration inputs are invalid")
+        seen_workers = set()
+        for index, item in enumerate(inputs):
+            require_exact_fields(
+                item, EXCHANGE_EXPECTED_RESULT_FIELDS,
+                "worker exchange integration input " + str(index),
+            )
+            for field in ("message_id", "result_id", "worker_id"):
+                governor_safe_id(item.get(field, ""), "exchange integration " + field.replace("_", " "))
+            if item["worker_id"] in seen_workers:
+                raise ValueError("worker exchange integration input worker is duplicated")
+            seen_workers.add(item["worker_id"])
+            bounded_clean(item.get("result_version", ""), "exchange integration result version", 200)
+            if not SHA256_HEX.fullmatch(str(item.get("result_sha256", ""))):
+                raise ValueError("worker exchange integration result hash is invalid")
+        if not SHA256_HEX.fullmatch(str(record.get("mission_sha256", ""))):
+            raise ValueError("worker exchange integration mission hash is invalid")
+        parse_recorded_utc(record.get("created_utc"), "exchange integration UTC")
+    else:
+        raise ValueError("worker exchange local receipt directory is invalid")
+    if record.get("message_id", stem) != stem and directory != "integration":
+        raise ValueError("worker exchange local receipt filename differs from message id")
+    if directory == "integration" and record.get("mission_id") != stem:
+        raise ValueError("worker exchange integration filename differs from mission id")
+    if "message_id" in record:
+        governor_safe_id(record.get("message_id", ""), "exchange local message id")
+    if "envelope_sha256" in record and not SHA256_HEX.fullmatch(str(record.get("envelope_sha256", ""))):
+        raise ValueError("worker exchange local envelope hash is invalid")
+    if record.get("record_sha256") != exchange_record_sha256(record, "record_sha256"):
+        raise ValueError("worker exchange local receipt hash mismatch")
+    return record
+
+
+def require_exchange_local_record(worker, directory, identifier):
+    governor_safe_id(identifier, "exchange local receipt identifier")
+    path = worker_target(
+        worker, EXCHANGE_LOCAL_ROOT / directory / (identifier + ".json"),
+        "worker exchange local receipt",
+    )
+    if path.is_symlink() or not path.is_file():
+        raise ValueError(
+            "required worker-local " + directory + " proof is missing; repair the prior lifecycle step"
+        )
+    return validate_exchange_local_record(
+        read_json(path), directory, identifier, exchange_worker_join(worker)
+    )
 
 
 def validate_gate_profile(data, expected=None):
@@ -921,6 +3775,2765 @@ def contains_secret_material(value):
     return any(re.search(pattern, serialized, flags=re.I) for pattern in patterns)
 
 
+# H-54 has one private, atomically replaced document. Missing/legacy state is OFF.
+# Global is a scope label at its designated owner, never a cross-worker read path.
+WORK_MAP_PATH = Path(".ai-human/personal/work-map.json")
+PERSONAL_ROOT = WORK_MAP_PATH.parent
+WORK_MAP_TX_PATH = Path(".ai-human/control/work-map-transaction.json")
+WORK_MAP_SCOPES = {"WORKER_LOCAL", "USER_GLOBAL"}
+WORK_MAP_KINDS = {"SKILL", "WORKER_OR_BOT", "PROJECT", "LEARNING", "PROCESS_FIX"}
+
+# H-53 keeps durable memory and the Chief's portfolio in worker-owned private state.
+# The Chief is a separate, read-only coordinator: it receives explicit metadata
+# snapshots and curated facts, never arbitrary paths into another worker.
+MEMORY_ROOT = Path(".ai-human/memory")
+MEMORY_RECORD_LIMIT = 250
+MEMORY_STORE_PATH = MEMORY_ROOT / "store.json"
+MEMORY_INDEX_PATH = MEMORY_ROOT / "index.json"
+PORTFOLIO_EXPORTS_PATH = MEMORY_ROOT / "portfolio-exports.json"
+CHIEF_ROOT = Path(".ai-human/chief")
+CHIEF_CONFIG_PATH = CHIEF_ROOT / "config.json"
+CHIEF_PORTFOLIO_PATH = CHIEF_ROOT / "portfolio.json"
+CHIEF_BRIEFS_ROOT = CHIEF_ROOT / "briefs"
+CHIEF_STATE_PATH = CHIEF_ROOT / "state.json"
+H53_TX_PATH = Path(".ai-human/control/h53-transaction.json")
+MEMORY_KINDS = {"SEMANTIC", "EPISODIC", "PROCEDURAL", "DECISION"}
+MEMORY_SCOPES = {"WORKER_LOCAL", "GLOBAL_SHARED"}
+MEMORY_STATUSES = {"ACTIVE", "SUPERSEDED", "RETRACTED", "DISPUTED"}
+MEMORY_CONFIDENCE = {"OWNER_STATED", "SOURCE_CONFIRMED", "OBSERVED_VERIFY", "UNKNOWN"}
+MEMORY_SENSITIVITY = {"PUBLIC", "COMPANY_INTERNAL", "PRIVATE_WORK", "RESTRICTED"}
+MEMORY_ACCESS = {"OWNER_ONLY", "WORKER_TEAM", "COMPANY_SHARED"}
+CHIEF_WORKER_STATUSES = {"ACTIVE", "BLOCKED", "WAITING_OWNER", "STALE", "PAUSED", "RETIRED"}
+CHIEF_ITEM_FIELDS = {
+    "access_class", "blocked_reason", "current_task_id", "done_condition", "evidence_sha256",
+    "fact_owner_ids", "fresh_until_utc", "last_completed_step", "next_action", "operating_unit",
+    "owner", "purpose", "source_identity_sha256", "source_recorded_utc", "source_worker_id",
+    "source_state_sha256", "status", "status_sha256", "summary_pointer_approval_reference",
+    "summary_pointer_sha256", "updated_utc",
+}
+
+
+def map_fields(value, fields, label):
+    if not isinstance(value, dict) or set(value) != set(fields.split()):
+        raise ValueError(label + " fields differ from required schema")
+    return value
+
+
+def map_text(value, label, limit=1000):
+    if not isinstance(value, str):
+        raise ValueError(label + " must be text")
+    result = bounded_clean(value, label, limit)
+    # Deny common credentials even when punctuation/JSON obscures the assignment.
+    if contains_secret_material(value) or re.search(
+        r"(?i)(?:bearer\s+[a-z0-9._-]{12,}|(?:password|api[_ -]?key|access[_ -]?token|secret)"
+        r"[\s\"']*[:=][\s\"']*\S+|AKIA[0-9A-Z]{16}|sk-[a-z0-9_-]{20,})", result
+    ):
+        raise ValueError(label + " contains possible credential material")
+    return result
+
+
+def map_id(value):
+    if not isinstance(value, str) or not COMPONENT_ID.fullmatch(value) or len(value) > 80:
+        raise ValueError("work-map identifier must be a bounded lowercase slug")
+    return value
+
+
+def map_path(worker):
+    return worker_target(worker, WORK_MAP_PATH, "private work map")
+
+
+def map_expiry(value, label, maximum=365):
+    moment = parse_recorded_utc(value, label)
+    current = parse_recorded_utc(now_utc(), "now")
+    if not current < moment <= current + datetime.timedelta(days=maximum):
+        raise ValueError(label + " must be in the future within retention policy")
+    return value
+
+
+def map_recorded(value, label):
+    moment = parse_recorded_utc(value, label)
+    if moment > parse_recorded_utc(now_utc(), "now"):
+        raise ValueError(label + " cannot be in the future")
+    return moment
+
+
+def map_confirmation_sha256(data):
+    return canonical_json_sha256({key: data[key] for key in (
+        "owner", "identity", "consent", "consent_expires_utc", "sources", "entries",
+    )})
+
+
+def radar_horizon_days(frequency):
+    return {"MONTHLY": 32, "QUARTERLY": 94}[frequency]
+
+
+def radar_has_unsupported_value_claim(card):
+    return re.search(
+        r"[$₹€£]|\b\d+\s*(?:%|hours?\b|days?\b|roi\b|x\b)|\b(?:urgent|guaranteed|deadline)\b",
+        card["text"] + " " + card["expected_output"], re.I,
+    ) is not None
+
+
+def validate_stored_radar_proof(radar):
+    proof = radar["proof"]
+    consumed = radar["last_consumed_due"]
+    if consumed is not None:
+        consumed_moment = parse_offset_datetime(consumed, "last consumed radar occurrence")
+        validate_moment_in_timezone(consumed_moment, radar["timezone"], "last consumed radar occurrence")
+        if consumed_moment.strftime("%H:%M") != radar["local_time"]:
+            raise ValueError("consumed radar occurrence differs from local time")
+    if radar["status"] == "AWAITING_VISIBLE_PROOF":
+        if proof is not None or consumed is not None:
+            raise ValueError("unverified radar cannot carry schedule proof or a consumed occurrence")
+        return
+    map_fields(proof, "external_id visible_card tested_prompt task_prompt_sha256 next_run_local verified_utc status", "stored radar proof")
+    expected_status = "VERIFIED_ACTIVE" if radar["status"] == "AWAITING_NEXT_RUN_PROOF" else radar["status"]
+    if proof["status"] != expected_status:
+        raise ValueError("stored radar proof status differs from its schedule")
+    if type(proof["visible_card"]) is not bool or type(proof["tested_prompt"]) is not bool:
+        raise ValueError("stored radar proof requires boolean visibility and prompt-test results")
+    if proof["status"] != "UNAVAILABLE" and not (proof["visible_card"] and proof["tested_prompt"]):
+        raise ValueError("stored radar proof lacks visible tested prompt evidence")
+    map_text(proof["external_id"], "stored radar external id", 200)
+    if proof["task_prompt_sha256"] != radar["prompt_sha256"]:
+        raise ValueError("stored radar proof prompt differs")
+    verified = map_recorded(proof["verified_utc"], "stored radar verification")
+    moment = None
+    if proof["next_run_local"] is not None:
+        moment = parse_offset_datetime(proof["next_run_local"], "stored radar next run")
+        validate_moment_in_timezone(moment, radar["timezone"], "stored radar next run")
+        if moment.strftime("%H:%M") != radar["local_time"]:
+            raise ValueError("stored radar next run differs from local time")
+    if proof["status"] == "VERIFIED_ACTIVE":
+        if moment is None or not verified < moment <= verified + datetime.timedelta(days=radar_horizon_days(radar["frequency"])):
+            raise ValueError("stored radar next run exceeds its cadence horizon")
+        if radar["status"] == "AWAITING_NEXT_RUN_PROOF":
+            if consumed is None or consumed_moment != moment:
+                raise ValueError("consumed radar proof differs from its occurrence")
+        elif consumed is not None and consumed_moment >= moment:
+            raise ValueError("stored radar occurrence was already consumed")
+
+
+def work_map(worker, required=True):
+    path = map_path(worker)
+    if not path.exists():
+        if required:
+            raise ValueError("personal context is OFF; explicit identity and source consent required")
+        return None
+    data = read_json(path)
+    map_fields(data, "schema worker_id identity_sha256 owner identity consent consent_expires_utc confirmation status retention_days sources entries suggestions decisions radar revision", "work map")
+    if data["schema"] != "ai-human.work-map/v1":
+        raise ValueError("unsupported work-map schema; explicit re-consent required")
+    if data["worker_id"] != installed_worker_id(worker) or data["identity_sha256"] != worker_identity_sha256(worker):
+        raise ValueError("work map belongs to a different worker identity")
+    map_text(data["owner"], "map owner")
+    if data["status"] not in {"DRAFT", "CONFIRMED", "REVOKED"}:
+        raise ValueError("invalid map status")
+    if type(data["revision"]) is not int or data["revision"] < 1:
+        raise ValueError("invalid map revision")
+    if type(data["retention_days"]) is not int or not 1 <= data["retention_days"] <= 365:
+        raise ValueError("retention must be 1..365 days")
+    for name in ("sources", "entries", "suggestions", "decisions"):
+        if not isinstance(data[name], dict) or len(data[name]) > 250:
+            raise ValueError("work-map collection exceeds bounded retention")
+    parse_recorded_utc(data["consent_expires_utc"], "consent expiry")
+    map_text(data["consent"], "consent reference")
+    confirmation = data["confirmation"]
+    if data["status"] == "CONFIRMED":
+        map_fields(confirmation, "approval_reference confirmed_utc context_sha256", "map confirmation")
+        map_text(confirmation["approval_reference"], "map confirmation approval")
+        map_recorded(confirmation["confirmed_utc"], "map confirmation time")
+        if confirmation["context_sha256"] != map_confirmation_sha256(data):
+            raise ValueError("map confirmation differs from its reviewed context")
+    elif confirmation is not None:
+        raise ValueError("unconfirmed map cannot retain active confirmation proof")
+    if data["status"] != "REVOKED":
+        map_fields(data["identity"], "name role company unit responsibilities decision_rights goals", "declared identity")
+        for key, value in data["identity"].items():
+            map_text(value, "declared " + key)
+        if data["identity"]["name"] != data["owner"]:
+            raise ValueError("map identity differs from owner")
+    elif any(data[name] for name in ("identity", "entries", "sources", "suggestions", "decisions")):
+        raise ValueError("revoked map retains private content")
+    for identifier, source in data["sources"].items():
+        map_fields(source, "id path mode scope sensitivity status consent", "map source")
+        if map_id(identifier) != source["id"] or source["status"] not in {"APPROVED", "REVOKED"} or source["scope"] not in WORK_MAP_SCOPES or source["mode"] not in {"SUMMARY", "METADATA"} or source["sensitivity"] != "PRIVATE_WORK" or source["consent"] != data["consent"]:
+            raise ValueError("invalid stored source contract")
+        worker_target(worker, safe_relative(source["path"], "map source"), "map source")
+        map_text(source["path"], "stored source path", 1000)
+    for identifier, entry in data["entries"].items():
+        map_fields(entry, "id text source_id source_sha256 scope confidence review_due supersedes recorded_utc status sensitivity", "stored map entry")
+        source = data["sources"].get(entry["source_id"])
+        if map_id(identifier) != entry["id"] or not source or source["status"] != "APPROVED" or entry["scope"] != source["scope"] or entry["status"] not in {"ACTIVE", "SUPERSEDED"} or entry["confidence"] not in {"OWNER_STATED", "SOURCE_CONFIRMED", "OBSERVED_VERIFY", "UNKNOWN"} or entry["sensitivity"] != "PRIVATE_WORK":
+            raise ValueError("stored map entry crosses its source contract")
+        map_text(entry["text"], "stored entry")
+        if not SHA256_HEX.fullmatch(str(entry["source_sha256"])):
+            raise ValueError("entry lacks source hash")
+        recorded = map_recorded(entry["recorded_utc"], "entry recorded time")
+        review = parse_recorded_utc(entry["review_due"], "entry review time")
+        if not recorded < review <= recorded + datetime.timedelta(days=data["retention_days"]):
+            raise ValueError("entry review exceeds bounded retention")
+        if entry["supersedes"] is not None:
+            map_id(entry["supersedes"])
+            if entry["supersedes"] == identifier:
+                raise ValueError("entry cannot supersede itself")
+    for identifier, card in data["suggestions"].items():
+        if data["status"] != "CONFIRMED":
+            raise ValueError("stored suggestions require confirmed private context")
+        map_fields(card, "id kind text evidence_ids expected_output permissions risks overlap confidence value_basis signature activation decision recorded_utc", "stored suggestion")
+        if map_id(identifier) != card["id"] or card["kind"] not in WORK_MAP_KINDS or card["activation"] != "NOT_ACTIVATED" or card["decision"] != "REVIEW_REQUIRED" or not isinstance(card["evidence_ids"], list) or not 1 <= len(card["evidence_ids"]) <= BATCH_CAP:
+            raise ValueError("invalid stored suggestion")
+        for field in ("text", "expected_output", "permissions", "risks", "overlap"):
+            map_text(card[field], "stored suggestion " + field)
+        if card["confidence"] not in {"SOURCE_CONFIRMED", "OBSERVED_VERIFY"} or card["value_basis"] != "UNMEASURED" or card["overlap"] != "NONE_CONFIRMED":
+            raise ValueError("invalid stored suggestion confidence/value/overlap")
+        if radar_has_unsupported_value_claim(card):
+            raise ValueError("stored suggestion invents quantified value or urgency")
+        recorded = map_recorded(card["recorded_utc"], "suggestion recorded time")
+        refs = [map_id(ref) for ref in card["evidence_ids"]]
+        if len(set(refs)) != len(refs):
+            raise ValueError("stored suggestion repeats evidence")
+        for ref in refs:
+            entry = data["entries"].get(ref)
+            if not entry or entry["status"] != "ACTIVE" or entry["confidence"] not in {"SOURCE_CONFIRMED", "OWNER_STATED"}:
+                raise ValueError("stored suggestion evidence is not active and confirmed")
+            if not parse_recorded_utc(entry["recorded_utc"], "evidence recorded time") <= recorded < parse_recorded_utc(entry["review_due"], "evidence review time"):
+                raise ValueError("stored suggestion was recorded outside evidence validity")
+        if card["signature"] != canonical_json_sha256({key: card[key] for key in ("kind", "text", "evidence_ids")}):
+            raise ValueError("stored suggestion signature differs")
+    for signature, decision in data["decisions"].items():
+        map_fields(decision, "choice until_utc expires_utc recorded_utc", "stored radar decision")
+        if not SHA256_HEX.fullmatch(signature) or decision["choice"] not in {"PROPOSE", "LATER", "REJECT"}:
+            raise ValueError("invalid stored radar decision")
+        recorded = map_recorded(decision["recorded_utc"], "decision recorded time")
+        expiry = parse_recorded_utc(decision["expires_utc"], "decision expiry")
+        if not recorded < expiry <= recorded + datetime.timedelta(days=data["retention_days"]):
+            raise ValueError("decision expiry exceeds bounded retention")
+        if decision["choice"] == "LATER":
+            if not recorded < parse_recorded_utc(decision["until_utc"], "decision snooze") <= expiry:
+                raise ValueError("decision snooze exceeds bounded retention")
+        elif decision["until_utc"] is not None:
+            raise ValueError("only LATER may carry a snooze date")
+    if data["radar"] is not None:
+        radar = data["radar"]
+        if radar.get("status") == "NEEDS_EXTERNAL_REMOVAL":
+            map_fields(radar, "status external_id prompt_sha256", "radar removal pointer")
+            map_text(radar["external_id"], "radar external id", 200)
+            if not SHA256_HEX.fullmatch(str(radar["prompt_sha256"])):
+                raise ValueError("radar removal pointer has invalid prompt digest")
+            if contains_secret_material(data):
+                raise ValueError("work map contains possible secret material")
+            return data
+        map_fields(radar, "frequency local_time timezone approval_reference status prompt prompt_sha256 proof last_consumed_due", "stored radar")
+        if radar["status"] not in {"AWAITING_VISIBLE_PROOF", "VERIFIED_ACTIVE", "VERIFIED_PAUSED", "VERIFIED_REMOVED", "UNAVAILABLE", "AWAITING_NEXT_RUN_PROOF"} or radar["frequency"] not in {"MONTHLY", "QUARTERLY"}:
+            raise ValueError("invalid stored radar status")
+        validate_timezone(radar["timezone"])
+        map_text(radar["approval_reference"], "radar approval reference")
+        map_text(radar["prompt"], "stored radar prompt", 4000)
+        if not LOCAL_CLOCK.fullmatch(str(radar["local_time"])) or hashlib.sha256(radar["prompt"].encode()).hexdigest() != radar["prompt_sha256"]:
+            raise ValueError("stored radar prompt/time differs")
+        if data["status"] != "CONFIRMED" or radar["prompt"] != radar_prompt(data, radar["frequency"], radar["local_time"], radar["timezone"]):
+            raise ValueError("stored radar prompt differs from confirmed context")
+        validate_stored_radar_proof(radar)
+    if contains_secret_material(data):
+        raise ValueError("work map contains possible secret material")
+    return data
+
+
+def map_commit(worker, lease, data):
+    """Journal only the next digest, never an extra copy of private/forgotten data."""
+    path = map_path(worker)
+    journal = worker_target(worker, WORK_MAP_TX_PATH, "map transaction")
+    if journal.exists():
+        raise ValueError("interrupted map transaction; run work-map-recover")
+    before = controlled_state_hash(worker)
+    data["revision"] += 1
+    encoded = json.dumps(data, indent=2, sort_keys=True) + "\n"
+    atomic_json(journal, {
+        "schema": "ai-human.work-map-transaction/v1", "session_id": lease["session_id"],
+        "before": before, "after_file_sha256": hashlib.sha256(encoded.encode()).hexdigest(),
+        "other_state_sha256": map_other_state_hash(worker),
+    })
+    atomic_text(path, encoded)
+    updated = refresh_lease_state(worker, lease)
+    journal.unlink()
+    print("AI-HUMAN PERSONAL CONTEXT: PASS")
+    print("- new expected-state hash: " + updated["state_hash"])
+
+
+def work_map_recover(args):
+    worker = safe_worker(args.worker)
+    journal = worker_target(worker, WORK_MAP_TX_PATH, "map transaction")
+    record = read_json(journal)
+    map_fields(record, "schema session_id before after_file_sha256 other_state_sha256", "map transaction")
+    lease = read_lease(worker)
+    if record["schema"] != "ai-human.work-map-transaction/v1" or record["session_id"] != args.session_id or lease["session_id"] != args.session_id:
+        raise ValueError("map recovery belongs to another writer")
+    current = controlled_state_hash(worker)
+    if current != args.expected_state_hash:
+        raise ValueError("recovery expected-state hash mismatch")
+    if map_other_state_hash(worker) != record["other_state_sha256"]:
+        raise ValueError("other controlled state changed during map transaction")
+    path = map_path(worker)
+    if current != record["before"]:
+        if not path.is_file() or sha256(path) != record["after_file_sha256"]:
+            raise ValueError("map recovery digest mismatch")
+        work_map(worker)
+        # Prove other controlled state did not change by hashing it with the old map
+        # excluded. The journal captures that hash before replacing this one file.
+        if lease["state_hash"] not in {record["before"], current}:
+            raise ValueError("map recovery lease differs from transaction")
+    refresh_lease_state(worker, lease)
+    journal.unlink()
+    print("AI-HUMAN WORK-MAP RECOVERY: PASS")
+
+
+def map_other_state_hash(worker):
+    digest = hashlib.sha256()
+    for path in controlled_state_paths(worker):
+        if path == worker / WORK_MAP_PATH:
+            continue
+        digest.update(path.relative_to(worker).as_posix().encode() + b"\0")
+        digest.update(bytes.fromhex(sha256(path)) if path.is_file() else b"MISSING")
+        digest.update(b"\n")
+    return digest.hexdigest()
+
+
+def validate_work_map_state(worker):
+    try:
+        work_map(worker, required=False)
+        if worker_target(worker, WORK_MAP_TX_PATH, "map transaction").exists():
+            return ["interrupted work-map transaction; run work-map-recover"]
+        return []
+    except Exception as exc:
+        return ["invalid private work map: " + str(exc)]
+
+
+def validate_h53_state(worker):
+    failures = []
+    allowed = {
+        portable_key(MEMORY_STORE_PATH), portable_key(PORTFOLIO_EXPORTS_PATH),
+        portable_key(CHIEF_STATE_PATH),
+    }
+    for root_relative in (MEMORY_ROOT, CHIEF_ROOT):
+        root = worker / root_relative
+        if not root.exists():
+            continue
+        if root.is_symlink() or not root.is_dir():
+            failures.append("H-53 private root must be a real directory: " + root_relative.as_posix())
+            continue
+        for path in root.rglob("*"):
+            relative = path.relative_to(worker)
+            if path.is_symlink():
+                failures.append("H-53 private state may not contain symbolic links: " + relative.as_posix())
+            elif path.is_file() and portable_key(relative) not in allowed:
+                failures.append("unexpected H-53 private file: " + relative.as_posix())
+            elif not path.is_file() and not path.is_dir():
+                failures.append("H-53 private state contains a non-regular entry: " + relative.as_posix())
+    try:
+        memory_store(worker, required=False)
+    except Exception as exc:
+        failures.append("invalid layered memory: " + str(exc))
+    try:
+        chief_state(worker, required=False)
+    except Exception as exc:
+        failures.append("invalid Chief state: " + str(exc))
+    try:
+        portfolio_exports(worker, required=False)
+    except Exception as exc:
+        failures.append("invalid portfolio exports: " + str(exc))
+    try:
+        transaction = worker_target(worker, H53_TX_PATH, "H-53 transaction")
+        if transaction.exists():
+            failures.append("interrupted H-53 transaction; run h53-recover")
+    except Exception as exc:
+        failures.append("invalid H-53 transaction path: " + str(exc))
+    return failures
+
+
+def map_mutation(args):
+    worker = safe_worker(args.worker)
+    if worker_target(worker, WORK_MAP_TX_PATH, "map transaction").exists():
+        raise ValueError("interrupted map transaction; run work-map-recover")
+    lease, _ = require_lease(worker, args.session_id, args.expected_state_hash)
+    data = work_map(worker, required=False)
+    if data and data["owner"] != lease["actor"]:
+        raise ValueError("work map belongs to a different declared user")
+    return worker, lease, data
+
+
+def work_map_consent(args):
+    worker, lease, previous = map_mutation(args)
+    if previous and map_external_schedule_exists(previous):
+        raise ValueError("remove and verify the existing external radar schedule before re-consent")
+    request = read_governor_input(args.request, "personal context consent")
+    map_fields(request, "schema owner identity approval_reference retention_days sources", "consent")
+    if request["schema"] != "ai-human.work-map-consent/v1" or request["owner"] != lease["actor"]:
+        raise ValueError("consent must name the active declared user")
+    map_fields(request["identity"], "name role company unit responsibilities decision_rights goals", "declared identity")
+    for key, value in request["identity"].items():
+        map_text(value, "declared " + key)
+    if request["identity"]["name"] != request["owner"]:
+        raise ValueError("declared name differs from the consent owner")
+    approval = map_text(request["approval_reference"], "explicit informed consent")
+    if previous and approval == previous["consent"]:
+        raise ValueError("re-consent requires a fresh approval reference")
+    retention = request["retention_days"]
+    if type(retention) is not int or not 1 <= retention <= 365:
+        raise ValueError("retention must be 1..365 days")
+    if not isinstance(request["sources"], list) or len(request["sources"]) > installed_worker_batch_cap(worker):
+        raise ValueError("source choices exceed worker batch cap")
+    sources = {}
+    for source in request["sources"]:
+        map_fields(source, "id path mode scope sensitivity", "approved source")
+        identifier = map_id(source["id"])
+        relative = safe_relative(source["path"], "approved source")
+        # Never recursively scan, follow links, or reach another worker/private system.
+        if relative.parts[0].startswith(".") or any(part.startswith(".") for part in relative.parts):
+            raise ValueError("hidden/private system sources are excluded")
+        if relative.suffix.lower() not in {".md", ".txt", ".csv", ".json"}:
+            raise ValueError("source must be an explicitly selected work summary")
+        if re.search(r"(?i)(credential|password|secret|token|browser|history|cookies|contacts|mailbox)", str(relative)):
+            raise ValueError("sensitive source category is excluded")
+        worker_target(worker, relative, "approved source")
+        if source["mode"] not in {"METADATA", "SUMMARY"} or source["scope"] not in WORK_MAP_SCOPES or source["sensitivity"] != "PRIVATE_WORK":
+            raise ValueError("source mode, scope or sensitivity is invalid")
+        if identifier in sources:
+            raise ValueError("duplicate source id")
+        sources[identifier] = {**source, "path": relative.as_posix(), "status": "APPROVED", "consent": approval}
+    data = {
+        "schema": "ai-human.work-map/v1", "worker_id": installed_worker_id(worker),
+        "identity_sha256": worker_identity_sha256(worker), "owner": request["owner"],
+        "identity": request["identity"], "consent": approval, "status": "DRAFT",
+        "confirmation": None,
+        "consent_expires_utc": (parse_recorded_utc(now_utc(), "now") + datetime.timedelta(days=retention)).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "retention_days": retention, "sources": sources, "entries": {},
+        "suggestions": {}, "decisions": {}, "radar": None,
+        "revision": previous["revision"] if previous else 0,
+    }
+    map_commit(worker, lease, data)
+
+
+def map_require_active(data):
+    if not data or data["status"] == "REVOKED":
+        raise ValueError("personal context is OFF or REVOKED; re-consent required")
+    if parse_recorded_utc(data["consent_expires_utc"], "consent expiry") <= parse_recorded_utc(now_utc(), "now"):
+        raise ValueError("personal consent expired; re-consent required")
+
+
+def map_source_snapshot(worker, data, identifier):
+    worker = Path(worker).resolve()
+    source = data["sources"].get(identifier)
+    if not source or source["status"] != "APPROVED":
+        raise ValueError("source was not approved or has been revoked")
+    path = worker_target(worker, source["path"], "approved summary source")
+    for parent in path.parents:
+        if parent == worker:
+            break
+        if (parent / ".ai-human").exists():
+            raise ValueError("another worker's private state is not an approved local summary")
+    if not path.is_file():
+        return {"status": "UNKNOWN", "source_id": identifier}
+    if path.stat().st_size > 32768:
+        raise ValueError("source exceeds concise-summary size limit")
+    result = {"status": "AVAILABLE", "source_id": identifier, "bytes": path.stat().st_size, "mode": source["mode"]}
+    if source["mode"] == "SUMMARY":
+        content = path.read_text(encoding="utf-8")
+        map_text(content, "source summary", 32768)
+        result["sha256"] = hashlib.sha256(content.encode()).hexdigest()
+        # Content remains untrusted data and is never executed or copied to global state.
+    return result
+
+
+def map_batch_cap(worker):
+    cap = installed_worker_batch_cap(worker)
+    policy = governor_policy(worker, required=False)
+    if policy:
+        failures = validate_governor_state(worker)
+        if failures:
+            raise ValueError("invalid work governor: " + "; ".join(failures))
+        plans = governor_plan_records(worker)
+        cap = min(cap, policy["hard_ceiling"], plans[-1]["effective_batch"] if plans else policy["pilot_size"])
+    if cap == 0:
+        raise ValueError("work governor is halted; radar/discovery deferred")
+    return cap
+
+
+def work_map_discover(args):
+    worker = safe_worker(args.worker)
+    data = work_map(worker)
+    if args.owner != data["owner"]:
+        raise ValueError("discovery requires the exact declared owner")
+    map_require_active(data)
+    requested = args.source or list(data["sources"])
+    if len(requested) > map_batch_cap(worker):
+        raise ValueError("discovery exceeds worker batch cap")
+    print(json.dumps([map_source_snapshot(worker, data, identifier) for identifier in requested], indent=2))
+
+
+def work_map_record(args):
+    worker, lease, data = map_mutation(args)
+    map_require_active(data)
+    map_batch_cap(worker)
+    request = read_governor_input(args.request, "map entry")
+    map_fields(request, "id text source_id source_sha256 scope confidence review_due supersedes", "map entry")
+    identifier = map_id(request["id"])
+    if identifier in data["entries"] or len(data["entries"]) >= 250:
+        raise ValueError("entry id already exists or retention capacity reached")
+    map_text(request["text"], "map entry")
+    source = data["sources"].get(request["source_id"])
+    snapshot = map_source_snapshot(worker, data, request["source_id"])
+    if snapshot.get("sha256") != request["source_sha256"] or snapshot["status"] != "AVAILABLE" or source["mode"] != "SUMMARY":
+        raise ValueError("entry requires exact current approved summary content proof")
+    if request["scope"] != source["scope"] or request["scope"] not in WORK_MAP_SCOPES:
+        raise ValueError("entry cannot promote source into another memory scope")
+    if request["confidence"] not in {"OWNER_STATED", "SOURCE_CONFIRMED", "OBSERVED_VERIFY", "UNKNOWN"}:
+        raise ValueError("invalid entry confidence")
+    map_expiry(request["review_due"], "entry review date", data["retention_days"])
+    if request["supersedes"] is not None:
+        old = data["entries"].get(request["supersedes"])
+        if not old or old["status"] != "ACTIVE":
+            raise ValueError("correction must identify one active entry")
+        old["status"] = "SUPERSEDED"
+    data["entries"][identifier] = {**request, "recorded_utc": now_utc(), "status": "ACTIVE", "sensitivity": "PRIVATE_WORK"}
+    data["status"] = "DRAFT"
+    data["confirmation"] = None
+    data["radar"] = map_schedule_removal_pointer(data)
+    data["suggestions"] = {}
+    map_commit(worker, lease, data)
+
+
+def work_map_control(args):
+    worker, lease, data = map_mutation(args)
+    if args.action not in {"REVOKE", "PRUNE"}:
+        map_require_active(data)
+    elif not data:
+        raise ValueError("personal context is OFF")
+    if args.action == "CONFIRM":
+        reference = map_text(args.approval_reference, "map confirmation")
+        data["confirmation"] = {"approval_reference": reference, "confirmed_utc": now_utc(), "context_sha256": map_confirmation_sha256(data)}
+        data["status"] = "CONFIRMED"
+    elif args.action == "REVOKE":
+        # Delete profile/content in this same atomic replacement; no private backups.
+        pointer = map_schedule_removal_pointer(data)
+        data.update(identity={}, entries={}, sources={}, suggestions={}, decisions={}, radar=pointer, status="REVOKED")
+    elif args.action == "EXCLUDE":
+        if args.item not in data["sources"]:
+            raise ValueError("unknown source id")
+        data["sources"][args.item]["status"] = "REVOKED"
+        data["entries"] = {key: value for key, value in data["entries"].items() if value["source_id"] != args.item}
+        data["suggestions"] = {}
+        data["radar"] = map_schedule_removal_pointer(data)
+        data["status"] = "DRAFT"
+    elif args.action == "FORGET":
+        if args.item not in data["entries"]:
+            raise ValueError("unknown exact entry id")
+        del data["entries"][args.item]
+        data["suggestions"] = {}
+        data["radar"] = map_schedule_removal_pointer(data)
+        data["status"] = "DRAFT"
+    elif args.action == "PRUNE":
+        current = parse_recorded_utc(now_utc(), "now")
+        data["entries"] = {key: value for key, value in data["entries"].items() if parse_recorded_utc(value["review_due"], "review date") > current}
+        data["suggestions"] = {}
+        data["radar"] = map_schedule_removal_pointer(data)
+        data["decisions"] = {key: value for key, value in data["decisions"].items() if parse_recorded_utc(value["expires_utc"], "decision expiry") > current}
+        if data["status"] != "REVOKED":
+            data["status"] = "DRAFT"
+        if parse_recorded_utc(data["consent_expires_utc"], "consent expiry") <= current:
+            data.update(identity={}, entries={}, sources={}, suggestions={}, decisions={}, status="REVOKED")
+    if args.action != "CONFIRM":
+        data["confirmation"] = None
+    map_commit(worker, lease, data)
+
+
+def work_map_show(args):
+    worker = safe_worker(args.worker)
+    data = work_map(worker, required=False)
+    # Export uses stdout only; caller chooses destination with its own permissions.
+    if not data:
+        print(json.dumps({"status": "OFF", "identity": "UNKNOWN", "schedule": "NOT_ENABLED"}))
+        return
+    if args.owner != data["owner"]:
+        raise ValueError("private map requires the exact declared owner")
+    visible = json.loads(json.dumps(data))
+    current = parse_recorded_utc(now_utc(), "now")
+    if parse_recorded_utc(data["consent_expires_utc"], "consent expiry") <= current:
+        print(json.dumps({"status": "EXPIRED", "action": "Re-consent or prune retained private data"}))
+        return
+    visible["entries"] = {key: value for key, value in visible["entries"].items() if parse_recorded_utc(value["review_due"], "review date") > current}
+    visible["suggestions"] = {key: value for key, value in visible["suggestions"].items() if all(ref in visible["entries"] for ref in value["evidence_ids"])}
+    print(json.dumps(visible, indent=2, sort_keys=True))
+
+
+def radar_prompt(data, frequency, local_time, timezone):
+    return (
+        "Review only the explicitly approved private work-map summary sources for worker "
+        + data["worker_id"] + ". Owner: " + data["owner"] + ". Consent: " + data["consent"]
+        + ". Schedule: " + frequency + " " + local_time + " " + timezone
+        + ". Map digest: " + canonical_json_sha256({"identity": data["identity"], "entries": data["entries"], "sources": data["sources"]})
+        + ". Produce evidence-backed suggestion cards only. Stay quiet on no material change. "
+        "Never install, activate, create a skill/worker/project, connect, send, publish, spend or delete."
+    )
+
+
+def map_external_schedule_exists(data):
+    radar = data.get("radar") if data else None
+    return bool(radar and radar["status"] in {"VERIFIED_ACTIVE", "VERIFIED_PAUSED", "AWAITING_NEXT_RUN_PROOF", "NEEDS_EXTERNAL_REMOVAL"})
+
+
+def map_schedule_removal_pointer(data):
+    if not map_external_schedule_exists(data):
+        return None
+    radar = data["radar"]
+    return {"status": "NEEDS_EXTERNAL_REMOVAL", "external_id": radar.get("external_id") or radar["proof"]["external_id"], "prompt_sha256": radar["prompt_sha256"]}
+
+
+def radar_configure(args):
+    worker, lease, data = map_mutation(args)
+    map_require_active(data)
+    if map_external_schedule_exists(data):
+        raise ValueError("remove and verify existing external radar schedule before changing it")
+    if data["status"] != "CONFIRMED":
+        raise ValueError("radar requires a confirmed map")
+    request = read_governor_input(args.request, "radar schedule choice")
+    map_fields(request, "frequency local_time timezone approval_reference", "radar choice")
+    if request["frequency"] not in {"MONTHLY", "QUARTERLY"} or not LOCAL_CLOCK.fullmatch(str(request["local_time"])):
+        raise ValueError("radar needs monthly/quarterly and exact local HH:MM")
+    validate_timezone(request["timezone"])
+    map_text(request["approval_reference"], "separate radar approval")
+    prompt = radar_prompt(data, request["frequency"], request["local_time"], request["timezone"])
+    data["radar"] = {**request, "status": "AWAITING_VISIBLE_PROOF", "prompt": prompt, "prompt_sha256": hashlib.sha256(prompt.encode()).hexdigest(), "proof": None, "last_consumed_due": None}
+    map_commit(worker, lease, data)
+    print(prompt)
+
+
+def radar_verify(args):
+    worker, lease, data = map_mutation(args)
+    radar = data["radar"] if data else None
+    if radar and radar["status"] == "NEEDS_EXTERNAL_REMOVAL":
+        proof = read_governor_input(args.request, "radar removal proof")
+        map_fields(proof, "external_id status verified_utc visible_card", "radar removal proof")
+        current = parse_recorded_utc(now_utc(), "now")
+        verified = parse_recorded_utc(proof["verified_utc"], "removal verification")
+        if proof["external_id"] != radar["external_id"] or proof["status"] != "VERIFIED_REMOVED" or proof["visible_card"] is not True or not current - datetime.timedelta(minutes=15) <= verified <= current:
+            raise ValueError("exact external radar removal has not been verified")
+        data["radar"] = None
+        map_commit(worker, lease, data)
+        return
+    map_require_active(data)
+    if not radar or data["status"] != "CONFIRMED":
+        raise ValueError("radar configuration is unavailable")
+    proof = read_governor_input(args.request, "visible radar proof")
+    map_fields(proof, "external_id visible_card tested_prompt task_prompt_sha256 next_run_local verified_utc status", "radar proof")
+    if map_external_schedule_exists(data) and proof["status"] == "UNAVAILABLE":
+        raise ValueError("unavailable visibility cannot prove removal of an existing schedule")
+    if (proof["status"] != "UNAVAILABLE" and (proof["visible_card"] is not True or proof["tested_prompt"] is not True)) or proof["task_prompt_sha256"] != radar["prompt_sha256"]:
+        raise ValueError("radar requires visible card and tested exact prompt")
+    if proof["status"] not in {"VERIFIED_ACTIVE", "VERIFIED_PAUSED", "VERIFIED_REMOVED", "UNAVAILABLE"}:
+        raise ValueError("invalid radar schedule status")
+    map_text(proof["external_id"], "external schedule id", 200)
+    verified = parse_recorded_utc(proof["verified_utc"], "radar verification")
+    current = parse_recorded_utc(now_utc(), "now")
+    if not current - datetime.timedelta(minutes=15) <= verified <= current:
+        raise ValueError("radar verification must be current")
+    if proof["status"] == "VERIFIED_ACTIVE":
+        moment = parse_offset_datetime(proof["next_run_local"], "radar next run")
+        validate_moment_in_timezone(moment, radar["timezone"], "radar next run")
+        if moment.strftime("%H:%M") != radar["local_time"] or not current < moment <= verified + datetime.timedelta(days=radar_horizon_days(radar["frequency"])):
+            raise ValueError("radar next run does not match future local schedule")
+        if radar["last_consumed_due"] and moment <= parse_offset_datetime(radar["last_consumed_due"], "consumed occurrence"):
+            raise ValueError("radar occurrence was already consumed")
+    radar.update(status=proof["status"], proof=proof)
+    validate_stored_radar_proof(radar)
+    map_commit(worker, lease, data)
+
+
+def radar_run(args):
+    worker, lease, data = map_mutation(args)
+    map_require_active(data)
+    if data["status"] != "CONFIRMED":
+        raise ValueError("radar requires confirmed private context")
+    current = parse_recorded_utc(now_utc(), "now")
+    if args.scheduled:
+        radar = data["radar"]
+        if not radar or radar["status"] != "VERIFIED_ACTIVE" or radar["proof"] is None:
+            raise ValueError("radar schedule has no verified active proof")
+        if radar["prompt"] != radar_prompt(data, radar["frequency"], radar["local_time"], radar["timezone"]):
+            raise ValueError("radar prompt is stale")
+        due = parse_offset_datetime(radar["proof"]["next_run_local"], "radar due")
+        if current < due:
+            print("AI-HUMAN RADAR: NOT_DUE — quiet")
+            return
+        if current > due + datetime.timedelta(days=1):
+            raise ValueError("radar missed its occurrence; verify a new next run")
+    request = read_governor_input(args.request, "suggestion cards")
+    map_fields(request, "suggestions", "radar run")
+    cards = request["suggestions"]
+    if not isinstance(cards, list) or len(cards) > map_batch_cap(worker):
+        raise ValueError("suggestions exceed worker batch cap")
+    additions = {}
+    for card in cards:
+        map_fields(card, "id kind text evidence_ids expected_output permissions risks overlap confidence value_basis", "suggestion")
+        identifier = map_id(card["id"])
+        if card["kind"] not in WORK_MAP_KINDS or card["confidence"] not in {"SOURCE_CONFIRMED", "OBSERVED_VERIFY"}:
+            raise ValueError("invalid suggestion kind or confidence")
+        for field in ("text", "expected_output", "permissions", "risks", "overlap"):
+            map_text(card[field], "suggestion " + field)
+        if card["value_basis"] != "UNMEASURED" or radar_has_unsupported_value_claim(card):
+            raise ValueError("suggestions cannot invent quantified value or urgency")
+        if card["overlap"] != "NONE_CONFIRMED":
+            continue  # Unknown/already existing overlap is not a new opportunity.
+        refs = card["evidence_ids"]
+        if not isinstance(refs, list) or not 1 <= len(refs) <= BATCH_CAP or len(set(refs)) != len(refs):
+            raise ValueError("suggestion requires bounded unique evidence references")
+        for ref in refs:
+            entry = data["entries"].get(ref)
+            if not entry or entry["status"] != "ACTIVE" or entry["confidence"] in {"UNKNOWN", "OBSERVED_VERIFY"}:
+                raise ValueError("suggestion evidence must be active and confirmed")
+            if parse_recorded_utc(entry["review_due"], "entry review") <= current:
+                raise ValueError("suggestion evidence is stale")
+            if map_source_snapshot(worker, data, entry["source_id"]).get("sha256") != entry["source_sha256"]:
+                raise ValueError("suggestion source changed or became unavailable")
+        signature = canonical_json_sha256({key: card[key] for key in ("kind", "text", "evidence_ids")})
+        decision = data["decisions"].get(signature)
+        if decision and parse_recorded_utc(decision["expires_utc"], "decision expiry") > current:
+            if decision["choice"] in {"REJECT", "PROPOSE"} or parse_recorded_utc(decision["until_utc"], "snooze") > current:
+                continue
+        if signature in {value["signature"] for value in data["suggestions"].values()}:
+            continue
+        if identifier in data["suggestions"] or identifier in additions:
+            raise ValueError("suggestion id reused for different content")
+        additions[identifier] = {**card, "signature": signature, "activation": "NOT_ACTIVATED", "decision": "REVIEW_REQUIRED", "recorded_utc": now_utc()}
+    if len(data["suggestions"]) + len(additions) > 250:
+        raise ValueError("suggestion retention capacity reached; prune first")
+    data["suggestions"].update(additions)
+    if args.scheduled:
+        data["radar"]["last_consumed_due"] = data["radar"]["proof"]["next_run_local"]
+        data["radar"]["status"] = "AWAITING_NEXT_RUN_PROOF"
+    map_commit(worker, lease, data)
+    print("AI-HUMAN RADAR: " + ("MATERIAL_NEW_OPPORTUNITY" if additions else "NO_CHANGE — quiet"))
+    print(json.dumps(list(additions.values()), indent=2))
+
+
+def radar_decide(args):
+    worker, lease, data = map_mutation(args)
+    map_require_active(data)
+    if data["status"] != "CONFIRMED":
+        raise ValueError("radar decisions require confirmed private context")
+    card = data["suggestions"].get(args.item)
+    if not card:
+        raise ValueError("unknown suggestion")
+    current = parse_recorded_utc(now_utc(), "now")
+    for ref in card["evidence_ids"]:
+        entry = data["entries"].get(ref)
+        source = data["sources"].get(entry["source_id"]) if entry else None
+        if not entry or entry["status"] != "ACTIVE" or entry["confidence"] not in {"SOURCE_CONFIRMED", "OWNER_STATED"}:
+            raise ValueError("decision evidence must be active and confirmed")
+        if not source or source["status"] != "APPROVED" or source["mode"] != "SUMMARY" or source["scope"] != entry["scope"] or source["sensitivity"] != entry["sensitivity"]:
+            raise ValueError("decision evidence source approval or scope changed")
+        if parse_recorded_utc(entry["review_due"], "decision evidence review") <= current:
+            raise ValueError("decision evidence is stale; refresh and reconfirm before choosing")
+        if map_source_snapshot(worker, data, entry["source_id"]).get("sha256") != entry["source_sha256"]:
+            raise ValueError("decision evidence source changed or became unavailable")
+    if args.choice == "LATER":
+        map_expiry(args.until_utc, "snooze date", data["retention_days"])
+    expiry = parse_recorded_utc(now_utc(), "now") + datetime.timedelta(days=data["retention_days"])
+    if len(data["decisions"]) >= 250 and card["signature"] not in data["decisions"]:
+        raise ValueError("decision retention capacity reached")
+    data["decisions"][card["signature"]] = {"choice": args.choice, "until_utc": args.until_utc if args.choice == "LATER" else None, "expires_utc": expiry.strftime("%Y-%m-%dT%H:%M:%SZ"), "recorded_utc": now_utc()}
+    del data["suggestions"][args.item]
+    map_commit(worker, lease, data)
+    print("- choice: " + args.choice + "; activation: NOT_ACTIVATED")
+
+
+def reject_exchange_sensitive_path(relative, label):
+    sensitive = {"credential", "password", "private", "secret", "token"}
+    for part in relative.parts:
+        lowered = part.casefold()
+        if part.startswith(".") or lowered == ".env" or any(word in lowered for word in sensitive):
+            raise ValueError(label + " path appears hidden, private or sensitive")
+
+
+def reject_exchange_sensitive_source(relative, source, label):
+    reject_exchange_sensitive_path(relative, label)
+    try:
+        content = source.read_text(encoding="utf-8", errors="ignore")
+    except OSError as exc:
+        raise ValueError(label + " could not be inspected for secret material: " + str(exc))
+    if contains_secret_material(content):
+        raise ValueError(label + " appears to contain secret material")
+
+
+# ---------------------------------------------------------------------------
+# H-53: layered worker memory and a read-only Chief of Staff
+# ---------------------------------------------------------------------------
+
+def h53_record_sha256(value, field="record_sha256"):
+    return canonical_json_sha256({key: item for key, item in value.items() if key != field})
+
+
+def h53_seal(value, field="record_sha256"):
+    value[field] = h53_record_sha256(value, field)
+    return value
+
+
+def h53_verify_seal(value, label, field="record_sha256"):
+    if not isinstance(value, dict) or not SHA256_HEX.fullmatch(str(value.get(field, ""))):
+        raise ValueError(label + " lacks its integrity digest")
+    if value[field] != h53_record_sha256(value, field):
+        raise ValueError(label + " integrity digest differs")
+
+
+def h53_target_hash(path):
+    if not path.exists():
+        return "MISSING"
+    if path.is_symlink() or not path.is_file():
+        raise ValueError("H-53 state target must be a regular file")
+    return sha256(path)
+
+
+def h53_other_state_hash(worker, target_relative):
+    target_key = portable_key(target_relative)
+    digest = hashlib.sha256()
+    for path in controlled_state_paths(worker):
+        relative = path.relative_to(worker).as_posix()
+        if portable_key(relative) == target_key:
+            continue
+        digest.update(relative.encode("utf-8") + b"\0")
+        digest.update(bytes.fromhex(sha256(path)) if path.is_file() else b"MISSING")
+        digest.update(b"\n")
+    return digest.hexdigest()
+
+
+def controlled_state_hash_with_file_sha(worker, target_relative, target_sha256):
+    target_key = portable_key(target_relative)
+    digest = hashlib.sha256()
+    found = False
+    for path in controlled_state_paths(worker):
+        relative = path.relative_to(worker).as_posix()
+        digest.update(relative.encode("utf-8") + b"\0")
+        if portable_key(relative) == target_key:
+            digest.update(bytes.fromhex(target_sha256))
+            found = True
+        elif path.is_file():
+            digest.update(bytes.fromhex(sha256(path)))
+        else:
+            digest.update(b"MISSING")
+        digest.update(b"\n")
+    if not found:
+        raise ValueError("controlled H-53 target is missing")
+    return digest.hexdigest()
+
+
+def h53_boundary(name):
+    """Fault-injection seam; production does not select a crash boundary."""
+
+
+def h53_stage_path(worker, target_relative):
+    target = worker_target(worker, target_relative, "H-53 state target")
+    return target.with_name("." + target.name + ".h53-stage")
+
+
+_WINDOWS_PRIVATE_API = None
+
+
+class _WindowsPrivateFileAPI:
+    """Lazily initialized: importing this module performs no Windows API calls."""
+
+    def __init__(self):
+        import ctypes
+        import msvcrt
+        from ctypes import wintypes
+
+        self.c = ctypes
+        self.w = wintypes
+        self.msvcrt = msvcrt
+        self.kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+        self.advapi = ctypes.WinDLL("advapi32", use_last_error=True)
+        P = ctypes.c_void_p
+        PD = ctypes.POINTER(wintypes.DWORD)
+        PP = ctypes.POINTER(P)
+
+        class SECURITY_ATTRIBUTES(ctypes.Structure):
+            _fields_ = [("length", wintypes.DWORD), ("descriptor", P),
+                        ("inherit", wintypes.BOOL)]
+
+        class ACL_SIZE_INFORMATION(ctypes.Structure):
+            _fields_ = [("count", wintypes.DWORD), ("used", wintypes.DWORD),
+                        ("free", wintypes.DWORD)]
+
+        class ACCESS_ALLOWED_ACE(ctypes.Structure):
+            _fields_ = [("type", wintypes.BYTE), ("flags", wintypes.BYTE),
+                        ("size", wintypes.WORD), ("mask", wintypes.DWORD),
+                        ("sid_start", wintypes.DWORD)]
+
+        class BY_HANDLE_FILE_INFORMATION(ctypes.Structure):
+            _fields_ = [
+                ("attributes", wintypes.DWORD), ("creation", wintypes.FILETIME),
+                ("access", wintypes.FILETIME), ("write", wintypes.FILETIME),
+                ("volume", wintypes.DWORD), ("size_high", wintypes.DWORD),
+                ("size_low", wintypes.DWORD), ("links", wintypes.DWORD),
+                ("index_high", wintypes.DWORD), ("index_low", wintypes.DWORD),
+            ]
+
+        self.SA = SECURITY_ATTRIBUTES
+        self.ACL_INFO = ACL_SIZE_INFORMATION
+        self.ACE = ACCESS_ALLOWED_ACE
+        self.FILE_INFO = BY_HANDLE_FILE_INFORMATION
+        self.invalid_handle = P(-1).value
+
+        def bind(dll, name, result, arguments):
+            function = getattr(dll, name)
+            function.restype = result
+            function.argtypes = arguments
+            return function
+
+        self.close = bind(self.kernel, "CloseHandle", wintypes.BOOL, [wintypes.HANDLE])
+        self.free = bind(self.kernel, "LocalFree", P, [P])
+        self.process = bind(self.kernel, "GetCurrentProcess", wintypes.HANDLE, [])
+        self.thread = bind(self.kernel, "GetCurrentThread", wintypes.HANDLE, [])
+        self.open_process_token = bind(self.advapi, "OpenProcessToken", wintypes.BOOL,
+                                       [wintypes.HANDLE, wintypes.DWORD, PP])
+        self.open_thread_token = bind(self.advapi, "OpenThreadToken", wintypes.BOOL,
+                                      [wintypes.HANDLE, wintypes.DWORD, wintypes.BOOL, PP])
+        self.token_info = bind(self.advapi, "GetTokenInformation", wintypes.BOOL,
+                               [wintypes.HANDLE, ctypes.c_int, P, wintypes.DWORD, PD])
+        self.sid_string = bind(self.advapi, "ConvertSidToStringSidW", wintypes.BOOL,
+                               [P, PP])
+        self.make_descriptor = bind(
+            self.advapi, "ConvertStringSecurityDescriptorToSecurityDescriptorW", wintypes.BOOL,
+            [wintypes.LPCWSTR, wintypes.DWORD, PP, PD],
+        )
+        self.create_file = bind(
+            self.kernel, "CreateFileW", wintypes.HANDLE,
+            [wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD,
+             ctypes.POINTER(SECURITY_ATTRIBUTES), wintypes.DWORD, wintypes.DWORD,
+             wintypes.HANDLE],
+        )
+        self.file_info = bind(self.kernel, "GetFileInformationByHandle", wintypes.BOOL,
+                              [wintypes.HANDLE, ctypes.POINTER(BY_HANDLE_FILE_INFORMATION)])
+        self.volume_info = bind(
+            self.kernel, "GetVolumeInformationByHandleW", wintypes.BOOL,
+            [wintypes.HANDLE, wintypes.LPWSTR, wintypes.DWORD, PD, PD, PD,
+             wintypes.LPWSTR, wintypes.DWORD],
+        )
+        self.security_info = bind(
+            self.advapi, "GetSecurityInfo", wintypes.DWORD,
+            [wintypes.HANDLE, ctypes.c_int, wintypes.DWORD, PP, PP, PP, PP, PP],
+        )
+        self.descriptor_control = bind(
+            self.advapi, "GetSecurityDescriptorControl", wintypes.BOOL,
+            [P, ctypes.POINTER(wintypes.WORD), PD],
+        )
+        self.acl_info = bind(self.advapi, "GetAclInformation", wintypes.BOOL,
+                             [P, P, wintypes.DWORD, ctypes.c_int])
+        self.get_ace = bind(self.advapi, "GetAce", wintypes.BOOL,
+                            [P, wintypes.DWORD, PP])
+
+    def check(self, result):
+        if not result:
+            raise self.c.WinError(self.c.get_last_error())
+
+    def sid_text(self, sid):
+        result = self.c.c_void_p()
+        self.check(self.sid_string(sid, self.c.byref(result)))
+        try:
+            return self.c.wstring_at(result.value)
+        finally:
+            self.free(result)
+
+    def current_sid(self):
+        c = self.c
+        token = c.c_void_p()
+        # An effective thread token takes precedence over the process identity.
+        if not self.open_thread_token(self.thread(), 0x0008, True, c.byref(token)):
+            if c.get_last_error() != 1008:  # ERROR_NO_TOKEN is the only fallback.
+                raise c.WinError(c.get_last_error())
+            self.check(self.open_process_token(self.process(), 0x0008, c.byref(token)))
+        try:
+            length = self.w.DWORD()
+            if self.token_info(token, 1, None, 0, c.byref(length)):
+                raise ValueError("unexpected Windows token-query result")
+            if c.get_last_error() != 122 or length.value == 0:  # INSUFFICIENT_BUFFER
+                raise c.WinError(c.get_last_error())
+            buffer = c.create_string_buffer(length.value)
+            self.check(self.token_info(token, 1, buffer, length, c.byref(length)))
+            # TOKEN_USER starts with SID_AND_ATTRIBUTES, whose first field is PSID.
+            sid = c.cast(buffer, c.POINTER(c.c_void_p))[0]
+            return self.sid_text(sid)
+        finally:
+            self.close(token)
+
+    def verify_handle(self, handle, expected_sid):
+        """Inspect the actual object, never inferred mode bits or parent ACLs."""
+        c = self.c
+        info = self.FILE_INFO()
+        self.check(self.file_info(handle, c.byref(info)))
+        if info.attributes & (0x10 | 0x400) or info.links != 1:
+            raise ValueError("private file must be a single regular non-reparse file")
+        flags = self.w.DWORD()
+        self.check(self.volume_info(handle, None, 0, None, None, c.byref(flags), None, 0))
+        if not flags.value & 0x00000008:  # FILE_PERSISTENT_ACLS
+            raise ValueError("private file filesystem does not enforce persistent ACLs")
+        owner, dacl, descriptor = c.c_void_p(), c.c_void_p(), c.c_void_p()
+        error = self.security_info(handle, 1, 0x00000005, c.byref(owner), None,
+                                   c.byref(dacl), None, c.byref(descriptor))
+        if error:
+            raise c.WinError(error)  # GetSecurityInfo returns its own error code.
+        try:
+            if not owner.value or self.sid_text(owner) != expected_sid:
+                raise ValueError("private file owner differs from current Windows user")
+            control, revision = self.w.WORD(), self.w.DWORD()
+            self.check(self.descriptor_control(descriptor, c.byref(control), c.byref(revision)))
+            if not dacl.value or control.value & 0x1004 != 0x1004:
+                raise ValueError("private file requires a present protected non-null DACL")
+            acl = self.ACL_INFO()
+            self.check(self.acl_info(dacl, c.byref(acl), c.sizeof(acl), 2))
+            if acl.count != 1:
+                raise ValueError("private file requires exactly one owner access entry")
+            pointer = c.c_void_p()
+            self.check(self.get_ace(dacl, 0, c.byref(pointer)))
+            ace = c.cast(pointer, c.POINTER(self.ACE)).contents
+            if ace.type != 0 or ace.flags != 0 or ace.mask != 0x001F01FF:
+                raise ValueError("private file access entry is not explicit owner full control")
+            sid = pointer.value + self.ACE.sid_start.offset
+            if self.sid_text(sid) != expected_sid:
+                raise ValueError("private file grants access to another Windows principal")
+        finally:
+            self.free(descriptor)
+
+    def create(self, path):
+        c = self.c
+        sid = self.current_sid()
+        descriptor = c.c_void_p()
+        self.check(self.make_descriptor("O:" + sid + "D:P(A;;FA;;;" + sid + ")",
+                                        1, c.byref(descriptor), None))
+        handle = None
+        try:
+            attributes = self.SA(c.sizeof(self.SA), descriptor, False)
+            # GENERIC_WRITE | READ_CONTROL; no sharing; CREATE_NEW; no reparse following.
+            handle = self.create_file(os.fspath(path), 0x40020000, 0, c.byref(attributes),
+                                      1, 0x00000080 | 0x00200000, None)
+            if handle == self.invalid_handle:
+                handle = None
+                raise c.WinError(c.get_last_error())
+            self.verify_handle(handle, sid)  # Before the caller can write any content.
+            # CPython's asyncio/windows_utils.py likewise uses flag 0 for writable
+            # stdout/stderr handles; CreateFileW supplied the actual write access.
+            # Explicit setmode below avoids process-default text translation.
+            descriptor_fd = self.msvcrt.open_osfhandle(handle, 0)
+            handle = None  # Ownership moved to the CRT descriptor on success.
+            try:
+                self.msvcrt.setmode(descriptor_fd, os.O_BINARY)
+                os.set_inheritable(descriptor_fd, False)
+            except BaseException:
+                os.close(descriptor_fd)
+                raise
+            return descriptor_fd
+        finally:
+            if handle is not None:
+                self.close(handle)
+            self.free(descriptor)
+
+    def verify_path(self, path):
+        # READ_CONTROL; share read only while inspecting; OPEN_EXISTING.
+        handle = self.create_file(os.fspath(path), 0x00020000, 1, None, 3,
+                                  0x00000080 | 0x00200000, None)
+        if handle == self.invalid_handle:
+            raise self.c.WinError(self.c.get_last_error())
+        try:
+            self.verify_handle(handle, self.current_sid())
+        finally:
+            self.close(handle)
+
+
+def _windows_private_api():
+    global _WINDOWS_PRIVATE_API
+    if os.name != "nt":
+        raise RuntimeError("Windows private-file API is unavailable on this platform")
+    if _WINDOWS_PRIVATE_API is None:
+        _WINDOWS_PRIVATE_API = _WindowsPrivateFileAPI()
+    return _WINDOWS_PRIVATE_API
+
+
+def open_private_exclusive(path):
+    """Return an exclusively created descriptor; no private bytes written yet."""
+    if os.name == "nt":
+        return _windows_private_api().create(path)
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
+    return os.open(path, flags, 0o600)
+
+
+def require_private_file(path):
+    """Refuse unknown protection without silently rewriting an existing ACL."""
+    path = Path(path)
+    info = path.lstat()
+    if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
+        raise ValueError("private file must be a single regular file")
+    if os.name == "nt":
+        _windows_private_api().verify_path(path)
+    elif stat.S_IMODE(info.st_mode) != 0o600:
+        raise ValueError("private file must have mode 0600")
+
+
+def h53_write_stage(stage, data):
+    descriptor = open_private_exclusive(stage)
+    try:
+        with os.fdopen(descriptor, "wb", buffering=0) as stream:
+            offset = 0
+            while offset < len(data):
+                written = stream.write(data[offset:])
+                if not written:
+                    raise OSError("H-53 staging write made no progress")
+                offset += written
+            os.fsync(stream.fileno())
+    except BaseException:
+        # Recovery owns this exact reserved path after the journal is durable.
+        raise
+
+
+def h53_validate_stage(stage, transaction):
+    if not stage.exists() and not stage.is_symlink():
+        return "MISSING"
+    info = stage.lstat()
+    if stage.is_symlink() or not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
+        raise ValueError("H-53 staging path is not a single regular file")
+    require_private_file(stage)
+    if info.st_size > transaction["after_size"]:
+        raise ValueError("H-53 staging file exceeds the committed candidate size")
+    if info.st_size == transaction["after_size"] and sha256(stage) == transaction["after_sha256"]:
+        return "COMPLETE"
+    return "PARTIAL"
+
+
+def h53_commit(worker, lease, target_relative, value):
+    target_relative = safe_relative(target_relative, "H-53 state target")
+    if portable_key(target_relative) not in {
+        portable_key(MEMORY_STORE_PATH), portable_key(CHIEF_STATE_PATH),
+        portable_key(PORTFOLIO_EXPORTS_PATH),
+    }:
+        raise ValueError("unsupported H-53 state target")
+    allowed_private_files = {
+        portable_key(MEMORY_STORE_PATH), portable_key(PORTFOLIO_EXPORTS_PATH),
+        portable_key(CHIEF_STATE_PATH),
+    }
+    for root_relative in (MEMORY_ROOT, CHIEF_ROOT):
+        root = worker / root_relative
+        if not root.exists():
+            continue
+        if root.is_symlink() or not root.is_dir():
+            raise ValueError("H-53 private root must be a real directory")
+        for path in root.rglob("*"):
+            relative = path.relative_to(worker)
+            if path.is_symlink() or (
+                path.is_file() and portable_key(relative) not in allowed_private_files
+            ):
+                raise ValueError("unexpected H-53 private entry requires inspection: " + relative.as_posix())
+    target = worker_target(worker, target_relative, "H-53 state target")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    stage = h53_stage_path(worker, target_relative)
+    journal = worker_target(worker, H53_TX_PATH, "H-53 transaction")
+    if journal.exists():
+        raise ValueError("interrupted H-53 transaction; run h53-recover")
+    if stage.exists() or stage.is_symlink():
+        raise ValueError("unexpected H-53 staging residue; inspect it before continuing")
+    encoded = json.dumps(value, indent=2, sort_keys=True) + "\n"
+    encoded_bytes = encoded.encode("utf-8")
+    if len(encoded_bytes) > 4 * 1024 * 1024:
+        raise ValueError("H-53 state exceeds the four-megabyte safety limit")
+    transaction = {
+        "after_sha256": hashlib.sha256(encoded_bytes).hexdigest(),
+        "after_size": len(encoded_bytes),
+        "before_sha256": h53_target_hash(target),
+        "other_state_sha256": h53_other_state_hash(worker, target_relative),
+        "schema": "ai-human.h53-transaction/v1",
+        "session_id": lease["session_id"],
+        "staging": stage.relative_to(worker).as_posix(),
+        "target": target_relative.as_posix(),
+        "worker_identity_sha256": worker_identity_sha256(worker),
+    }
+    h53_seal(transaction)
+    atomic_json(journal, transaction)
+    h53_boundary("journal")
+    h53_write_stage(stage, encoded_bytes)
+    if h53_validate_stage(stage, transaction) != "COMPLETE":
+        raise ValueError("H-53 staging file did not reach its exact candidate bytes")
+    h53_boundary("stage")
+    os.replace(stage, target)
+    require_private_file(target)
+    if os.name != "nt":
+        directory_fd = os.open(target.parent, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+        try:
+            os.fsync(directory_fd)
+        finally:
+            os.close(directory_fd)
+    h53_boundary("replace")
+    updated = refresh_lease_state(worker, lease)
+    h53_boundary("lease")
+    journal.unlink()
+    print("AI-HUMAN H-53 STATE: PASS")
+    print("- new expected-state hash: " + updated["state_hash"])
+
+
+def h53_recover(args):
+    worker = safe_worker(args.worker)
+    journal = worker_target(worker, H53_TX_PATH, "H-53 transaction")
+    transaction = read_json(journal)
+    require_exact_fields(transaction, {
+        "after_sha256", "after_size", "before_sha256", "other_state_sha256", "record_sha256",
+        "schema", "session_id", "staging", "target", "worker_identity_sha256",
+    }, "H-53 transaction")
+    h53_verify_seal(transaction, "H-53 transaction")
+    if transaction["schema"] != "ai-human.h53-transaction/v1":
+        raise ValueError("unsupported H-53 transaction schema")
+    lease = read_lease(worker)
+    if lease["session_id"] != args.session_id or transaction["session_id"] != args.session_id:
+        raise ValueError("H-53 recovery belongs to another writer")
+    if transaction["worker_identity_sha256"] != worker_identity_sha256(worker):
+        raise ValueError("H-53 recovery belongs to another worker identity")
+    current_state = controlled_state_hash(worker)
+    if current_state != args.expected_state_hash:
+        raise ValueError("H-53 recovery expected-state hash mismatch")
+    target_relative = safe_relative(transaction["target"], "H-53 recovery target")
+    if portable_key(target_relative) not in {
+        portable_key(MEMORY_STORE_PATH), portable_key(CHIEF_STATE_PATH),
+        portable_key(PORTFOLIO_EXPORTS_PATH),
+    }:
+        raise ValueError("unsupported H-53 recovery target")
+    if type(transaction["after_size"]) is not int or not 1 <= transaction["after_size"] <= 4 * 1024 * 1024:
+        raise ValueError("H-53 recovery candidate size is invalid")
+    expected_stage = h53_stage_path(worker, target_relative)
+    stage_relative = safe_relative(transaction["staging"], "H-53 recovery staging path")
+    stage = worker_target(worker, stage_relative, "H-53 recovery staging path")
+    if stage != expected_stage:
+        raise ValueError("H-53 recovery staging path differs from its exact target")
+    allowed_during_recovery = {
+        portable_key(MEMORY_STORE_PATH), portable_key(PORTFOLIO_EXPORTS_PATH),
+        portable_key(CHIEF_STATE_PATH), portable_key(stage_relative),
+    }
+    for root_relative in (MEMORY_ROOT, CHIEF_ROOT):
+        root = worker / root_relative
+        if not root.exists():
+            continue
+        for path in root.rglob("*"):
+            relative = path.relative_to(worker)
+            if path.is_symlink() or (
+                path.is_file() and portable_key(relative) not in allowed_during_recovery
+            ):
+                raise ValueError("unexpected H-53 recovery entry requires inspection: " + relative.as_posix())
+    if h53_other_state_hash(worker, target_relative) != transaction["other_state_sha256"]:
+        raise ValueError("unrelated controlled state changed during H-53 transaction")
+    target = worker_target(worker, target_relative, "H-53 recovery target")
+    current = h53_target_hash(target)
+    stage_status = h53_validate_stage(stage, transaction)
+    if current == transaction["before_sha256"] and stage_status == "COMPLETE":
+        os.replace(stage, target)
+        current = h53_target_hash(target)
+        stage_status = "MISSING"
+    if current == transaction["after_sha256"]:
+        require_private_file(target)
+        if stage_status != "MISSING":
+            stage.unlink()
+        if portable_key(target_relative) == portable_key(MEMORY_STORE_PATH):
+            memory_store(worker)
+        elif portable_key(target_relative) == portable_key(CHIEF_STATE_PATH):
+            chief_state(worker)
+        else:
+            portfolio_exports(worker)
+        refresh_lease_state(worker, lease)
+        action = "COMMITTED"
+    elif current == transaction["before_sha256"]:
+        if stage_status != "MISSING":
+            stage.unlink()
+        action = "NO_CHANGE"
+    else:
+        raise ValueError("H-53 target is neither the exact before nor committed state")
+    journal.unlink()
+    print("AI-HUMAN H-53 RECOVERY: PASS")
+    print("- result: " + action)
+    print("- new expected-state hash: " + read_lease(worker)["state_hash"])
+
+
+def memory_index(records):
+    index = {
+        "by_kind": {kind: [] for kind in sorted(MEMORY_KINDS)},
+        "by_scope": {scope: [] for scope in sorted(MEMORY_SCOPES)},
+        "by_subject": {},
+        "schema": "ai-human.memory-index/v1",
+    }
+    for identifier, record in sorted(records.items()):
+        if record["status"] not in {"ACTIVE", "DISPUTED"}:
+            continue
+        index["by_kind"][record["kind"]].append(identifier)
+        index["by_scope"][record["scope"]].append(identifier)
+        index["by_subject"].setdefault(record["subject"], []).append(identifier)
+    return index
+
+
+def memory_store_sha256(data):
+    return canonical_json_sha256({key: value for key, value in data.items() if key != "store_sha256"})
+
+
+def memory_store(worker, required=True, allow_stale_index=False):
+    path = worker_target(worker, MEMORY_STORE_PATH, "worker memory store")
+    if not path.exists():
+        if required:
+            raise ValueError("layered memory is OFF; explicit owner configuration required")
+        return None
+    if path.is_symlink() or not path.is_file() or path.stat().st_size > 4 * 1024 * 1024:
+        raise ValueError("worker memory store must be a bounded regular file")
+    data = read_json(path)
+    require_exact_fields(data, {
+        "config", "identity_sha256", "index", "records", "revision", "schema",
+        "store_sha256", "worker_id",
+    }, "worker memory store")
+    if data["schema"] != "ai-human.memory-store/v1":
+        raise ValueError("unsupported worker memory schema")
+    if data["worker_id"] != installed_worker_id(worker) or data["identity_sha256"] != worker_identity_sha256(worker):
+        raise ValueError("memory store belongs to a different worker identity")
+    if type(data["revision"]) is not int or data["revision"] < 1:
+        raise ValueError("memory revision is invalid")
+    config = data["config"]
+    require_exact_fields(config, {
+        "approval_reference", "created_utc", "global_publication", "owner",
+        "retention_days", "status", "updated_utc",
+    }, "memory configuration")
+    if config["status"] not in {"ENABLED", "PAUSED", "REVOKED"}:
+        raise ValueError("memory configuration status is invalid")
+    if config["global_publication"] != "EXPLICIT_OWNER_APPROVAL_REQUIRED":
+        raise ValueError("global memory publication boundary differs")
+    if type(config["retention_days"]) is not int or not 1 <= config["retention_days"] <= 3650:
+        raise ValueError("memory retention must be 1..3650 days")
+    for field in ("owner", "approval_reference"):
+        map_text(config[field], "memory " + field, 1000)
+    created = map_recorded(config["created_utc"], "memory creation time")
+    updated = map_recorded(config["updated_utc"], "memory update time")
+    if updated < created:
+        raise ValueError("memory update precedes creation")
+    records = data["records"]
+    if not isinstance(records, dict) or len(records) > MEMORY_RECORD_LIMIT:
+        raise ValueError("memory record capacity exceeds its bounded store")
+    record_fields = {
+        "access_class", "approval_reference", "confidence", "id", "kind", "provenance",
+        "record_sha256", "recorded_from_utc", "recorded_to_utc", "review_due_utc",
+        "scope", "sensitivity", "source_locator", "source_owner", "source_sha256",
+        "source_worker_id", "status", "subject", "supersedes", "text",
+        "valid_from_utc", "valid_to_utc",
+    }
+    for identifier, record in records.items():
+        require_exact_fields(record, record_fields, "memory record")
+        h53_verify_seal(record, "memory record")
+        if map_id(identifier) != record["id"]:
+            raise ValueError("memory record key differs from its ID")
+        if record["kind"] not in MEMORY_KINDS or record["scope"] not in MEMORY_SCOPES:
+            raise ValueError("memory kind or scope is invalid")
+        if record["status"] not in MEMORY_STATUSES or record["confidence"] not in MEMORY_CONFIDENCE:
+            raise ValueError("memory status or confidence is invalid")
+        if record["sensitivity"] not in MEMORY_SENSITIVITY or record["access_class"] not in MEMORY_ACCESS:
+            raise ValueError("memory sensitivity or access class is invalid")
+        if record["source_worker_id"] != data["worker_id"]:
+            raise ValueError("local memory record claims another source worker")
+        for field in (
+            "approval_reference", "provenance", "source_locator", "source_owner", "subject", "text"
+        ):
+            map_text(record[field], "memory record " + field, 4000 if field == "text" else 1000)
+        if contains_secret_material(record) or re.search(
+            r"(?i)\b(?:ignore (?:all |any )?(?:previous|prior) instructions|system prompt|"
+            r"exfiltrate|send (?:the )?(?:password|secret|token)s?)\b", record["text"]
+        ):
+            raise ValueError("memory record contains secret or prompt-injection material")
+        if not SHA256_HEX.fullmatch(str(record["source_sha256"])):
+            raise ValueError("memory record lacks an exact source digest")
+        recorded_from = map_recorded(record["recorded_from_utc"], "memory recorded-from time")
+        recorded_to = None
+        if record["recorded_to_utc"] is not None:
+            recorded_to = map_recorded(record["recorded_to_utc"], "memory recorded-to time")
+            if recorded_to < recorded_from:
+                raise ValueError("memory recorded-to precedes recorded-from")
+        if record["status"] in {"ACTIVE", "DISPUTED"} and recorded_to is not None:
+            raise ValueError("current memory record cannot have a recorded-to time")
+        if record["status"] in {"SUPERSEDED", "RETRACTED"} and recorded_to is None:
+            raise ValueError("closed memory record requires a recorded-to time")
+        valid_from = parse_recorded_utc(record["valid_from_utc"], "memory valid-from time")
+        if valid_from > recorded_from:
+            raise ValueError("memory valid-from cannot be later than recording")
+        if record["valid_to_utc"] is not None:
+            valid_to = parse_recorded_utc(record["valid_to_utc"], "memory valid-to time")
+            if valid_to <= valid_from:
+                raise ValueError("memory valid-to must follow valid-from")
+        review_due = parse_recorded_utc(record["review_due_utc"], "memory review time")
+        if not recorded_from < review_due <= recorded_from + datetime.timedelta(days=config["retention_days"]):
+            raise ValueError("memory review exceeds configured retention")
+        supersedes = record["supersedes"]
+        if supersedes is not None and (map_id(supersedes) == identifier):
+            raise ValueError("memory record cannot supersede itself")
+        if record["scope"] == "GLOBAL_SHARED":
+            if record["access_class"] != "COMPANY_SHARED" or record["sensitivity"] not in {"PUBLIC", "COMPANY_INTERNAL"}:
+                raise ValueError("global memory may contain only company-shareable facts")
+            if record["confidence"] not in {"OWNER_STATED", "SOURCE_CONFIRMED"}:
+                raise ValueError("global memory requires confirmed evidence")
+        elif record["access_class"] == "COMPANY_SHARED":
+            raise ValueError("worker-local memory cannot claim company-wide access")
+    superseded_by = {}
+    for identifier, record in records.items():
+        predecessor_id = record["supersedes"]
+        if predecessor_id is None:
+            continue
+        predecessor = records.get(predecessor_id)
+        if predecessor is None:
+            raise ValueError("memory correction predecessor is missing")
+        if predecessor_id in superseded_by:
+            raise ValueError("memory predecessor has more than one correction")
+        superseded_by[predecessor_id] = identifier
+        if predecessor["status"] != "SUPERSEDED":
+            raise ValueError("memory correction predecessor is not superseded")
+        if (
+            predecessor["subject"] != record["subject"]
+            or predecessor["scope"] != record["scope"]
+            or predecessor["source_owner"] != record["source_owner"]
+            or predecessor["recorded_to_utc"] != record["recorded_from_utc"]
+        ):
+            raise ValueError("memory correction chain changes ownership or bitemporal boundary")
+        if parse_recorded_utc(predecessor["recorded_from_utc"], "memory predecessor time") > parse_recorded_utc(record["recorded_from_utc"], "memory correction time"):
+            raise ValueError("memory correction predates its predecessor")
+    for identifier, record in records.items():
+        if record["status"] == "SUPERSEDED" and identifier not in superseded_by:
+            raise ValueError("superseded memory record lacks its correction")
+    expected_index = memory_index(records)
+    if allow_stale_index:
+        normalized = json.loads(json.dumps(data))
+        normalized["index"] = expected_index
+        if data["store_sha256"] != memory_store_sha256(normalized):
+            raise ValueError("memory store corruption is not confined to its derived index")
+    else:
+        if data["index"] != expected_index:
+            raise ValueError("memory index differs from authoritative records; run memory-rebuild")
+        if data["store_sha256"] != memory_store_sha256(data):
+            raise ValueError("memory store integrity digest differs")
+    if config["status"] == "REVOKED" and records:
+        raise ValueError("revoked memory retains records")
+    return data
+
+
+def memory_prepare_store(data):
+    data["index"] = memory_index(data["records"])
+    data["store_sha256"] = memory_store_sha256(data)
+    return data
+
+
+def memory_configure(args):
+    worker = safe_worker(args.worker)
+    lease, _ = require_lease(worker, args.session_id, args.expected_state_hash)
+    current = memory_store(worker, required=False)
+    if args.action == "ENABLE":
+        request = read_governor_input(args.request, "memory configuration request")
+        require_exact_fields(request, {
+            "approval_reference", "owner", "retention_days", "schema"
+        }, "memory configuration request")
+        if request["schema"] != "ai-human.memory-config-request/v1" or request["owner"] != lease["actor"]:
+            raise ValueError("memory configuration requires the current owner")
+        if type(request["retention_days"]) is not int or not 1 <= request["retention_days"] <= 3650:
+            raise ValueError("memory retention must be 1..3650 days")
+        map_text(request["approval_reference"], "memory approval reference")
+        if current and current["config"]["status"] != "REVOKED":
+            raise ValueError("memory is already configured; use PAUSE, RESUME or REVOKE")
+        timestamp = now_utc()
+        data = {
+            "config": {
+                "approval_reference": request["approval_reference"], "created_utc": timestamp,
+                "global_publication": "EXPLICIT_OWNER_APPROVAL_REQUIRED", "owner": request["owner"],
+                "retention_days": request["retention_days"], "status": "ENABLED",
+                "updated_utc": timestamp,
+            },
+            "identity_sha256": worker_identity_sha256(worker), "index": memory_index({}),
+            "records": {}, "revision": 1, "schema": "ai-human.memory-store/v1",
+            "store_sha256": "", "worker_id": installed_worker_id(worker),
+        }
+    else:
+        if args.request is not None:
+            raise ValueError("only ENABLE accepts a memory configuration request")
+        if not current or current["config"]["owner"] != lease["actor"]:
+            raise ValueError("memory control requires its configured owner")
+        allowed = {
+            "PAUSE": {"ENABLED"}, "RESUME": {"PAUSED"},
+            "REVOKE": {"ENABLED", "PAUSED"},
+        }
+        if current["config"]["status"] not in allowed[args.action]:
+            raise ValueError("memory control transition is not allowed")
+        data = current
+        data["config"]["status"] = {"PAUSE": "PAUSED", "RESUME": "ENABLED", "REVOKE": "REVOKED"}[args.action]
+        data["config"]["updated_utc"] = now_utc()
+        if args.action == "REVOKE":
+            purge_chief_briefs_for_privacy(worker, lease, "memory revocation")
+            lease = read_lease(worker)
+            data["records"] = {}
+        data["revision"] += 1
+    memory_prepare_store(data)
+    memory_store_path = worker / MEMORY_STORE_PATH
+    h53_commit(worker, lease, MEMORY_STORE_PATH, data)
+    print("- memory status: " + data["config"]["status"])
+    print("- memory path: " + memory_store_path.relative_to(worker).as_posix())
+
+
+def validate_memory_record_request(request):
+    require_exact_fields(request, {
+        "access_class", "approval_reference", "confidence", "id", "kind", "provenance",
+        "review_due_utc", "schema", "scope", "sensitivity", "source_locator",
+        "source_owner", "source_sha256", "subject", "supersedes", "text",
+        "valid_from_utc", "valid_to_utc",
+    }, "memory record request")
+    if request["schema"] != "ai-human.memory-record-request/v1":
+        raise ValueError("unsupported memory record request schema")
+    return request
+
+
+def memory_record(args):
+    worker = safe_worker(args.worker)
+    lease, _ = require_lease(worker, args.session_id, args.expected_state_hash)
+    data = memory_store(worker)
+    if data["config"]["status"] != "ENABLED" or data["config"]["owner"] != lease["actor"]:
+        raise ValueError("memory recording requires the enabled store owner")
+    request = validate_memory_record_request(
+        read_governor_input(args.request, "memory record request")
+    )
+    identifier = map_id(request["id"])
+    if identifier in data["records"] or len(data["records"]) >= MEMORY_RECORD_LIMIT:
+        raise ValueError("memory ID already exists or store capacity was reached")
+    if request["kind"] not in MEMORY_KINDS or request["scope"] not in MEMORY_SCOPES:
+        raise ValueError("memory kind or scope is invalid")
+    if request["confidence"] not in MEMORY_CONFIDENCE or request["sensitivity"] not in MEMORY_SENSITIVITY or request["access_class"] not in MEMORY_ACCESS:
+        raise ValueError("memory confidence, sensitivity or access class is invalid")
+    for field in ("approval_reference", "provenance", "source_locator", "source_owner", "subject", "text"):
+        map_text(request[field], "memory request " + field, 4000 if field == "text" else 1000)
+    if contains_secret_material(request) or re.search(
+        r"(?i)\b(?:ignore (?:all |any )?(?:previous|prior) instructions|system prompt|"
+        r"exfiltrate|send (?:the )?(?:password|secret|token)s?)\b", request["text"]
+    ):
+        raise ValueError("memory request contains secret or prompt-injection material")
+    if not SHA256_HEX.fullmatch(str(request["source_sha256"])):
+        raise ValueError("memory request requires an exact source digest")
+    source_relative = safe_relative(args.source_file, "memory source file")
+    if any(part.startswith(".") for part in source_relative.parts):
+        raise ValueError("memory source may not use a hidden path")
+    source_path = worker_target(worker, source_relative, "memory source file")
+    if source_path.is_symlink() or not source_path.is_file() or source_path.stat().st_size > 1024 * 1024:
+        raise ValueError("memory source must be a bounded regular worker file")
+    if request["source_locator"] != source_relative.as_posix() or sha256(source_path) != request["source_sha256"]:
+        raise ValueError("memory source locator or digest differs from the selected file")
+    timestamp = now_utc()
+    recorded = parse_recorded_utc(timestamp, "memory recording time")
+    valid_from = parse_recorded_utc(request["valid_from_utc"], "memory valid-from time")
+    if valid_from > recorded:
+        raise ValueError("memory valid-from cannot be in the future")
+    if request["valid_to_utc"] is not None and parse_recorded_utc(request["valid_to_utc"], "memory valid-to time") <= valid_from:
+        raise ValueError("memory valid-to must follow valid-from")
+    review = parse_recorded_utc(request["review_due_utc"], "memory review time")
+    if not recorded < review <= recorded + datetime.timedelta(days=data["config"]["retention_days"]):
+        raise ValueError("memory review exceeds configured retention")
+    candidate_supersedes = map_id(request["supersedes"]) if request["supersedes"] is not None else None
+    if request["scope"] == "GLOBAL_SHARED":
+        if request["access_class"] != "COMPANY_SHARED" or request["sensitivity"] not in {"PUBLIC", "COMPANY_INTERNAL"}:
+            raise ValueError("global publication requires company-shareable sensitivity and access")
+        if request["confidence"] not in {"OWNER_STATED", "SOURCE_CONFIRMED"}:
+            raise ValueError("global publication requires confirmed evidence")
+        map_text(request["approval_reference"], "global publication approval")
+        chief_state(worker, required=False)  # Preserve adjacent-store integrity checking, not a shared action budget.
+    elif request["access_class"] == "COMPANY_SHARED":
+        raise ValueError("worker-local memory cannot grant company-wide access")
+    supersedes = candidate_supersedes
+    if supersedes is not None:
+        previous = data["records"].get(supersedes)
+        if not previous or previous["status"] not in {"ACTIVE", "DISPUTED"}:
+            raise ValueError("memory correction target is not current")
+        if previous["subject"] != request["subject"] or previous["scope"] != request["scope"] or previous["source_owner"] != request["source_owner"]:
+            raise ValueError("memory correction changes subject, scope or fact owner")
+        previous["status"] = "SUPERSEDED"
+        previous["recorded_to_utc"] = timestamp
+        h53_seal(previous)
+    status = "ACTIVE"
+    for previous in data["records"].values():
+        if (
+            previous["status"] in {"ACTIVE", "DISPUTED"}
+            and previous["subject"] == request["subject"]
+            and previous["scope"] == request["scope"]
+            and previous["text"] != request["text"]
+            and previous["id"] != supersedes
+        ):
+            previous["status"] = "DISPUTED"
+            previous["recorded_to_utc"] = None
+            h53_seal(previous)
+            status = "DISPUTED"
+    record = {
+        "access_class": request["access_class"], "approval_reference": request["approval_reference"],
+        "confidence": request["confidence"], "id": identifier, "kind": request["kind"],
+        "provenance": request["provenance"], "record_sha256": "",
+        "recorded_from_utc": timestamp, "recorded_to_utc": None,
+        "review_due_utc": request["review_due_utc"], "scope": request["scope"],
+        "sensitivity": request["sensitivity"], "source_locator": request["source_locator"],
+        "source_owner": request["source_owner"], "source_sha256": request["source_sha256"],
+        "source_worker_id": installed_worker_id(worker), "status": status,
+        "subject": request["subject"], "supersedes": supersedes, "text": request["text"],
+        "valid_from_utc": request["valid_from_utc"], "valid_to_utc": request["valid_to_utc"],
+    }
+    h53_seal(record)
+    data["records"][identifier] = record
+    data["revision"] += 1
+    data["config"]["updated_utc"] = timestamp
+    memory_prepare_store(data)
+    memory_store(worker)  # validates the unchanged on-disk predecessor before commit
+    h53_commit(worker, lease, MEMORY_STORE_PATH, data)
+    print("- memory record: " + identifier)
+    print("- status: " + status)
+    print("- publication: " + ("CURATED_GLOBAL" if request["scope"] == "GLOBAL_SHARED" else "WORKER_LOCAL"))
+
+
+def memory_control(args):
+    worker = safe_worker(args.worker)
+    lease, _ = require_lease(worker, args.session_id, args.expected_state_hash)
+    data = memory_store(worker)
+    if data["config"]["status"] not in {"ENABLED", "PAUSED"} or data["config"]["owner"] != lease["actor"]:
+        raise ValueError("memory control requires its configured owner")
+    timestamp = now_utc()
+    if args.action == "FORGET":
+        purge_chief_briefs_for_privacy(worker, lease, "exact memory forget")
+        lease = read_lease(worker)
+    if args.action == "PRUNE":
+        current = parse_recorded_utc(timestamp, "memory prune time")
+        removed = []
+        eligible = []
+        for identifier, record in sorted(data["records"].items()):
+            review = parse_recorded_utc(record["review_due_utc"], "memory review time")
+            valid_to = parse_recorded_utc(record["valid_to_utc"], "memory valid-to time") if record["valid_to_utc"] else None
+            if review <= current or (valid_to is not None and valid_to <= current):
+                eligible.append(identifier)
+        removed_predecessors = [
+            data["records"][identifier]["supersedes"]
+            for identifier in eligible[:map_batch_cap(worker)]
+            if data["records"][identifier]["supersedes"] is not None
+        ]
+        for identifier in eligible[:map_batch_cap(worker)]:
+            del data["records"][identifier]
+            removed.append(identifier)
+        for record in data["records"].values():
+            if record["supersedes"] in removed:
+                record["supersedes"] = None
+                h53_seal(record)
+        for predecessor_id in removed_predecessors:
+            predecessor = data["records"].get(predecessor_id)
+            if predecessor and predecessor["status"] == "SUPERSEDED":
+                predecessor["status"] = "RETRACTED"
+                h53_seal(predecessor)
+    else:
+        identifier = map_id(args.item)
+        record = data["records"].get(identifier)
+        if not record:
+            raise ValueError("memory item does not exist")
+        if args.action == "FORGET":
+            predecessor_id = record["supersedes"]
+            del data["records"][identifier]
+            for retained in data["records"].values():
+                if retained["supersedes"] == identifier:
+                    retained["supersedes"] = None
+                    h53_seal(retained)
+            predecessor = data["records"].get(predecessor_id) if predecessor_id else None
+            if predecessor and predecessor["status"] == "SUPERSEDED":
+                predecessor["status"] = "RETRACTED"
+                h53_seal(predecessor)
+        elif args.action in {"RETRACT", "DISPUTE"}:
+            if record["status"] not in {"ACTIVE", "DISPUTED"}:
+                raise ValueError("only a current memory item can be changed")
+            record["status"] = "RETRACTED" if args.action == "RETRACT" else "DISPUTED"
+            record["recorded_to_utc"] = timestamp if args.action == "RETRACT" else None
+            h53_seal(record)
+        else:
+            raise ValueError("unsupported memory control action")
+    data["revision"] += 1
+    data["config"]["updated_utc"] = timestamp
+    memory_prepare_store(data)
+    h53_commit(worker, lease, MEMORY_STORE_PATH, data)
+    print("- memory action: " + args.action)
+    if args.action == "PRUNE":
+        print("- remaining eligible records: " + str(max(0, len(eligible) - len(removed))))
+
+
+def memory_rebuild(args):
+    worker = safe_worker(args.worker)
+    lease = read_lease(worker)
+    if lease["session_id"] != args.session_id:
+        raise ValueError("memory rebuild belongs to another writer")
+    if controlled_state_hash(worker) != args.expected_state_hash:
+        raise ValueError("memory rebuild expected-state hash mismatch")
+    data = memory_store(worker, allow_stale_index=True)
+    if data["config"]["owner"] != lease["actor"]:
+        raise ValueError("memory rebuild requires its configured owner")
+    expected = memory_index(data["records"])
+    if data["index"] == expected:
+        print("AI-HUMAN MEMORY REBUILD: NO_CHANGE")
+        print("- new expected-state hash: " + lease["state_hash"])
+        return
+    original_normalized = json.loads(json.dumps(data))
+    original_normalized["index"] = expected
+    original_bytes = (json.dumps(original_normalized, indent=2, sort_keys=True) + "\n").encode("utf-8")
+    if controlled_state_hash_with_file_sha(
+        worker, MEMORY_STORE_PATH, hashlib.sha256(original_bytes).hexdigest()
+    ) != lease["state_hash"]:
+        raise ValueError("memory rebuild detected unrelated controlled-state drift")
+    data["index"] = expected
+    data["revision"] += 1
+    data["config"]["updated_utc"] = now_utc()
+    data["store_sha256"] = memory_store_sha256(data)
+    h53_commit(worker, lease, MEMORY_STORE_PATH, data)
+    print("- memory index: REBUILT_FROM_AUTHORITATIVE_RECORDS")
+
+
+def memory_query(args):
+    worker = safe_worker(args.worker)
+    data = memory_store(worker)
+    if data["config"]["status"] != "ENABLED" or args.owner != data["config"]["owner"]:
+        raise ValueError("memory query requires the enabled store owner")
+    now = parse_recorded_utc(now_utc(), "memory query time")
+    matches = []
+    for record in data["records"].values():
+        if record["status"] not in {"ACTIVE", "DISPUTED"}:
+            continue
+        if args.kind and record["kind"] != args.kind:
+            continue
+        if args.scope and record["scope"] != args.scope:
+            continue
+        if args.subject and record["subject"] != args.subject:
+            continue
+        if parse_recorded_utc(record["review_due_utc"], "memory review time") <= now:
+            continue
+        if record["valid_to_utc"] and parse_recorded_utc(record["valid_to_utc"], "memory valid-to time") <= now:
+            continue
+        matches.append(record)
+    print(json.dumps({
+        "records": matches[:BATCH_CAP], "result": "MATCHES" if matches else "NO_CHANGE",
+        "schema": "ai-human.memory-query/v1", "truncated": len(matches) > BATCH_CAP,
+    }, indent=2, sort_keys=True))
+
+
+def memory_show(args):
+    worker = safe_worker(args.worker)
+    data = memory_store(worker, required=False)
+    if not data:
+        print(json.dumps({"schema": "ai-human.memory-summary/v1", "status": "OFF"}, indent=2, sort_keys=True))
+        return
+    if args.owner != data["config"]["owner"]:
+        raise ValueError("memory summary belongs to another owner")
+    counts = {status: 0 for status in sorted(MEMORY_STATUSES)}
+    for record in data["records"].values():
+        counts[record["status"]] += 1
+    print(json.dumps({
+        "counts": counts, "revision": data["revision"], "schema": "ai-human.memory-summary/v1",
+        "status": data["config"]["status"], "worker_id": data["worker_id"],
+    }, indent=2, sort_keys=True))
+
+
+def chief_state_sha256(data):
+    return canonical_json_sha256({key: value for key, value in data.items() if key != "state_sha256"})
+
+
+def chief_status_material(item):
+    mechanical = {"status_sha256", "source_recorded_utc", "updated_utc", "fresh_until_utc"}
+    return {key: value for key, value in item.items() if key not in mechanical}
+
+
+def validate_chief_item(item, worker_id=None):
+    require_exact_fields(item, CHIEF_ITEM_FIELDS, "Chief portfolio item")
+    if worker_id is not None and item["source_worker_id"] != worker_id:
+        raise ValueError("portfolio key differs from source worker")
+    if not SAFE_ID.fullmatch(str(item["source_worker_id"])):
+        raise ValueError("portfolio source worker ID is invalid")
+    for field in ("source_identity_sha256", "source_state_sha256", "evidence_sha256", "status_sha256"):
+        if not SHA256_HEX.fullmatch(str(item[field])):
+            raise ValueError("portfolio item lacks an exact digest")
+    if item["status_sha256"] != canonical_json_sha256(chief_status_material(item)):
+        raise ValueError("portfolio status digest differs")
+    if item["status"] not in CHIEF_WORKER_STATUSES or item["access_class"] != "COMPANY_SHARED":
+        raise ValueError("portfolio status or access class is invalid")
+    for field in (
+        "blocked_reason", "current_task_id", "done_condition", "last_completed_step",
+        "next_action", "operating_unit", "owner", "purpose", "summary_pointer_approval_reference"
+    ):
+        if item[field] is not None:
+            map_text(item[field], "portfolio " + field, 1000)
+    for field in ("current_task_id", "done_condition", "last_completed_step", "next_action", "operating_unit", "owner", "purpose"):
+        if item[field] is None:
+            raise ValueError("portfolio " + field + " is required")
+    if not isinstance(item["fact_owner_ids"], list) or len(item["fact_owner_ids"]) > BATCH_CAP:
+        raise ValueError("portfolio fact-owner list exceeds the safety ceiling")
+    if any(not SAFE_ID.fullmatch(str(value)) for value in item["fact_owner_ids"]):
+        raise ValueError("portfolio fact-owner ID is invalid")
+    if len(item["fact_owner_ids"]) != len(set(item["fact_owner_ids"])):
+        raise ValueError("portfolio fact-owner IDs are duplicated")
+    if (item["summary_pointer_sha256"] is None) != (item["summary_pointer_approval_reference"] is None):
+        raise ValueError("personal-context pointer requires separate approval and digest")
+    if item["summary_pointer_sha256"] is not None and not SHA256_HEX.fullmatch(str(item["summary_pointer_sha256"])):
+        raise ValueError("personal-context pointer digest is invalid")
+    recorded = map_recorded(item["source_recorded_utc"], "portfolio source recording time")
+    updated = map_recorded(item["updated_utc"], "portfolio update time")
+    fresh = parse_recorded_utc(item["fresh_until_utc"], "portfolio freshness time")
+    if updated < recorded or not updated < fresh <= updated + datetime.timedelta(days=31):
+        raise ValueError("portfolio freshness proof is invalid")
+    if item["status"] == "BLOCKED" and not item["blocked_reason"]:
+        raise ValueError("blocked portfolio item requires a reason")
+    if item["status"] != "BLOCKED" and item["blocked_reason"] is not None:
+        raise ValueError("only a blocked portfolio item may carry a blocked reason")
+    if contains_secret_material(item):
+        raise ValueError("portfolio metadata contains possible secret material")
+    return item
+
+
+def validate_chief_brief(brief, config):
+    fields = {
+        "brief_sha256", "changed", "contradictions", "exceptions", "handoff_proposals",
+        "id", "material_sha256", "owner_next", "project_map", "recorded_utc", "schema",
+        "sequence",
+    }
+    paged = isinstance(brief, dict) and brief.get("schema") == "ai-human.chief-brief/v2"
+    if paged:
+        fields.update({"fact_changes", "remaining_changes", "removed", "view"})
+    require_exact_fields(brief, fields, "Chief brief")
+    if brief["schema"] not in {"ai-human.chief-brief/v1", "ai-human.chief-brief/v2"} or not re.fullmatch(r"brief-[a-z0-9-]+", str(brief["id"])):
+        raise ValueError("Chief brief ID or schema differs")
+    h53_verify_seal(brief, "Chief brief", field="brief_sha256")
+    map_recorded(brief["recorded_utc"], "Chief brief time")
+    if type(brief["sequence"]) is not int or brief["sequence"] < 1:
+        raise ValueError("Chief brief sequence is invalid")
+    if not brief["id"].endswith("-r" + f"{brief['sequence']:012d}"):
+        raise ValueError("Chief brief ID is not bound to its sequence")
+    for field in ("changed", "contradictions", "exceptions", "handoff_proposals", "owner_next", "project_map"):
+        if not isinstance(brief[field], list) or len(brief[field]) > BATCH_CAP:
+            raise ValueError("Chief brief " + field + " exceeds the safety ceiling")
+    if len(brief["changed"]) != len(set(brief["changed"])) or any(
+        not isinstance(value, str) or not re.fullmatch(r"(?:worker|fact):[A-Za-z0-9._-]+", value)
+        for value in brief["changed"]
+    ):
+        raise ValueError("Chief changed-item index is invalid")
+    if not SHA256_HEX.fullmatch(str(brief["material_sha256"])):
+        raise ValueError("Chief brief material digest is invalid")
+    seen_workers = set()
+    for item in brief["project_map"]:
+        require_exact_fields(item, {
+            "current_task_id", "fresh_until_utc", "next_action", "owner", "purpose",
+            "status", "worker_id",
+        }, "Chief project-map item")
+        worker_id = governor_safe_id(item["worker_id"], "Chief project-map worker")
+        if worker_id in seen_workers or item["status"] not in CHIEF_WORKER_STATUSES:
+            raise ValueError("Chief project map has a duplicate worker or invalid status")
+        seen_workers.add(worker_id)
+        for field in ("current_task_id", "next_action", "owner", "purpose"):
+            map_text(item[field], "Chief project-map " + field, 1000)
+        parse_recorded_utc(item["fresh_until_utc"], "Chief project-map freshness")
+    for contradiction in brief["contradictions"]:
+        require_exact_fields(contradiction, {"fact_ids", "fact_owners", "subject"}, "Chief contradiction")
+        if (
+            not isinstance(contradiction["fact_ids"], list)
+            or not 2 <= len(contradiction["fact_ids"]) <= MEMORY_RECORD_LIMIT
+            or len(contradiction["fact_ids"]) != len(set(contradiction["fact_ids"]))
+            or any(not COMPONENT_ID.fullmatch(str(value)) for value in contradiction["fact_ids"])
+            or not isinstance(contradiction["fact_owners"], list)
+            or not 1 <= len(contradiction["fact_owners"]) <= MEMORY_RECORD_LIMIT
+        ):
+            raise ValueError("Chief contradiction references are invalid")
+        map_text(contradiction["subject"], "Chief contradiction subject")
+        for owner in contradiction["fact_owners"]:
+            map_text(owner, "Chief contradiction fact owner")
+    for exception in brief["exceptions"]:
+        if not isinstance(exception, dict):
+            raise ValueError("Chief exception must be an object")
+        if set(exception) == {"status", "worker_id"}:
+            if exception["status"] not in {"BLOCKED", "WAITING_OWNER", "STALE", "RETIRED"}:
+                raise ValueError("Chief worker exception status is invalid")
+            governor_safe_id(exception["worker_id"], "Chief exception worker")
+        elif set(exception) == {"status", "subject"}:
+            if exception["status"] != "CONTRADICTORY_GLOBAL_FACT":
+                raise ValueError("Chief contradiction exception status is invalid")
+            map_text(exception["subject"], "Chief exception subject")
+        else:
+            raise ValueError("Chief exception fields differ from its schema")
+    for action in brief["owner_next"]:
+        if not isinstance(action, dict) or set(action) not in (
+            {"next_action", "worker_id"}, {"next_action", "subject"}
+        ):
+            raise ValueError("Chief owner-next fields differ from its schema")
+        map_text(action["next_action"], "Chief owner-next action", 1000)
+        if "worker_id" in action:
+            governor_safe_id(action["worker_id"], "Chief owner-next worker")
+        else:
+            map_text(action["subject"], "Chief owner-next subject")
+    handoff_fields = {
+        "activation", "approval_reference", "done_condition", "expires_utc",
+        "external_effects", "from_worker_id", "gate_zero", "route",
+        "target_identity_sha256", "target_state_sha256", "target_worker_id", "type",
+        "write_authority",
+    }
+    for handoff in brief["handoff_proposals"]:
+        require_exact_fields(handoff, handoff_fields, "Chief handoff proposal")
+        if (
+            handoff["activation"] != "NOT_SENT" or handoff["route"] != "H55_REQUIRED"
+            or handoff["type"] != "TARGET_BOUND_HANDOFF_PROPOSAL"
+            or handoff["write_authority"] != "NONE" or handoff["external_effects"] is not False
+            or handoff["gate_zero"] != "NOT_GRANTED"
+        ):
+            raise ValueError("Chief handoff proposal exceeds read-only authority")
+        for field in ("from_worker_id", "target_worker_id"):
+            governor_safe_id(handoff[field], "Chief handoff " + field)
+        if handoff["from_worker_id"] == handoff["target_worker_id"]:
+            raise ValueError("Chief handoff source and target cannot be the same")
+        for field in ("target_identity_sha256", "target_state_sha256"):
+            if not SHA256_HEX.fullmatch(str(handoff[field])):
+                raise ValueError("Chief handoff target proof is invalid")
+        expiry = parse_recorded_utc(handoff["expires_utc"], "Chief handoff expiry")
+        recorded = parse_recorded_utc(brief["recorded_utc"], "Chief brief time")
+        if not recorded < expiry <= recorded + datetime.timedelta(days=7):
+            raise ValueError("Chief handoff expiry exceeds its bounded lifetime")
+        map_text(handoff["approval_reference"], "Chief handoff approval")
+        map_text(handoff["done_condition"], "Chief handoff done condition")
+    if paged:
+        if brief["view"] != "CHANGED_ITEMS_PAGE" or type(brief["remaining_changes"]) is not int or brief["remaining_changes"] < 0:
+            raise ValueError("Chief brief page marker or remainder is invalid")
+        removed = brief["removed"]
+        if not isinstance(removed, list) or len(removed) != len(set(removed)) or not set(removed).issubset(brief["changed"]):
+            raise ValueError("Chief removed-item index is invalid")
+        if not isinstance(brief["fact_changes"], list) or len(brief["fact_changes"]) > BATCH_CAP:
+            raise ValueError("Chief fact changes exceed the safety ceiling")
+        represented = {"worker:" + worker_id for worker_id in seen_workers}
+        for fact in brief["fact_changes"]:
+            require_exact_fields(fact, {"fact_id", "source_owner", "status", "subject"}, "Chief fact change")
+            fact_id = map_id(fact["fact_id"])
+            key = "fact:" + fact_id
+            if key in represented or fact["status"] not in {"ACTIVE", "DISPUTED"}:
+                raise ValueError("Chief fact change is duplicated or not current")
+            map_text(fact["source_owner"], "Chief fact owner")
+            map_text(fact["subject"], "Chief fact subject")
+            represented.add(key)
+        binding_keys = {"worker:" + item["from_worker_id"] for item in brief["handoff_proposals"]}
+        page_keys = set(brief["changed"]) | binding_keys
+        if len(page_keys) > BATCH_CAP or represented.intersection(removed) or represented | set(removed) != page_keys:
+            raise ValueError("Chief page omits or adds items beyond its bounded selection")
+    if contains_secret_material(brief):
+        raise ValueError("Chief brief contains possible secret material")
+
+
+def chief_state(worker, required=True):
+    path = worker_target(worker, CHIEF_STATE_PATH, "Chief state")
+    if not path.exists():
+        if required:
+            raise ValueError("Chief of Staff is OFF; explicit owner configuration required")
+        return None
+    if path.is_symlink() or not path.is_file() or path.stat().st_size > 4 * 1024 * 1024:
+        raise ValueError("Chief state must be a bounded regular file")
+    data = read_json(path)
+    require_exact_fields(data, {
+        "briefs", "config", "identity_sha256", "last_material", "portfolio", "revision",
+        "revoked_worker_ids", "schema", "state_sha256", "worker_id",
+    }, "Chief state")
+    if data["schema"] != "ai-human.chief-state/v1" or data["worker_id"] != installed_worker_id(worker) or data["identity_sha256"] != worker_identity_sha256(worker):
+        raise ValueError("Chief state schema or worker identity differs")
+    config = data["config"]
+    require_exact_fields(config, {
+        "approval_reference", "created_utc", "external_effects", "max_workers", "owner",
+        "read_only", "retention_days", "self_approval", "status", "updated_utc",
+    }, "Chief configuration")
+    if config["status"] not in {"ENABLED", "PAUSED", "REVOKED"} or config["read_only"] is not True or config["external_effects"] is not False or config["self_approval"] is not False:
+        raise ValueError("Chief authority boundary differs from read-only configuration")
+    if type(config["max_workers"]) is not int or config["max_workers"] < 1:
+        raise ValueError("Chief portfolio limit must be a positive owner-configured integer")
+    if type(config["retention_days"]) is not int or not 1 <= config["retention_days"] <= 365:
+        raise ValueError("Chief brief retention must be 1..365 days")
+    map_text(config["owner"], "Chief owner")
+    map_text(config["approval_reference"], "Chief approval reference")
+    created = map_recorded(config["created_utc"], "Chief creation time")
+    if map_recorded(config["updated_utc"], "Chief update time") < created:
+        raise ValueError("Chief update precedes creation")
+    if not isinstance(data["portfolio"], dict) or len(data["portfolio"]) > config["max_workers"]:
+        raise ValueError("Chief portfolio exceeds its approved limit")
+    for worker_id, item in data["portfolio"].items():
+        validate_chief_item(item, worker_id)
+    if not isinstance(data["revoked_worker_ids"], list) or len(data["revoked_worker_ids"]) != len(set(data["revoked_worker_ids"])):
+        raise ValueError("Chief revocation list is invalid")
+    if any(not SAFE_ID.fullmatch(str(value)) for value in data["revoked_worker_ids"]):
+        raise ValueError("Chief revoked worker ID is invalid")
+    if set(data["portfolio"]).intersection(data["revoked_worker_ids"]):
+        raise ValueError("revoked worker remains in Chief portfolio")
+    if not isinstance(data["briefs"], dict) or len(data["briefs"]) > BATCH_CAP:
+        raise ValueError("Chief brief history exceeds its bounded retention")
+    for identifier, brief in data["briefs"].items():
+        validate_chief_brief(brief, config)
+        if identifier != brief["id"]:
+            raise ValueError("Chief brief key differs from its ID")
+    if len({brief["sequence"] for brief in data["briefs"].values()}) != len(data["briefs"]):
+        raise ValueError("Chief brief sequence is duplicated")
+    if any(brief["sequence"] > data["revision"] for brief in data["briefs"].values()):
+        raise ValueError("Chief brief sequence exceeds the state revision")
+    if data["last_material"]:
+        require_exact_fields(data["last_material"], {"items", "material_sha256"}, "Chief last material")
+        items = data["last_material"]["items"]
+        # A partial page checkpoint may contain both a prior and a current
+        # generation until the corresponding removals have been presented.
+        if not isinstance(items, dict) or len(items) > 2 * (config["max_workers"] + MEMORY_RECORD_LIMIT):
+            raise ValueError("Chief last-material item index exceeds its bounded generations")
+        if any(
+            not re.fullmatch(r"(?:worker|fact):[A-Za-z0-9._-]+", str(key))
+            or not SHA256_HEX.fullmatch(str(value)) for key, value in items.items()
+        ):
+            raise ValueError("Chief last-material item proof is invalid")
+        if data["last_material"]["material_sha256"] != canonical_json_sha256(items):
+            raise ValueError("Chief last-material digest differs")
+        if not data["briefs"]:
+            raise ValueError("Chief last material exists without a retained brief")
+        latest = max(data["briefs"].values(), key=lambda item: item["sequence"])
+        if latest["material_sha256"] != data["last_material"]["material_sha256"]:
+            raise ValueError("Chief last material differs from the latest brief")
+    elif data["briefs"]:
+        raise ValueError("retained Chief briefs require a last-material proof")
+    if data["state_sha256"] != chief_state_sha256(data):
+        raise ValueError("Chief state integrity digest differs")
+    if type(data["revision"]) is not int or data["revision"] < 1:
+        raise ValueError("Chief revision is invalid")
+    if config["status"] == "REVOKED" and (data["portfolio"] or data["briefs"] or data["last_material"]):
+        raise ValueError("revoked Chief retains portfolio state")
+    return data
+
+
+def chief_prepare_state(data):
+    data["state_sha256"] = chief_state_sha256(data)
+    return data
+
+
+def chief_prune_briefs(data, current=None):
+    current = current or parse_recorded_utc(now_utc(), "Chief retention time")
+    cutoff = current - datetime.timedelta(days=data["config"]["retention_days"])
+    removed = 0
+    for identifier, brief in list(data["briefs"].items()):
+        if parse_recorded_utc(brief["recorded_utc"], "Chief brief time") <= cutoff:
+            del data["briefs"][identifier]
+            removed += 1
+    if not data["briefs"]:
+        data["last_material"] = {}
+    return removed
+
+
+def purge_chief_briefs_for_privacy(worker, lease, reason):
+    data = chief_state(worker, required=False)
+    if not data or not data["briefs"] and not data["last_material"]:
+        return
+    if data["config"]["owner"] != lease["actor"]:
+        raise ValueError("exact forget requires the configured Chief owner to purge derived briefs")
+    data["briefs"] = {}
+    data["last_material"] = {}
+    data["config"]["updated_utc"] = now_utc()
+    data["revision"] += 1
+    chief_prepare_state(data)
+    h53_commit(worker, lease, CHIEF_STATE_PATH, data)
+    print("- Chief derived briefs purged for: " + reason)
+
+
+def chief_configure(args):
+    worker = safe_worker(args.worker)
+    lease, _ = require_lease(worker, args.session_id, args.expected_state_hash)
+    current = chief_state(worker, required=False)
+    if args.action == "ENABLE":
+        request = read_governor_input(args.request, "Chief configuration request")
+        require_exact_fields(request, {
+            "approval_reference", "max_workers", "owner", "retention_days", "schema"
+        }, "Chief configuration request")
+        if request["schema"] != "ai-human.chief-config-request/v1" or request["owner"] != lease["actor"]:
+            raise ValueError("Chief configuration requires the current owner")
+        if type(request["max_workers"]) is not int or request["max_workers"] < 1:
+            raise ValueError("Chief portfolio limit must be a positive owner-configured integer")
+        if type(request["retention_days"]) is not int or not 1 <= request["retention_days"] <= 365:
+            raise ValueError("Chief retention must be 1..365 days")
+        map_text(request["approval_reference"], "Chief approval reference")
+        if current and current["config"]["status"] != "REVOKED":
+            raise ValueError("Chief is already configured")
+        timestamp = now_utc()
+        data = {
+            "briefs": {}, "config": {
+                "approval_reference": request["approval_reference"], "created_utc": timestamp,
+                "external_effects": False, "max_workers": request["max_workers"],
+                "owner": request["owner"], "read_only": True,
+                "retention_days": request["retention_days"], "self_approval": False,
+                "status": "ENABLED", "updated_utc": timestamp,
+            }, "identity_sha256": worker_identity_sha256(worker), "last_material": {},
+            "portfolio": {}, "revision": 1, "revoked_worker_ids": [],
+            "schema": "ai-human.chief-state/v1", "state_sha256": "",
+            "worker_id": installed_worker_id(worker),
+        }
+    else:
+        if args.request is not None:
+            raise ValueError("only ENABLE accepts a Chief configuration request")
+        if not current or current["config"]["owner"] != lease["actor"]:
+            raise ValueError("Chief control requires its configured owner")
+        transitions = {"PAUSE": ("ENABLED", "PAUSED"), "RESUME": ("PAUSED", "ENABLED")}
+        if args.action == "REVOKE":
+            if current["config"]["status"] not in {"ENABLED", "PAUSED"}:
+                raise ValueError("Chief is not active")
+            current["config"]["status"] = "REVOKED"
+            current["portfolio"] = {}
+            current["briefs"] = {}
+            current["last_material"] = {}
+            current["revoked_worker_ids"] = []
+        elif args.action in transitions:
+            before, after = transitions[args.action]
+            if current["config"]["status"] != before:
+                raise ValueError("Chief control transition is not allowed")
+            current["config"]["status"] = after
+        else:
+            raise ValueError("unsupported Chief control action")
+        current["config"]["updated_utc"] = now_utc()
+        current["revision"] += 1
+        data = current
+    chief_prepare_state(data)
+    h53_commit(worker, lease, CHIEF_STATE_PATH, data)
+    print("- Chief status: " + data["config"]["status"])
+    print("- authority: READ_ONLY; EXTERNAL_EFFECTS_DISABLED; SELF_APPROVAL_DISABLED")
+
+
+def portfolio_status_source_sha256(worker):
+    """Bind status sources without coupling a brief to unrelated private state."""
+    digest = hashlib.sha256()
+    for name in (
+        "MASTER_CURSOR.md", "OPEN_REGISTER.md", "TODAY.md", "COMPLETED_LEDGER.md",
+        "EVIDENCE_LOG.md", "FACTS.md", "DECISIONS.md",
+    ):
+        path = worker_target(worker, Path(name), "portfolio status source")
+        if path.exists() and not path.is_file():
+            raise ValueError("portfolio status source must be a regular file")
+        digest.update(name.encode("utf-8") + b"\0")
+        digest.update(bytes.fromhex(sha256(path)) if path.is_file() else b"MISSING")
+        digest.update(b"\n")
+    digest.update(bytes.fromhex(worker_identity_sha256(worker)))
+    return digest.hexdigest()
+
+
+def validate_portfolio_snapshot_shape(snapshot):
+    require_exact_fields(snapshot, {
+        "item", "schema", "snapshot_sha256", "target_chief_identity_sha256",
+        "target_chief_worker_id",
+    }, "portfolio snapshot")
+    if snapshot["schema"] != "ai-human.portfolio-snapshot/v1":
+        raise ValueError("unsupported portfolio snapshot schema")
+    if not SAFE_ID.fullmatch(str(snapshot["target_chief_worker_id"])) or not SHA256_HEX.fullmatch(str(snapshot["target_chief_identity_sha256"])):
+        raise ValueError("portfolio snapshot target binding is invalid")
+    expected = canonical_json_sha256({key: value for key, value in snapshot.items() if key != "snapshot_sha256"})
+    if snapshot["snapshot_sha256"] != expected:
+        raise ValueError("portfolio snapshot integrity differs")
+    validate_chief_item(snapshot["item"])
+    return snapshot
+
+
+def portfolio_exports(worker, required=False):
+    path = worker_target(worker, PORTFOLIO_EXPORTS_PATH, "portfolio export store")
+    if not path.exists():
+        if required:
+            raise ValueError("source worker has no governed portfolio export")
+        return None
+    if path.is_symlink() or not path.is_file() or path.stat().st_size > 4 * 1024 * 1024:
+        raise ValueError("portfolio export store must be a bounded regular file")
+    data = read_json(path)
+    require_exact_fields(data, {
+        "identity_sha256", "revision", "schema", "snapshots", "store_sha256", "worker_id"
+    }, "portfolio export store")
+    if data["schema"] != "ai-human.portfolio-exports/v1" or data["worker_id"] != installed_worker_id(worker) or data["identity_sha256"] != worker_identity_sha256(worker):
+        raise ValueError("portfolio export store belongs to another worker")
+    if type(data["revision"]) is not int or data["revision"] < 1 or not isinstance(data["snapshots"], dict) or len(data["snapshots"]) > BATCH_CAP:
+        raise ValueError("portfolio export store exceeds its bounded schema")
+    for digest, snapshot in data["snapshots"].items():
+        if not SHA256_HEX.fullmatch(str(digest)):
+            raise ValueError("portfolio export key is invalid")
+        validate_portfolio_snapshot_shape(snapshot)
+        if snapshot["snapshot_sha256"] != digest:
+            raise ValueError("portfolio export key differs from snapshot")
+        if snapshot["item"]["source_worker_id"] != data["worker_id"] or snapshot["item"]["source_identity_sha256"] != data["identity_sha256"]:
+            raise ValueError("portfolio export source identity differs")
+    expected = canonical_json_sha256({key: value for key, value in data.items() if key != "store_sha256"})
+    if data["store_sha256"] != expected:
+        raise ValueError("portfolio export store integrity differs")
+    return data
+
+
+def portfolio_prepare_exports(data):
+    data["store_sha256"] = canonical_json_sha256({key: value for key, value in data.items() if key != "store_sha256"})
+    return data
+
+
+def portfolio_snapshot(args):
+    worker = safe_worker(args.worker)
+    lease, _ = require_lease(worker, args.session_id, args.expected_state_hash)
+    request = read_governor_input(args.request, "portfolio snapshot request")
+    require_exact_fields(request, {
+        "blocked_reason", "done_condition", "evidence_sha256", "fact_owner_ids",
+        "fresh_until_utc", "last_completed_step", "next_action", "operating_unit", "owner", "purpose",
+        "schema", "status", "summary_pointer_approval_reference", "summary_pointer_sha256",
+        "target_chief_identity_sha256", "target_chief_worker_id",
+    }, "portfolio snapshot request")
+    if request["schema"] != "ai-human.portfolio-snapshot-request/v1":
+        raise ValueError("unsupported portfolio snapshot request schema")
+    if not SAFE_ID.fullmatch(str(request["target_chief_worker_id"])) or not SHA256_HEX.fullmatch(str(request["target_chief_identity_sha256"])):
+        raise ValueError("portfolio snapshot requires an exact Chief target")
+    timestamp = now_utc()
+    metadata = install_metadata(worker)
+    if request["owner"] != lease["actor"] or request["owner"] != clean(parameter_value(worker, "Human owner"), "human owner"):
+        raise ValueError("portfolio owner differs from the source worker")
+    if request["purpose"] != metadata.get("purpose_scope") or request["operating_unit"] not in metadata.get("operating_units", []):
+        raise ValueError("portfolio purpose or operating unit differs from the source worker")
+    if not isinstance(request["fact_owner_ids"], list) or len(request["fact_owner_ids"]) > map_batch_cap(worker):
+        raise ValueError("portfolio fact-owner list exceeds the current effective batch cap")
+    evidence_relative = safe_relative(args.evidence_file, "portfolio evidence file")
+    evidence_path = worker_target(worker, evidence_relative, "portfolio evidence file")
+    if evidence_path.is_symlink() or not evidence_path.is_file() or evidence_path.stat().st_size > 1024 * 1024:
+        raise ValueError("portfolio evidence must be a bounded regular source-worker file")
+    if sha256(evidence_path) != request["evidence_sha256"]:
+        raise ValueError("portfolio evidence digest differs from the selected file")
+    if request["summary_pointer_sha256"] is not None:
+        personal = work_map(worker)
+        map_require_active(personal)
+        if personal["owner"] != lease["actor"] or personal["status"] != "CONFIRMED":
+            raise ValueError("personal-context pointer requires the current confirmed owner map")
+        if personal["confirmation"]["context_sha256"] != request["summary_pointer_sha256"]:
+            raise ValueError("personal-context pointer differs from the current confirmed map")
+        for entry in personal["entries"].values():
+            if entry["status"] not in {"ACTIVE", "SUPERSEDED"}:
+                continue
+            source = personal["sources"].get(entry["source_id"])
+            if not source or source["status"] != "APPROVED":
+                raise ValueError("personal-context pointer contains revoked evidence")
+            if source["mode"] == "SUMMARY" and map_source_snapshot(worker, personal, source["id"]).get("sha256") != entry["source_sha256"]:
+                raise ValueError("personal-context pointer source changed; reconfirm first")
+    item = {
+        "access_class": "COMPANY_SHARED", "blocked_reason": request["blocked_reason"],
+        "current_task_id": live_task_id(worker) or "NO_ACTIVE_TASK",
+        "done_condition": request["done_condition"], "evidence_sha256": request["evidence_sha256"],
+        "fact_owner_ids": request["fact_owner_ids"], "fresh_until_utc": request["fresh_until_utc"],
+        "last_completed_step": request["last_completed_step"], "next_action": request["next_action"],
+        "operating_unit": request["operating_unit"], "owner": request["owner"],
+        "purpose": request["purpose"], "source_identity_sha256": worker_identity_sha256(worker),
+        "source_recorded_utc": timestamp, "source_worker_id": installed_worker_id(worker),
+        "source_state_sha256": portfolio_status_source_sha256(worker),
+        "status": request["status"], "status_sha256": "",
+        "summary_pointer_approval_reference": request["summary_pointer_approval_reference"],
+        "summary_pointer_sha256": request["summary_pointer_sha256"], "updated_utc": timestamp,
+    }
+    item["status_sha256"] = canonical_json_sha256(chief_status_material(item))
+    validate_chief_item(item)
+    snapshot = {
+        "item": item, "schema": "ai-human.portfolio-snapshot/v1", "snapshot_sha256": "",
+        "target_chief_identity_sha256": request["target_chief_identity_sha256"],
+        "target_chief_worker_id": request["target_chief_worker_id"],
+    }
+    snapshot["snapshot_sha256"] = canonical_json_sha256({key: value for key, value in snapshot.items() if key != "snapshot_sha256"})
+    exports = portfolio_exports(worker, required=False) or {
+        "identity_sha256": worker_identity_sha256(worker), "revision": 0,
+        "schema": "ai-human.portfolio-exports/v1", "snapshots": {},
+        "store_sha256": "", "worker_id": installed_worker_id(worker),
+    }
+    current = parse_recorded_utc(timestamp, "portfolio export time")
+    for digest, existing in list(exports["snapshots"].items()):
+        if parse_recorded_utc(existing["item"]["fresh_until_utc"], "portfolio export freshness") <= current:
+            del exports["snapshots"][digest]
+    if snapshot["snapshot_sha256"] not in exports["snapshots"] and len(exports["snapshots"]) >= map_batch_cap(worker):
+        raise ValueError("portfolio exports reached the current effective batch cap")
+    exports["snapshots"][snapshot["snapshot_sha256"]] = snapshot
+    exports["revision"] += 1
+    portfolio_prepare_exports(exports)
+    h53_commit(worker, lease, PORTFOLIO_EXPORTS_PATH, exports)
+    print("- snapshot SHA-256: " + snapshot["snapshot_sha256"])
+    print("- target Chief worker: " + snapshot["target_chief_worker_id"])
+    print("- transport: NOT_SENT; H55 receipt still required for remote delivery")
+
+
+def validate_portfolio_snapshot(snapshot, chief_worker):
+    validate_portfolio_snapshot_shape(snapshot)
+    if snapshot["target_chief_worker_id"] != installed_worker_id(chief_worker) or snapshot["target_chief_identity_sha256"] != worker_identity_sha256(chief_worker):
+        raise ValueError("portfolio snapshot is addressed to another Chief")
+    if parse_recorded_utc(snapshot["item"]["fresh_until_utc"], "portfolio freshness") <= parse_recorded_utc(now_utc(), "now"):
+        raise ValueError("portfolio snapshot is stale")
+    return snapshot
+
+
+def validate_portfolio_source(snapshot, source_worker):
+    """Authenticate a governed export against its owning worker, never caller claims."""
+    validate_portfolio_snapshot_shape(snapshot)
+    item = snapshot["item"]
+    source_id = item["source_worker_id"]
+    if worker_mode(source_worker) != MODE_ACTIVE:
+        raise ValueError("portfolio source worker is not active")
+    for transaction in (
+        H53_TX_PATH, WORK_MAP_TX_PATH, EXCHANGE_MUTATION_PATH,
+        UPDATE_SCHEDULE_TRANSACTION_PATH,
+    ):
+        if worker_target(source_worker, transaction, "portfolio source transaction").exists():
+            raise ValueError("portfolio source has an interrupted transaction; recover it before intake")
+    if transaction_file(source_worker).exists() or downgrade_transaction_path(source_worker).exists():
+        raise ValueError("portfolio source has an interrupted lifecycle transaction")
+    if installed_worker_id(source_worker) != source_id or worker_identity_sha256(source_worker) != item["source_identity_sha256"]:
+        raise ValueError("portfolio source identity cannot be authenticated")
+    metadata = install_metadata(source_worker)
+    if (
+        item["owner"] != clean(parameter_value(source_worker, "Human owner"), "human owner")
+        or item["purpose"] != metadata.get("purpose_scope")
+        or item["operating_unit"] not in metadata.get("operating_units", [])
+    ):
+        raise ValueError("portfolio source owner, purpose or operating unit changed")
+    if portfolio_status_source_sha256(source_worker) != item["source_state_sha256"]:
+        raise ValueError("portfolio source state changed; create a fresh status snapshot")
+    source_exports = portfolio_exports(source_worker, required=True)
+    source_snapshot = source_exports["snapshots"].get(snapshot["snapshot_sha256"])
+    if source_snapshot != snapshot:
+        raise ValueError("snapshot bytes are not an immutable governed source export")
+    if item["summary_pointer_sha256"] is not None:
+        source_map = work_map(source_worker)
+        map_require_active(source_map)
+        if (
+            source_map["status"] != "CONFIRMED"
+            or source_map["confirmation"]["context_sha256"] != item["summary_pointer_sha256"]
+        ):
+            raise ValueError("portfolio personal-context pointer is no longer current")
+        for entry in source_map["entries"].values():
+            if entry["status"] not in {"ACTIVE", "SUPERSEDED"}:
+                continue
+            source = source_map["sources"].get(entry["source_id"])
+            if not source or source["status"] != "APPROVED":
+                raise ValueError("portfolio personal-context pointer contains revoked evidence")
+            if (
+                source["mode"] == "SUMMARY"
+                and map_source_snapshot(source_worker, source_map, source["id"]).get("sha256")
+                != entry["source_sha256"]
+            ):
+                raise ValueError("portfolio personal-context source changed; reconfirm first")
+            if parse_recorded_utc(entry["review_due"], "portfolio personal-context review") <= parse_recorded_utc(now_utc(), "now"):
+                raise ValueError("portfolio personal-context evidence review is overdue; reconfirm first")
+    source_lease = read_lease(source_worker, required=False)
+    if source_lease and source_lease.get("state_hash") != controlled_state_hash(source_worker):
+        raise ValueError("source worker controlled state differs from its lease")
+    if parse_recorded_utc(item["fresh_until_utc"], "portfolio freshness") <= parse_recorded_utc(now_utc(), "now"):
+        raise ValueError("portfolio snapshot is stale")
+    return snapshot
+
+
+def require_portfolio_transport_snapshot(snapshot):
+    if snapshot["item"]["summary_pointer_sha256"] is not None:
+        raise ValueError("H54 personal-context pointers are not eligible for portfolio transport")
+
+
+def portfolio_export_artifact(args):
+    worker = safe_worker(args.worker)
+    lease, _ = require_lease(worker, args.session_id, args.expected_state_hash)
+    if not SHA256_HEX.fullmatch(str(args.snapshot_sha256)):
+        raise ValueError("portfolio export requires an exact governed snapshot digest")
+    snapshot = portfolio_exports(worker, required=True)["snapshots"].get(args.snapshot_sha256)
+    if snapshot is None:
+        raise ValueError("selected portfolio snapshot is not in the governed source export store")
+    require_portfolio_transport_snapshot(snapshot)
+    validate_portfolio_source(snapshot, worker)
+    if snapshot["item"]["owner"] != lease["actor"]:
+        raise ValueError("portfolio artifact export requires its source owner")
+    relative = safe_relative(args.output, "portfolio artifact output")
+    reject_exchange_sensitive_path(relative, "portfolio artifact output")
+    if relative.suffix.casefold() != ".json":
+        raise ValueError("portfolio artifact output must be a JSON file")
+    target = worker_target(worker, relative, "portfolio artifact output")
+    encoded = (json.dumps(snapshot, indent=2, sort_keys=True) + "\n").encode("utf-8")
+    if len(encoded) > 1024 * 1024:
+        raise ValueError("portfolio artifact exceeds the one-megabyte intake limit")
+    created = False
+    if target.exists():
+        if not target.is_file() or target.stat().st_size != len(encoded) or target.read_bytes() != encoded:
+            raise ValueError("portfolio artifact output already exists with different bytes")
+    else:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        descriptor, stage_name = tempfile.mkstemp(prefix=".portfolio-export-", dir=target.parent)
+        stage = Path(stage_name)
+        try:
+            with os.fdopen(descriptor, "wb") as stream:
+                stream.write(encoded)
+                stream.flush()
+                os.fsync(stream.fileno())
+            reject_exchange_sensitive_source(relative, stage, "portfolio artifact")
+            # A hard-link commit publishes complete bytes atomically without replacing
+            # an existing destination. Unsupported filesystems fail closed.
+            os.link(stage, target)
+            created = True
+            if os.name != "nt":
+                directory_fd = os.open(target.parent, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+                try:
+                    os.fsync(directory_fd)
+                finally:
+                    os.close(directory_fd)
+        finally:
+            stage.unlink()
+    print("AI-HUMAN PORTFOLIO ARTIFACT: " + ("PASS" if created else "IDEMPOTENT"))
+    print("- artifact: " + relative.as_posix())
+    print("- artifact SHA-256: " + hashlib.sha256(encoded).hexdigest())
+    print("- snapshot SHA-256: " + snapshot["snapshot_sha256"])
+    print("- transport: NOT_SENT; explicit H55 send, acknowledgement and acceptance required")
+    print("- new expected-state hash: " + lease["state_hash"])
+
+
+def chief_portfolio_upsert(args):
+    worker = safe_worker(args.worker)
+    lease, _ = require_lease(worker, args.session_id, args.expected_state_hash)
+    source_worker = safe_worker(args.source_worker)
+    if source_worker == worker:
+        raise ValueError("Chief portfolio source must be a separate worker")
+    with worker_operation_mutex(source_worker):
+        chief_portfolio_apply(
+            worker, lease, read_governor_input(args.snapshot, "portfolio snapshot"), source_worker
+        )
+
+
+def chief_portfolio_import_exchange(args):
+    worker = safe_worker(args.worker)
+    lease, _ = require_lease(worker, args.session_id, args.expected_state_hash)
+    source_worker = safe_worker(args.source_worker)
+    if source_worker == worker:
+        raise ValueError("Chief portfolio source must be a separate worker")
+    exchange = safe_exchange_root(args.exchange)
+    # main holds the Chief mutex. Fail-fast source and relay mutexes keep source
+    # status, acceptance and current authorization stable through the H53 commit.
+    with worker_operation_mutex(source_worker), worker_operation_mutex(exchange):
+        exchange_require_status(exchange, {"ACTIVE", "PAUSED"})
+        envelope, recipient = exchange_authorized_envelope(worker, exchange, args.message_id)
+        _config, chief_entry = verify_joined_worker(worker, exchange)
+        validate_exchange_entry_for_worker(worker, chief_entry, _config)
+        _config, source_entry = verify_joined_worker(source_worker, exchange)
+        validate_exchange_entry_for_worker(source_worker, source_entry, _config)
+        request = envelope["request"]
+        if (
+            request["route"] != "CHIEF_MEDIATED" or request["message_type"] != "STATUS"
+            or request["recipients"] != [recipient] or chief_entry["access_class"] != "CHIEF"
+        ):
+            raise ValueError("portfolio intake requires one addressed CHIEF_MEDIATED STATUS recipient")
+        if parse_recorded_utc(request["expires_utc"], "portfolio envelope expiry") <= datetime.datetime.now(datetime.timezone.utc):
+            raise ValueError("portfolio exchange envelope is expired")
+        for directory in ("received", "accepted"):
+            receipt = require_exchange_local_record(worker, directory, args.message_id)
+            if receipt["envelope_sha256"] != envelope["envelope_sha256"]:
+                raise ValueError("portfolio " + directory + " receipt differs from its envelope")
+        if exchange_current_state(exchange, args.message_id, recipient) != "ACCEPTED":
+            raise ValueError("portfolio exchange message must remain ACCEPTED by the relay")
+        attachments = envelope["attachments"]
+        if len(attachments) != 1 or attachments[0]["media_type"] != "application/json":
+            raise ValueError("portfolio intake requires exactly one application/json attachment")
+        attachment = path_without_symlinks(
+            exchange_message_root(exchange, args.message_id),
+            safe_relative(attachments[0]["bundle_path"], "portfolio bundle path"),
+            "portfolio exchange bundle",
+        )
+        with attachment.open("rb") as stream:
+            bundle_bytes = stream.read(1024 * 1024 + 1)
+        if len(bundle_bytes) > 1024 * 1024:
+            raise ValueError("portfolio exchange bundle exceeds one megabyte")
+        if (
+            len(bundle_bytes) != attachments[0]["size_bytes"]
+            or hashlib.sha256(bundle_bytes).hexdigest() != attachments[0]["sha256"]
+        ):
+            raise ValueError("portfolio exchange bundle integrity differs at intake")
+        snapshot = validate_portfolio_snapshot(strict_json_loads(bundle_bytes.decode("utf-8")), worker)
+        require_portfolio_transport_snapshot(snapshot)
+        if (
+            envelope["sender_worker_id"] != snapshot["item"]["source_worker_id"]
+            or envelope["sender_identity_sha256"] != snapshot["item"]["source_identity_sha256"]
+            or envelope["sender_task_id"] != snapshot["item"]["current_task_id"]
+            or source_entry["worker_id"] != envelope["sender_worker_id"]
+        ):
+            raise ValueError("portfolio snapshot source differs from its authenticated sender")
+        # H55 sender_state_sha256 binds controlled state at send; H53 binds only
+        # status-source files. They are deliberately different digest domains.
+        policy = exchange_current_envelope_access(exchange, envelope, recipient)
+        if any(source_entry[field] != chief_entry[field] for field in (
+            "company", "legal_entity", "operating_unit", "human_owner"
+        )) and policy["cross_boundary_authorization_reference"] == "NONE":
+            raise ValueError("cross-boundary portfolio intake requires exact H55 authorization")
+        chief_portfolio_apply(worker, lease, snapshot, source_worker, exchange_policy=policy)
+
+
+def chief_portfolio_apply(worker, lease, snapshot, source_worker, exchange_policy=None):
+    data = chief_state(worker)
+    if data["config"]["status"] != "ENABLED" or data["config"]["owner"] != lease["actor"]:
+        raise ValueError("portfolio intake requires the enabled Chief owner")
+    chief_prune_briefs(data)
+    validate_portfolio_snapshot(snapshot, worker)
+    validate_portfolio_source(snapshot, source_worker)
+    item = snapshot["item"]
+    source_id = item["source_worker_id"]
+    source_metadata = install_metadata(source_worker)
+    chief_metadata = install_metadata(worker)
+    if (
+        source_metadata.get("company") != chief_metadata.get("company")
+        or source_metadata.get("legal_entity") != chief_metadata.get("legal_entity")
+        or item["operating_unit"] not in chief_metadata.get("operating_units", [])
+        or item["owner"] != data["config"]["owner"]
+    ) and (exchange_policy is None or exchange_policy["cross_boundary_authorization_reference"] == "NONE"):
+        raise ValueError("cross-company, entity, operating-unit or owner intake requires an exact current H55 route")
+    if source_id in data["revoked_worker_ids"]:
+        raise ValueError("portfolio access for this worker is revoked")
+    existing = data["portfolio"].get(source_id)
+    if existing and existing["source_identity_sha256"] != item["source_identity_sha256"]:
+        raise ValueError("portfolio worker ID cannot be rebound to another identity")
+    if existing and existing["status_sha256"] == item["status_sha256"] and existing["source_recorded_utc"] == item["source_recorded_utc"]:
+        print("AI-HUMAN CHIEF PORTFOLIO: NO_CHANGE")
+        print("- new expected-state hash: " + lease["state_hash"])
+        return
+    if not existing and len(data["portfolio"]) >= data["config"]["max_workers"]:
+        raise ValueError("Chief portfolio reached its approved worker limit")
+    memory_store(worker, required=False)  # Storage records do not consume this intake's action budget.
+    if existing and parse_recorded_utc(item["source_recorded_utc"], "portfolio source time") < parse_recorded_utc(existing["source_recorded_utc"], "current portfolio source time"):
+        raise ValueError("portfolio snapshot is older than current state")
+    data["portfolio"][source_id] = item
+    data["config"]["updated_utc"] = now_utc()
+    data["revision"] += 1
+    chief_prepare_state(data)
+    h53_commit(worker, lease, CHIEF_STATE_PATH, data)
+    print("- portfolio worker: " + source_id)
+    print("- cross-worker write: NONE; received metadata snapshot only")
+
+
+def chief_portfolio_control(args):
+    worker = safe_worker(args.worker)
+    lease, _ = require_lease(worker, args.session_id, args.expected_state_hash)
+    data = chief_state(worker)
+    if data["config"]["owner"] != lease["actor"]:
+        raise ValueError("Chief portfolio control requires its owner")
+    chief_prune_briefs(data)
+    worker_id = governor_safe_id(args.item, "portfolio worker ID")
+    if args.action == "REVOKE":
+        data["portfolio"].pop(worker_id, None)
+        if worker_id not in data["revoked_worker_ids"]:
+            data["revoked_worker_ids"].append(worker_id)
+    elif args.action == "ALLOW":
+        if not args.approval_reference:
+            raise ValueError("restoring portfolio access requires explicit approval")
+        map_text(args.approval_reference, "portfolio access approval")
+        if worker_id not in data["revoked_worker_ids"]:
+            raise ValueError("portfolio worker access is not revoked")
+        data["revoked_worker_ids"].remove(worker_id)
+    elif args.action == "FORGET":
+        if worker_id not in data["portfolio"]:
+            raise ValueError("portfolio worker does not exist")
+        del data["portfolio"][worker_id]
+    else:
+        raise ValueError("unsupported Chief portfolio action")
+    if args.action in {"REVOKE", "FORGET"}:
+        # Historical briefs are derived copies of portfolio metadata. Exact access
+        # removal/forgetting therefore removes those copies in the same atomic state.
+        data["briefs"] = {}
+        data["last_material"] = {}
+    data["config"]["updated_utc"] = now_utc()
+    data["revision"] += 1
+    chief_prepare_state(data)
+    h53_commit(worker, lease, CHIEF_STATE_PATH, data)
+    print("- portfolio action: " + args.action)
+    print("- worker: " + worker_id)
+
+
+def chief_material(worker, data):
+    material = {}
+    now = parse_recorded_utc(now_utc(), "Chief brief time")
+    project_map = []
+    for worker_id, item in sorted(data["portfolio"].items()):
+        shown = dict(item)
+        if parse_recorded_utc(item["fresh_until_utc"], "portfolio freshness") <= now:
+            shown["status"] = "STALE"
+        material["worker:" + worker_id] = (
+            canonical_json_sha256({"status": "STALE", "status_sha256": item["status_sha256"]})
+            if shown["status"] == "STALE" else item["status_sha256"]
+        )
+        project_map.append({
+            "current_task_id": shown["current_task_id"], "fresh_until_utc": shown["fresh_until_utc"],
+            "next_action": shown["next_action"], "owner": shown["owner"],
+            "purpose": shown["purpose"], "status": shown["status"], "worker_id": worker_id,
+        })
+    contradictions = []
+    memory = memory_store(worker, required=False)
+    if memory and memory["config"]["status"] == "ENABLED":
+        subjects = {}
+        for record in memory["records"].values():
+            if record["scope"] != "GLOBAL_SHARED" or record["status"] not in {"ACTIVE", "DISPUTED"}:
+                continue
+            if parse_recorded_utc(record["review_due_utc"], "global memory review") <= now:
+                continue
+            if record["valid_to_utc"] and parse_recorded_utc(record["valid_to_utc"], "global memory valid-to") <= now:
+                continue
+            subjects.setdefault(record["subject"], []).append(record)
+            material["fact:" + record["id"]] = record["record_sha256"]
+        for subject, records in sorted(subjects.items()):
+            if len({record["text"] for record in records}) > 1:
+                contradictions.append({
+                    "fact_ids": sorted(record["id"] for record in records),
+                    "fact_owners": sorted(set(record["source_owner"] for record in records)),
+                    "subject": subject,
+                })
+    return material, project_map, contradictions
+
+
+def chief_brief(args):
+    worker = safe_worker(args.worker)
+    lease, _ = require_lease(worker, args.session_id, args.expected_state_hash)
+    data = chief_state(worker)
+    if data["config"]["status"] != "ENABLED" or data["config"]["owner"] != lease["actor"]:
+        raise ValueError("Chief brief requires the enabled Chief owner")
+    print("- evidence: RETAINED_SNAPSHOTS; live source status and current route authorization UNKNOWN (not rechecked by brief)")
+    pruned = chief_prune_briefs(data)
+    material, project_map, contradictions = chief_material(worker, data)
+    material_sha = canonical_json_sha256(material)
+    if data["last_material"].get("material_sha256") == material_sha and not args.handoff_bindings:
+        if pruned:
+            data["config"]["updated_utc"] = now_utc()
+            data["revision"] += 1
+            chief_prepare_state(data)
+            h53_commit(worker, lease, CHIEF_STATE_PATH, data)
+            lease = read_lease(worker)
+        print("AI-HUMAN CHIEF BRIEF: NO_CHANGE")
+        print("- no material change; remain quiet")
+        print("- new expected-state hash: " + lease["state_hash"])
+        return
+    previous = data["last_material"].get("items", {})
+    all_changed = sorted(
+        (key for key in set(previous) | set(material) if previous.get(key) != material.get(key)),
+        # Drain obsolete keys before additions so repeated source changes cannot
+        # grow the checkpoint indefinitely while removals wait behind new facts.
+        key=lambda key: (key in material, key),
+    )
+    effective_cap = map_batch_cap(worker)
+    exceptions = []
+    owner_next = []
+    handoffs = []
+    bindings = {}
+    if args.handoff_bindings:
+        binding_data = read_governor_input(args.handoff_bindings, "Chief handoff bindings")
+        require_exact_fields(binding_data, {"bindings", "schema"}, "Chief handoff bindings")
+        if binding_data["schema"] != "ai-human.chief-handoff-bindings/v1" or not isinstance(binding_data["bindings"], list) or len(binding_data["bindings"]) > map_batch_cap(worker):
+            raise ValueError("Chief handoff bindings exceed their schema or current batch cap")
+        for binding in binding_data["bindings"]:
+            require_exact_fields(binding, {
+                "approval_reference", "expires_utc", "from_worker_id", "target_worker_id"
+            }, "Chief handoff binding")
+            source_id = governor_safe_id(binding["from_worker_id"], "Chief handoff source")
+            target_id = governor_safe_id(binding["target_worker_id"], "Chief handoff target")
+            if source_id == target_id or source_id in bindings:
+                raise ValueError("Chief handoff binding is duplicated or self-targeted")
+            source_item = data["portfolio"].get(source_id)
+            target_item = data["portfolio"].get(target_id)
+            now = parse_recorded_utc(now_utc(), "Chief handoff creation time")
+            expiry = parse_recorded_utc(binding["expires_utc"], "Chief handoff expiry")
+            if not source_item or source_item["status"] != "BLOCKED" or parse_recorded_utc(source_item["fresh_until_utc"], "Chief handoff source freshness") <= now:
+                raise ValueError("Chief handoff source is not a current blocked portfolio item")
+            if not target_item or target_id in data["revoked_worker_ids"] or target_item["status"] in {"RETIRED", "PAUSED"} or parse_recorded_utc(target_item["fresh_until_utc"], "Chief handoff target freshness") <= now:
+                raise ValueError("Chief handoff target is unavailable, revoked or stale")
+            if not now < expiry <= now + datetime.timedelta(days=7):
+                raise ValueError("Chief handoff binding expiry must be within seven days")
+            map_text(binding["approval_reference"], "Chief handoff approval")
+            bindings[source_id] = binding
+    # Explicit handoff sources consume page slots even when their material is
+    # unchanged. Never silently lose a requested proposal behind pagination.
+    binding_keys = {"worker:" + worker_id for worker_id in bindings}
+    changed = sorted(
+        [key for key in all_changed if key in binding_keys]
+        + [key for key in all_changed if key not in binding_keys][:effective_cap - len(binding_keys)]
+    )
+    page_keys = set(changed) | binding_keys
+    removed = [key for key in changed if key not in material]
+    checkpoint = dict(previous)
+    for key in changed:
+        if key in material:
+            checkpoint[key] = material[key]
+        else:
+            checkpoint.pop(key, None)
+    checkpoint_sha = canonical_json_sha256(checkpoint)
+    project_map = [item for item in project_map if "worker:" + item["worker_id"] in page_keys]
+    fact_changes = []
+    changed_subjects = set()
+    memory = memory_store(worker, required=False)
+    records = memory["records"] if memory and memory["config"]["status"] == "ENABLED" else {}
+    for key in changed:
+        if not key.startswith("fact:"):
+            continue
+        record = records.get(key.removeprefix("fact:"))
+        if record is not None:
+            changed_subjects.add(record["subject"])
+            if key in material:
+                fact_changes.append({
+                    "fact_id": record["id"], "source_owner": record["source_owner"],
+                    "status": record["status"], "subject": record["subject"],
+                })
+    contradictions = [
+        item for item in contradictions if item["subject"] in changed_subjects
+    ]
+    for item in project_map:
+        if item["status"] in {"BLOCKED", "WAITING_OWNER", "STALE", "RETIRED"}:
+            exceptions.append({"status": item["status"], "worker_id": item["worker_id"]})
+        if item["status"] == "WAITING_OWNER":
+            owner_next.append({"next_action": item["next_action"], "worker_id": item["worker_id"]})
+        if item["status"] == "BLOCKED" and item["worker_id"] in bindings:
+            binding = bindings[item["worker_id"]]
+            target = data["portfolio"][binding["target_worker_id"]]
+            handoffs.append({
+                "activation": "NOT_SENT", "approval_reference": binding["approval_reference"],
+                "done_condition": data["portfolio"][item["worker_id"]]["done_condition"],
+                "expires_utc": binding["expires_utc"], "external_effects": False,
+                "from_worker_id": item["worker_id"], "gate_zero": "NOT_GRANTED",
+                "route": "H55_REQUIRED", "target_identity_sha256": target["source_identity_sha256"],
+                "target_state_sha256": target["source_state_sha256"],
+                "target_worker_id": binding["target_worker_id"],
+                "type": "TARGET_BOUND_HANDOFF_PROPOSAL", "write_authority": "NONE",
+            })
+    for contradiction in contradictions:
+        exceptions.append({"status": "CONTRADICTORY_GLOBAL_FACT", "subject": contradiction["subject"]})
+        owner_next.append({"next_action": "Named fact owner resolves the contradiction", "subject": contradiction["subject"]})
+    timestamp = now_utc()
+    sequence = data["revision"] + 1
+    brief_id = "brief-" + timestamp.casefold() + "-r" + f"{sequence:012d}"
+    if brief_id in data["briefs"]:
+        raise ValueError("Chief brief sequence conflicts with retained history")
+    brief = {
+        "brief_sha256": "", "changed": changed, "contradictions": contradictions,
+        "exceptions": exceptions, "handoff_proposals": handoffs, "id": brief_id,
+        "material_sha256": checkpoint_sha, "owner_next": owner_next,
+        "project_map": project_map, "recorded_utc": timestamp,
+        "schema": "ai-human.chief-brief/v2", "sequence": sequence,
+        "fact_changes": fact_changes, "removed": removed,
+        "remaining_changes": len(all_changed) - len(changed), "view": "CHANGED_ITEMS_PAGE",
+    }
+    h53_seal(brief, field="brief_sha256")
+    validate_chief_brief(brief, data["config"])
+    if len(data["briefs"]) >= BATCH_CAP:
+        oldest = min(data["briefs"], key=lambda key: data["briefs"][key]["sequence"])
+        del data["briefs"][oldest]
+    data["briefs"][brief_id] = brief
+    data["last_material"] = {"items": checkpoint, "material_sha256": checkpoint_sha}
+    data["config"]["updated_utc"] = timestamp
+    data["revision"] += 1
+    chief_prepare_state(data)
+    h53_commit(worker, lease, CHIEF_STATE_PATH, data)
+    print("- brief: " + json.dumps(brief, sort_keys=True))
+    print("- authority: READ_ONLY; handoffs are proposals and were NOT_SENT")
+    if len(all_changed) > len(changed):
+        print("- continuation: " + str(len(all_changed) - len(changed)) + " material changes remain for the next bounded brief")
+
+
+def chief_show(args):
+    worker = safe_worker(args.worker)
+    data = chief_state(worker, required=False)
+    if not data:
+        print(json.dumps({"schema": "ai-human.chief-summary/v1", "status": "OFF"}, indent=2, sort_keys=True))
+        return
+    if args.owner != data["config"]["owner"]:
+        raise ValueError("Chief state belongs to another owner")
+    print(json.dumps({
+        "authority": "READ_ONLY", "brief_count": len(data["briefs"]),
+        "current_route_authorization": "UNKNOWN", "live_source_status": "UNKNOWN",
+        "evidence": "RETAINED_SNAPSHOTS",
+        "portfolio_count": len(data["portfolio"]), "revoked_count": len(data["revoked_worker_ids"]),
+        "schema": "ai-human.chief-summary/v1", "status": data["config"]["status"],
+        "worker_id": data["worker_id"],
+    }, indent=2, sort_keys=True))
+
+
 def improvement_target(worker, relative, label):
     relative = safe_relative(relative, label)
     key = portable_key(relative)
@@ -1074,7 +6687,8 @@ def improvement_task_prompt(config):
         + "Use only these approved local source categories: "
         + ", ".join(config["approved_sources"]) + ". Read their current configuration from "
         ".ai-human/improvement/config.json. Acquire the exclusive lifecycle session lease and keep "
-        "the returned expected-state hash current. Keep independently executed items at 25 or fewer. "
+        "the returned expected-state hash current. Use the configured Work Governor for independently "
+        "executed items; a legacy unconfigured worker falls back to its installed hard ceiling. "
         "When research is enabled, create an ai-human.research-batch/v1 file containing only "
         "ai-human.research-receipt/v2 records, then import it with improvement-research-import. "
         "Run improvement-run in SCHEDULED mode with now-local exactly equal to the verified next run "
@@ -1643,6 +7257,10 @@ def validate_improvement_state(worker):
 def controlled_state_paths(worker):
     paths = [worker / name for name in COORDINATION_STATE_FILES]
     paths.append(worker / "AUTOMATIONS.md")
+    worker_target(worker, WORK_MAP_PATH, "controlled private map")
+    personal_path = worker / WORK_MAP_PATH
+    if personal_path.is_file():
+        paths.append(personal_path)
     capability_root = worker / CAPABILITY_ROOT
     if capability_root.is_dir():
         paths.extend(path for path in capability_root.rglob("*.json") if path.is_file())
@@ -1658,6 +7276,45 @@ def controlled_state_paths(worker):
             path = worker / relative
             if path.is_file():
                 paths.append(path)
+    governor_root = worker / GOVERNOR_ROOT
+    if governor_root.is_dir():
+        paths.extend(path for path in governor_root.rglob("*.json") if path.is_file())
+    continuity_root = worker / CONTINUITY_ROOT
+    if continuity_root.is_dir():
+        for path in continuity_root.rglob("*"):
+            if not path.is_file():
+                continue
+            relative = path.relative_to(continuity_root)
+            if relative.parts[:1] == ("outbox",) and len(relative.parts) >= 2:
+                package = continuity_root / "outbox" / relative.parts[1]
+                packet_path = package / "handoff.json"
+                # A handoff becomes controlled state only when its signed envelope is
+                # atomically committed. Partial copies remain recoverable after a crash.
+                if not packet_path.is_file() or packet_path.is_symlink():
+                    continue
+            paths.append(path)
+    resource_root = worker / RESOURCE_ROOT
+    if resource_root.is_dir():
+        paths.extend(path for path in resource_root.rglob("*.json") if path.is_file())
+    exchange_root = worker / EXCHANGE_LOCAL_ROOT
+    if exchange_root.is_dir():
+        paths.extend(path for path in exchange_root.rglob("*.json") if path.is_file())
+    update_root = worker / UPDATE_SCHEDULE_ROOT
+    if update_root.is_dir():
+        for relative in (
+            UPDATE_SCHEDULE_CONFIG_PATH, UPDATE_SCHEDULE_NATIVE_PATH,
+            UPDATE_PILOT_APPROVAL_PATH, UPDATE_LEGACY_MIGRATION_PATH,
+        ):
+            path = worker / relative
+            if path.is_file():
+                paths.append(path)
+        definitions = worker / UPDATE_SCHEDULE_DEFINITIONS_ROOT
+        if definitions.is_dir():
+            paths.extend(path for path in definitions.iterdir() if path.is_file())
+    for private_root in (MEMORY_ROOT, CHIEF_ROOT):
+        root = worker / private_root
+        if root.is_dir():
+            paths.extend(path for path in root.rglob("*.json") if path.is_file())
     return sorted(paths, key=lambda path: path.relative_to(worker).as_posix())
 
 
@@ -1726,8 +7383,5352 @@ def unique_receipt(worker, prefix):
     return path
 
 
+def read_governor_input(raw_path, label):
+    path = Path(raw_path).expanduser().resolve()
+    if not path.is_file():
+        raise ValueError(label + " is not a file: " + str(path))
+    if path.stat().st_size > 1024 * 1024:
+        raise ValueError(label + " exceeds one megabyte")
+    try:
+        return read_json(path)
+    except Exception as exc:
+        raise ValueError("invalid " + label + ": " + str(exc)) from exc
+
+
+def write_governor_policy_history(worker, policy):
+    digest = canonical_json_sha256(policy)
+    filename = (
+        f"v{policy['policy_version']:06d}-{policy['policy_id']}-{digest[:12]}.json"
+    )
+    path = governor_path(
+        worker, GOVERNOR_POLICIES_ROOT / filename, "governor policy history target"
+    )
+    if path.exists():
+        if not path.is_file() or read_json(path) != policy:
+            raise ValueError("governor policy history target already contains different data")
+        return path
+    path.parent.mkdir(parents=True, exist_ok=True)
+    atomic_json(path, policy)
+    return path
+
+
+def installed_worker_batch_cap(worker):
+    metadata = install_metadata(worker)
+    value = metadata.get("batch_cap")
+    if value is None:
+        parameter = parameter_value(worker, "Batch cap")
+        match = re.match(r"^([1-9]\d*)\b", parameter)
+        if not match:
+            raise ValueError("installed worker batch cap is unavailable")
+        value = int(match.group(1))
+    if isinstance(value, bool) or not isinstance(value, int) or not 1 <= value <= BATCH_CAP:
+        raise ValueError("installed worker batch cap is invalid")
+    return value
+
+
+def current_worker_effective_batch_cap(worker):
+    effective = installed_worker_batch_cap(worker)
+    policy = governor_policy(worker, required=False)
+    if not policy:
+        return effective
+    effective = min(effective, policy["hard_ceiling"])
+    plans = governor_plan_records(worker)
+    if plans:
+        effective = min(effective, plans[-1]["effective_batch"])
+    else:
+        effective = min(effective, policy["pilot_size"])
+    return effective
+
+
+def governor_configure(args):
+    worker = safe_worker(args.worker)
+    lease, _state_hash = require_lease(
+        worker, args.session_id, args.expected_state_hash
+    )
+    proposed = validate_governor_policy(
+        read_governor_input(args.policy, "governor policy source")
+    )
+    if proposed["owner"] != lease["actor"]:
+        raise ValueError("governor policy owner must match the active lease actor")
+    worker_cap = installed_worker_batch_cap(worker)
+    if proposed["hard_ceiling"] > worker_cap:
+        raise ValueError(
+            "governor hard ceiling cannot exceed the worker policy cap of " + str(worker_cap)
+        )
+    current = governor_policy(worker, required=False)
+    if current:
+        failures = validate_governor_state(worker)
+        if failures:
+            raise ValueError("cannot replace invalid governor state: " + "; ".join(failures))
+        if proposed["policy_id"] != current["policy_id"]:
+            raise ValueError("governor policy id cannot change in place")
+        if proposed["owner"] != current["owner"]:
+            raise ValueError("governor policy owner cannot change in place")
+        if proposed["policy_version"] != current["policy_version"] + 1:
+            raise ValueError("governor policy version must advance by exactly one")
+        if proposed["approval_reference"] == current["approval_reference"]:
+            raise ValueError("a new governor policy version needs a new approval reference")
+        for existing in governor_policy_catalog(worker).values():
+            if (
+                existing["policy_version"] == proposed["policy_version"]
+                and existing != proposed
+            ):
+                raise ValueError(
+                    "a different pending governor policy already uses that version"
+                )
+        write_governor_policy_history(worker, current)
+    elif proposed["policy_version"] != 1:
+        raise ValueError("the first governor policy version must be 1")
+    history_path = write_governor_policy_history(worker, proposed)
+    policy_path = governor_path(
+        worker, GOVERNOR_POLICY_PATH, "governor policy target"
+    )
+    policy_path.parent.mkdir(parents=True, exist_ok=True)
+    atomic_json(policy_path, proposed)
+    updated = refresh_lease_state(worker, lease)
+    print("AI-HUMAN WORK GOVERNOR CONFIGURATION: PASS")
+    print("- policy: " + proposed["policy_id"])
+    print("- policy version: " + str(proposed["policy_version"]))
+    print("- hard safety ceiling: " + str(proposed["hard_ceiling"]))
+    print("- history: " + str(history_path))
+    print("- new expected-state hash: " + updated["state_hash"])
+
+
+def governor_outcomes_by_plan(outcomes):
+    return {record["plan_id"]: record for record in outcomes}
+
+
+def governor_recent_scope_history(plans, outcomes, policy_hash, request):
+    outcomes_by_plan = governor_outcomes_by_plan(outcomes)
+    history = []
+    for plan in plans:
+        if (
+            plan["policy_sha256"] == policy_hash
+            and plan["kind"] == request["kind"]
+            and plan["request"]["effect"] == request["effect"]
+            and plan["plan_id"] in outcomes_by_plan
+        ):
+            history.append(outcomes_by_plan[plan["plan_id"]])
+    return history
+
+
+def governor_decision(policy, request, plans, outcomes):
+    policy_hash = canonical_json_sha256(policy)
+    history = governor_recent_scope_history(plans, outcomes, policy_hash, request)
+    unknown = [
+        name for name in GOVERNOR_SIGNAL_NAMES
+        if request["signals"][name]["status"] == "UNKNOWN"
+    ]
+    confirmed_allowances = {
+        name: request["signals"][name]["allowance"]
+        for name in GOVERNOR_SIGNAL_NAMES
+        if request["signals"][name]["status"] == "CONFIRMED"
+    }
+    observation_codes = {item["code"] for item in request["observations"]}
+    consecutive_successes = 0
+    for outcome in reversed(history):
+        if outcome["status"] != "SUCCESS":
+            break
+        consecutive_successes += 1
+    latest_status = history[-1]["status"] if history else None
+    state = "PILOT"
+    reasons = []
+
+    if request["effect"] == "GATE_ZERO":
+        state = "HALT"
+        reasons.append("Gate 0 work cannot be batch-authorized by the governor")
+    elif observation_codes & GOVERNOR_HALT_OBSERVATIONS:
+        state = "HALT"
+        reasons.append(
+            "halt observation: "
+            + ", ".join(sorted(observation_codes & GOVERNOR_HALT_OBSERVATIONS))
+        )
+    elif latest_status in GOVERNOR_FATAL_OUTCOMES:
+        state = "HALT"
+        reasons.append("latest recorded outcome requires owner recovery: " + latest_status)
+    elif request["effect"] == "EXTERNAL_NON_IDEMPOTENT" and unknown:
+        state = "HALT"
+        reasons.append(
+            "non-idempotent external work cannot proceed while "
+            + ", ".join(unknown) + " is UNKNOWN"
+        )
+    elif unknown and (
+        policy[
+            "unknown_read_only" if request["effect"] == "READ_ONLY" else
+            "unknown_local_reversible" if request["effect"] == "LOCAL_REVERSIBLE" else
+            "unknown_external"
+        ] == "HALT"
+    ):
+        if request["effect"] == "READ_ONLY":
+            unknown_rule = policy["unknown_read_only"]
+        elif request["effect"] == "LOCAL_REVERSIBLE":
+            unknown_rule = policy["unknown_local_reversible"]
+        else:
+            unknown_rule = policy["unknown_external"]
+        state = unknown_rule
+        reasons.append(
+            ", ".join(unknown) + " is UNKNOWN; owner policy requires " + unknown_rule
+        )
+    elif observation_codes & GOVERNOR_BACKOFF_OBSERVATIONS:
+        state = "BACKOFF"
+        reasons.append(
+            "backoff observation: "
+            + ", ".join(sorted(observation_codes & GOVERNOR_BACKOFF_OBSERVATIONS))
+        )
+    elif latest_status and latest_status != "SUCCESS":
+        state = "BACKOFF"
+        reasons.append("latest recorded outcome requires backoff: " + latest_status)
+    elif unknown:
+        state = "PILOT"
+        reasons.append(
+            ", ".join(unknown) + " is UNKNOWN; owner policy requires PILOT"
+        )
+    elif consecutive_successes >= policy["promotion_successes"]:
+        state = "STEADY"
+        reasons.append(
+            "owner evidence rule satisfied by " + str(consecutive_successes)
+            + " consecutive successful outcome receipt(s)"
+        )
+    else:
+        state = "PILOT"
+        reasons.append(
+            "pilot required until " + str(policy["promotion_successes"])
+            + " consecutive successful outcome receipt(s) exist"
+        )
+
+    if state == "HALT":
+        effective = 0
+    else:
+        limits = [
+            policy["hard_ceiling"], request["independent_units"],
+            *confirmed_allowances.values(),
+        ]
+        effective = min(limits)
+        if state in {"PILOT", "BACKOFF"}:
+            effective = min(effective, policy["pilot_size"])
+    limiting = sorted(
+        name for name, allowance in confirmed_allowances.items()
+        if effective and allowance == effective
+    )
+    sizes = []
+    remaining = request["independent_units"] if effective else 0
+    while remaining:
+        size = min(remaining, effective)
+        sizes.append(size)
+        remaining -= size
+    return {
+        "batch_sizes": sizes,
+        "decision_reasons": reasons,
+        "effective_batch": effective,
+        "governor_state": state,
+        "limiting_signals": limiting,
+    }
+
+
+def governor_plan(args):
+    worker = safe_worker(args.worker)
+    lease, _state_hash = require_lease(
+        worker, args.session_id, args.expected_state_hash
+    )
+    failures = validate_governor_state(worker)
+    if failures:
+        raise ValueError("cannot plan with invalid governor state: " + "; ".join(failures))
+    policy = governor_policy(worker)
+    request = validate_governor_request(
+        read_governor_input(args.request, "governor request source")
+    )
+    plans = governor_plan_records(worker)
+    outcomes = governor_outcome_records(worker, plans)
+    outcomes_by_plan = governor_outcomes_by_plan(outcomes)
+    outstanding = next(
+        (
+            plan for plan in plans
+            if plan["effective_batch"] > 0 and plan["plan_id"] not in outcomes_by_plan
+        ),
+        None,
+    )
+    if outstanding:
+        raise ValueError(
+            "plan " + outstanding["plan_id"]
+            + " is still open; record its outcome before planning more work"
+        )
+    if any(plan["request"]["request_id"] == request["request_id"] for plan in plans):
+        raise ValueError("governor request id was already planned")
+    decision = governor_decision(policy, request, plans, outcomes)
+    sequence = len(plans) + 1
+    plan_id = f"plan-{sequence:06d}-{request['request_id']}"
+    if len(plan_id.encode("utf-8")) > 100:
+        plan_id = f"plan-{sequence:06d}-{canonical_json_sha256(request)[:20]}"
+    record = {
+        "batch_sizes": decision["batch_sizes"],
+        "created_utc": now_utc(),
+        "decision_reasons": decision["decision_reasons"],
+        "effective_batch": decision["effective_batch"],
+        "embedded_entries_are_batch_units": False,
+        "governor_state": decision["governor_state"],
+        "independent_units": request["independent_units"],
+        "kind": request["kind"],
+        "limiting_signals": decision["limiting_signals"],
+        "plan_id": plan_id,
+        "policy_id": policy["policy_id"],
+        "policy_sha256": canonical_json_sha256(policy),
+        "policy_version": policy["policy_version"],
+        "preserve_artifact_intact": request["kind"] in INTACT_ARTIFACT_BATCH_KINDS,
+        "prior_plan_sha256": plans[-1]["record_sha256"] if plans else "NONE",
+        "request": request,
+        "request_sha256": canonical_json_sha256(request),
+        "safety_ceiling": policy["hard_ceiling"],
+        "schema": "ai-human.work-governor-plan/v1",
+        "sequence": sequence,
+    }
+    record["record_sha256"] = governed_record_sha256(record)
+    target = governor_path(
+        worker, GOVERNOR_PLANS_ROOT / f"{sequence:06d}-{plan_id}.json",
+        "governor plan target",
+    )
+    target.parent.mkdir(parents=True, exist_ok=True)
+    atomic_json(target, record)
+    updated = refresh_lease_state(worker, lease)
+    print("AI-HUMAN WORK GOVERNOR PLAN: PASS")
+    print("- plan id: " + plan_id)
+    print("- governor state: " + record["governor_state"])
+    print("- hard safety ceiling: " + str(record["safety_ceiling"]))
+    print("- effective batch: " + str(record["effective_batch"]))
+    print(
+        "- limiting signals: "
+        + (", ".join(record["limiting_signals"]) or "NONE")
+    )
+    print(
+        "- batch sizes: "
+        + (", ".join(str(size) for size in record["batch_sizes"]) or "NONE")
+    )
+    print(
+        "- preserve artifact intact: "
+        + ("YES" if record["preserve_artifact_intact"] else "NO")
+    )
+    for reason in record["decision_reasons"]:
+        print("- reason: " + reason)
+    print("- receipt: " + str(target))
+    print("- new expected-state hash: " + updated["state_hash"])
+
+
+def governor_record(args):
+    worker = safe_worker(args.worker)
+    lease, _state_hash = require_lease(
+        worker, args.session_id, args.expected_state_hash
+    )
+    failures = validate_governor_state(worker)
+    if failures:
+        raise ValueError("cannot record into invalid governor state: " + "; ".join(failures))
+    request = validate_governor_outcome_request(
+        read_governor_input(args.outcome, "governor outcome source")
+    )
+    plans = governor_plan_records(worker)
+    outcomes = governor_outcome_records(worker, plans)
+    plan = next((item for item in plans if item["plan_id"] == request["plan_id"]), None)
+    if not plan:
+        raise ValueError("governor outcome references an unknown plan")
+    if plan["effective_batch"] == 0:
+        raise ValueError("a halted governor plan has no executable outcome to record")
+    if any(item["plan_id"] == plan["plan_id"] for item in outcomes):
+        raise ValueError("governor plan already has an immutable outcome")
+    if request["completed_units"] > plan["independent_units"]:
+        raise ValueError("governor completed units exceed the plan")
+    if (
+        request["status"] == "SUCCESS"
+        and request["completed_units"] != plan["independent_units"]
+    ):
+        raise ValueError("a successful governor outcome must complete every planned unit")
+    if (
+        request["status"] == "PARTIAL"
+        and not 0 < request["completed_units"] < plan["independent_units"]
+    ):
+        raise ValueError("a partial governor outcome must complete some but not all units")
+    sequence = len(outcomes) + 1
+    record = {
+        "completed_units": request["completed_units"],
+        "created_utc": now_utc(),
+        "evidence": request["evidence"],
+        "plan_id": plan["plan_id"],
+        "plan_record_sha256": plan["record_sha256"],
+        "prior_outcome_sha256": outcomes[-1]["record_sha256"] if outcomes else "NONE",
+        "schema": "ai-human.work-governor-outcome/v1",
+        "sequence": sequence,
+        "status": request["status"],
+    }
+    record["record_sha256"] = governed_record_sha256(record)
+    target = governor_path(
+        worker, GOVERNOR_OUTCOMES_ROOT / f"{sequence:06d}-{plan['plan_id']}.json",
+        "governor outcome target",
+    )
+    target.parent.mkdir(parents=True, exist_ok=True)
+    atomic_json(target, record)
+    updated = refresh_lease_state(worker, lease)
+    print("AI-HUMAN WORK GOVERNOR OUTCOME: PASS")
+    print("- plan id: " + plan["plan_id"])
+    print("- outcome: " + record["status"])
+    print("- completed units: " + str(record["completed_units"]))
+    print("- receipt: " + str(target))
+    print("- new expected-state hash: " + updated["state_hash"])
+
+
+def governor_show(args):
+    worker = safe_worker(args.worker)
+    policy = governor_policy(worker, required=False)
+    print("AI-HUMAN WORK GOVERNOR")
+    if not policy:
+        print("- status: UNCONFIGURED")
+        return
+    failures = validate_governor_state(worker)
+    if failures:
+        raise ValueError("invalid governor state: " + "; ".join(failures))
+    plans = governor_plan_records(worker)
+    outcomes = governor_outcome_records(worker, plans)
+    outcomes_by_plan = governor_outcomes_by_plan(outcomes)
+    outstanding = [
+        plan["plan_id"] for plan in plans
+        if plan["effective_batch"] > 0 and plan["plan_id"] not in outcomes_by_plan
+    ]
+    print("- status: CONFIGURED")
+    print("- policy: " + policy["policy_id"])
+    print("- policy version: " + str(policy["policy_version"]))
+    print("- hard safety ceiling: " + str(policy["hard_ceiling"]))
+    print("- latest state: " + (plans[-1]["governor_state"] if plans else "NOT YET PLANNED"))
+    print("- outstanding plan: " + (outstanding[0] if outstanding else "NONE"))
+    print("- recorded outcomes: " + str(len(outcomes)))
+
+
+def continuity_path(worker, relative, label):
+    relative = safe_relative(relative, label)
+    key = portable_key(relative)
+    prefix = portable_key(CONTINUITY_ROOT) + "/"
+    if not key.startswith(prefix):
+        raise ValueError(label + " is outside continuity state")
+    return worker_target(worker, relative, label)
+
+
+def installed_worker_id(worker):
+    value = install_metadata(worker).get("worker_id")
+    if not value:
+        raise ValueError("worker id is not configured; configure the control plane first")
+    return governor_safe_id(value, "installed worker id")
+
+
+def write_continuity_policy_history(worker, policy):
+    digest = canonical_json_sha256(policy)
+    filename = (
+        f"v{policy['policy_version']:06d}-{policy['policy_id']}-{digest[:12]}.json"
+    )
+    path = continuity_path(
+        worker, CONTINUITY_POLICIES_ROOT / filename, "continuity policy history target"
+    )
+    if path.exists():
+        if not path.is_file() or read_json(path) != policy:
+            raise ValueError("continuity policy history target contains different data")
+        return path
+    path.parent.mkdir(parents=True, exist_ok=True)
+    atomic_json(path, policy)
+    return path
+
+
+def continuity_configure(args):
+    worker = safe_worker(args.worker)
+    lease, _state_hash = require_lease(
+        worker, args.session_id, args.expected_state_hash
+    )
+    proposed = validate_continuity_policy(
+        read_governor_input(args.policy, "continuity policy source")
+    )
+    if proposed["owner"] != lease["actor"]:
+        raise ValueError("continuity policy owner must match the active lease actor")
+    current = continuity_policy(worker, required=False)
+    if current:
+        failures = validate_continuity_state(worker)
+        if failures:
+            raise ValueError("cannot replace invalid continuity state: " + "; ".join(failures))
+        if proposed["policy_id"] != current["policy_id"]:
+            raise ValueError("continuity policy id cannot change in place")
+        if proposed["owner"] != current["owner"]:
+            raise ValueError("continuity policy owner cannot change in place")
+        if proposed["policy_version"] != current["policy_version"] + 1:
+            raise ValueError("continuity policy version must advance by exactly one")
+        if proposed["approval_reference"] == current["approval_reference"]:
+            raise ValueError("a new continuity policy version needs a new approval reference")
+        for existing in continuity_policy_catalog(worker).values():
+            if (
+                existing["policy_version"] == proposed["policy_version"]
+                and existing != proposed
+            ):
+                raise ValueError("a different pending continuity policy uses that version")
+        write_continuity_policy_history(worker, current)
+    elif proposed["policy_version"] != 1:
+        raise ValueError("the first continuity policy version must be 1")
+    history_path = write_continuity_policy_history(worker, proposed)
+    policy_path = continuity_path(
+        worker, CONTINUITY_POLICY_PATH, "continuity policy target"
+    )
+    policy_path.parent.mkdir(parents=True, exist_ok=True)
+    atomic_json(policy_path, proposed)
+    updated = refresh_lease_state(worker, lease)
+    print("AI-HUMAN CONTINUITY CONFIGURATION: PASS")
+    print("- policy: " + proposed["policy_id"])
+    print("- policy version: " + str(proposed["policy_version"]))
+    print(
+        "- context soft limit used percent: "
+        + str(proposed["context_soft_limit_used_percent"])
+    )
+    print("- history: " + str(history_path))
+    print("- new expected-state hash: " + updated["state_hash"])
+
+
+def context_check(args):
+    worker = safe_worker(args.worker)
+    lease, _state_hash = require_lease(
+        worker, args.session_id, args.expected_state_hash
+    )
+    failures = validate_continuity_state(worker)
+    if failures:
+        raise ValueError("cannot check invalid continuity state: " + "; ".join(failures))
+    existing_latch = context_checkpoint_latch(worker)
+    if existing_latch:
+        raise ValueError(
+            "context checkpoint is already required by observation "
+            + existing_latch["observation_id"] + "; create and consume its handoff"
+        )
+    policy = continuity_policy(worker)
+    observation = validate_context_observation(
+        read_governor_input(args.observation, "context observation source")
+    )
+    observed = parse_recorded_utc(
+        observation["signal"]["observed_utc"], "context signal observed_utc"
+    )
+    if abs(datetime.datetime.now(datetime.timezone.utc) - observed) > datetime.timedelta(
+        seconds=policy["context_signal_max_age_seconds"]
+    ):
+        raise ValueError("context signal is outside the owner-configured freshness window")
+    worker_id = installed_worker_id(worker)
+    if observation["worker_id"] != worker_id:
+        raise ValueError("context observation targets another worker")
+    current_task = live_task_id(worker)
+    if not current_task:
+        raise ValueError("context guard requires one live task")
+    if observation["task_id"] != current_task:
+        raise ValueError("context observation targets another or stale task")
+    records = context_records(worker)
+    if any(
+        record["observation"]["observation_id"] == observation["observation_id"]
+        for record in records
+    ):
+        raise ValueError("context observation id was already recorded")
+    decision = context_decision(policy, observation)
+    sequence = len(records) + 1
+    record = {
+        **decision,
+        "created_utc": now_utc(),
+        "observation": observation,
+        "observation_sha256": canonical_json_sha256(observation),
+        "policy_sha256": canonical_json_sha256(policy),
+        "prior_record_sha256": records[-1]["record_sha256"] if records else "NONE",
+        "schema": "ai-human.context-decision/v1",
+        "sequence": sequence,
+    }
+    record["record_sha256"] = governed_record_sha256(record)
+    target = continuity_path(
+        worker,
+        CONTEXT_OBSERVATIONS_ROOT
+        / f"{sequence:06d}-{observation['observation_id']}.json",
+        "context decision target",
+    )
+    target.parent.mkdir(parents=True, exist_ok=True)
+    atomic_json(target, record)
+    if record["directive"] != "CONTINUE":
+        latch = {
+            "context_record_sha256": record["record_sha256"],
+            "created_utc": now_utc(),
+            "directive": record["directive"],
+            "observation_id": observation["observation_id"],
+            "schema": "ai-human.context-checkpoint-required/v1",
+            "task_id": observation["task_id"],
+            "worker_id": observation["worker_id"],
+        }
+        latch["record_sha256"] = governed_record_sha256(latch)
+        atomic_json(
+            continuity_path(
+                worker, CONTEXT_CHECKPOINT_LATCH_PATH, "context checkpoint latch target"
+            ),
+            latch,
+        )
+    updated = refresh_lease_state(worker, lease)
+    print("AI-HUMAN CONTEXT CHECK: PASS")
+    print("- context status: " + record["context_status"])
+    if record["context_status"] == "AVAILABLE":
+        print("- context used percent: " + str(record["context_used_percent"]))
+    print("- directive: " + record["directive"])
+    print("- accept new work: " + ("YES" if record["accept_new_work"] else "NO"))
+    print("- reason: " + record["decision_reason"])
+    print("- receipt: " + str(target))
+    print("- new expected-state hash: " + updated["state_hash"])
+
+
+def continuity_show(args):
+    worker = safe_worker(args.worker)
+    policy = continuity_policy(worker, required=False)
+    print("AI-HUMAN CONTINUITY GUARD")
+    if not policy:
+        print("- status: UNCONFIGURED")
+        return
+    failures = validate_continuity_state(worker)
+    if failures:
+        raise ValueError("invalid continuity state: " + "; ".join(failures))
+    records = context_records(worker)
+    print("- status: CONFIGURED")
+    print("- worker id: " + installed_worker_id(worker))
+    print("- policy version: " + str(policy["policy_version"]))
+    print(
+        "- context soft limit used percent: "
+        + str(policy["context_soft_limit_used_percent"])
+    )
+    if records:
+        print("- latest context status: " + records[-1]["context_status"])
+        print("- latest directive: " + records[-1]["directive"])
+    else:
+        print("- latest context status: NOT YET OBSERVED")
+
+
+def continuity_recover(args):
+    """Quarantine crash-left partial handoff copies without touching their sources."""
+    worker = safe_worker(args.worker)
+    lease, _state_hash = require_lease(
+        worker, args.session_id, args.expected_state_hash
+    )
+    continuity_policy(worker)
+    reason = bounded_clean(args.reason, "continuity recovery reason", 1000)
+    packages = incomplete_handoff_packages(worker)
+    if not packages:
+        raise ValueError("no incomplete handoff package is available to recover")
+    if len(packages) > BATCH_CAP:
+        raise ValueError("incomplete handoff recovery exceeds the hard safety ceiling")
+    backup_root = worker / ".ai-human/backups/continuity-recovery" / now_utc()
+    suffix = 2
+    while backup_root.exists():
+        backup_root = backup_root.with_name(backup_root.name + "-" + str(suffix))
+        suffix += 1
+    moved = []
+    records = []
+    try:
+        backup_root.mkdir(parents=True, exist_ok=False)
+        for package in packages:
+            files = []
+            total_size = 0
+            for path in sorted(package.rglob("*")):
+                if path.is_file():
+                    size = path.stat().st_size
+                    total_size += size
+                    files.append(
+                        {
+                            "path": path.relative_to(package).as_posix(),
+                            "sha256": sha256(path),
+                            "size_bytes": size,
+                        }
+                    )
+            if len(files) > BATCH_CAP or total_size > MAX_ARCHIVE_UNCOMPRESSED_BYTES:
+                raise ValueError(
+                    "incomplete handoff is too large for bounded recovery: " + package.name
+                )
+            target = backup_root / package.name
+            os.replace(package, target)
+            moved.append((package, target))
+            records.append(
+                {
+                    "backup_path": target.relative_to(worker).as_posix(),
+                    "files": files,
+                    "handoff_id": governor_safe_id(
+                        package.name, "incomplete handoff id"
+                    ),
+                    "source_path": package.relative_to(worker).as_posix(),
+                }
+            )
+        failures = validate_continuity_state(worker)
+        if failures:
+            raise ValueError(
+                "continuity recovery left invalid state: " + "; ".join(failures)
+            )
+        updated = refresh_lease_state(worker, lease)
+    except Exception:
+        for source, target in reversed(moved):
+            if target.exists() and not source.exists():
+                source.parent.mkdir(parents=True, exist_ok=True)
+                os.replace(target, source)
+        if backup_root.exists():
+            shutil.rmtree(backup_root)
+        atomic_json(lease_file(worker), lease)
+        raise
+    receipt = unique_receipt(worker, "continuity-recovery")
+    atomic_json(
+        receipt,
+        {
+            "packages": records,
+            "reason": reason,
+            "recovered_utc": now_utc(),
+            "schema": "ai-human.continuity-recovery/v1",
+            "source_files_preserved": True,
+            "validator": "PASS",
+        },
+    )
+    print("AI-HUMAN CONTINUITY RECOVERY: PASS")
+    print("- incomplete packages quarantined: " + str(len(records)))
+    print("- source files preserved: YES")
+    print("- backup: " + str(backup_root))
+    print("- receipt: " + str(receipt))
+    print("- new expected-state hash: " + updated["state_hash"])
+
+
+def handoff_create(args):
+    worker = safe_worker(args.worker)
+    lease, _state_hash = require_lease(
+        worker, args.session_id, args.expected_state_hash
+    )
+    failures = validate_continuity_state(worker)
+    if failures:
+        raise ValueError("cannot create handoff from invalid continuity state: " + "; ".join(failures))
+    policy = continuity_policy(worker)
+    request = validate_handoff_request(
+        read_governor_input(args.request, "handoff request source")
+    )
+    sender_worker_id = installed_worker_id(worker)
+    sender_task_id = live_task_id(worker)
+    if not sender_task_id or request["sender_task_id"] != sender_task_id:
+        raise ValueError("handoff sender task is not the current live task")
+    if request["active_gates"] != active_gate_ids(worker):
+        raise ValueError("handoff active gates differ from the worker gate profile")
+    created_utc = now_utc()
+    created = parse_recorded_utc(created_utc, "handoff created_utc")
+    expires = parse_recorded_utc(request["expires_utc"], "handoff expires_utc")
+    if expires <= created:
+        raise ValueError("handoff is already expired")
+    if expires - created > datetime.timedelta(minutes=policy["handoff_max_age_minutes"]):
+        raise ValueError("handoff expiry exceeds the owner policy maximum")
+    checkpoint_latch = context_checkpoint_latch(worker)
+    if request["purpose"] == "SESSION_CONTINUATION":
+        if not checkpoint_latch:
+            raise ValueError("session continuation requires a context checkpoint latch")
+        if request["intended_recipient_worker_id"] != sender_worker_id:
+            raise ValueError("session continuation must target the same worker")
+        if request["intended_recipient_task_id"] != sender_task_id:
+            raise ValueError("session continuation must target the same task")
+        if request["intended_recipient_identity_sha256"] != worker_identity_sha256(worker):
+            raise ValueError("session continuation recipient identity is stale")
+        if request["intended_recipient_state_sha256"] != resume_state_sha256(worker):
+            raise ValueError("session continuation recipient state is stale")
+        if (
+            checkpoint_latch["worker_id"] != sender_worker_id
+            or checkpoint_latch["task_id"] != sender_task_id
+        ):
+            raise ValueError("context checkpoint latch targets another worker or task")
+        checkpoint_latch_sha = checkpoint_latch["record_sha256"]
+    else:
+        checkpoint_latch_sha = "NONE"
+    package = continuity_path(
+        worker, CONTINUITY_OUTBOX_ROOT / request["handoff_id"],
+        "handoff package target",
+    )
+    if package.exists():
+        raise ValueError("handoff id already exists in the outbox")
+    required_files = []
+    package_created = False
+    try:
+        package.mkdir(parents=True, exist_ok=False)
+        package_created = True
+        total_size = 0
+        for source_record in request["required_files"]:
+            relative = safe_relative(source_record["path"], "handoff source file")
+            source = path_without_symlinks(worker, relative, "handoff source file")
+            if not source.is_file() or source.stat().st_size == 0:
+                raise ValueError("handoff source file is missing or empty: " + relative.as_posix())
+            if sha256(source) != source_record["sha256"]:
+                raise ValueError("handoff source file hash mismatch: " + relative.as_posix())
+            verify_handoff_file_schema(source, source_record["schema"])
+            total_size += source.stat().st_size
+            if total_size > MAX_ARCHIVE_UNCOMPRESSED_BYTES:
+                raise ValueError("handoff source files exceed the safe payload size")
+            bundle = Path("attachments") / relative
+            target = package / bundle
+            atomic_copy_file(source, target)
+            required_files.append(
+                {
+                    "bundle_path": bundle.as_posix(),
+                    "path": relative.as_posix(),
+                    "schema": source_record["schema"],
+                    "sha256": source_record["sha256"],
+                    "size_bytes": source.stat().st_size,
+                }
+            )
+        packet = {
+            **{field: request[field] for field in HANDOFF_REQUEST_FIELDS if field != "schema"},
+            "checkpoint_latch_sha256": checkpoint_latch_sha,
+            "created_utc": created_utc,
+            "delivery_state": "QUEUED",
+            "packet_sha256": "",
+            "policy": policy,
+            "policy_sha256": canonical_json_sha256(policy),
+            "required_files": required_files,
+            "result_location": "NOT_RECORDED",
+            "schema": "ai-human.handoff-packet/v1",
+            "sender_identity_sha256": worker_identity_sha256(worker),
+            "sender_state_sha256": resume_state_sha256(worker),
+            "sender_worker_id": sender_worker_id,
+        }
+        packet["packet_sha256"] = handoff_packet_sha256(packet)
+        packet_path = package / "handoff.json"
+        atomic_json(packet_path, packet)
+        validate_handoff_packet(packet, package, packet["packet_sha256"])
+        updated = refresh_lease_state(worker, lease)
+        ok, failures = validate_worker(worker, quiet=True)
+        if not ok:
+            raise ValueError("handoff checkpoint validation failed: " + "; ".join(failures))
+    except Exception:
+        if package_created and package.exists():
+            shutil.rmtree(package)
+        refresh_lease_state(worker, lease)
+        raise
+    lease_released = request["purpose"] == "SESSION_CONTINUATION"
+    if lease_released:
+        receipt = unique_receipt(worker, "session-handoff-release")
+        atomic_json(
+            receipt,
+            {
+                "handoff_id": packet["handoff_id"],
+                "packet_sha256": packet["packet_sha256"],
+                "released_utc": now_utc(),
+                "schema": "ai-human.session-handoff-release/v1",
+                "session_id": args.session_id,
+                "state_hash": updated["state_hash"],
+                "validator": "PASS",
+            },
+        )
+        lease_file(worker).unlink()
+    print("AI-HUMAN HANDOFF CREATE: PASS")
+    print("- handoff id: " + packet["handoff_id"])
+    print("- purpose: " + packet["purpose"])
+    print("- delivery state: QUEUED")
+    print("- packet: " + str(packet_path))
+    print("- packet SHA-256: " + packet["packet_sha256"])
+    print("- lease released: " + ("YES" if lease_released else "NO"))
+    if lease_released:
+        print("- final-state hash: " + updated["state_hash"])
+    else:
+        print("- new expected-state hash: " + updated["state_hash"])
+
+
+def handoff_consume(args):
+    worker = safe_worker(args.worker)
+    lease, _state_hash = require_lease(
+        worker, args.session_id, args.expected_state_hash
+    )
+    failures = validate_continuity_state(worker)
+    if failures:
+        raise ValueError("cannot consume handoff into invalid continuity state: " + "; ".join(failures))
+    packet_path = Path(args.packet).expanduser().resolve()
+    if not packet_path.is_file() or packet_path.is_symlink():
+        raise ValueError("handoff packet is not a regular file")
+    packet = validate_handoff_packet(
+        read_json(packet_path), packet_path.parent, args.expected_packet_sha256
+    )
+    recipient_worker_id = installed_worker_id(worker)
+    if packet["intended_recipient_worker_id"] != recipient_worker_id:
+        raise ValueError("handoff packet targets another worker")
+    recipient_identity = worker_identity_sha256(worker)
+    if packet["intended_recipient_identity_sha256"] != recipient_identity:
+        raise ValueError("handoff recipient identity fingerprint mismatch")
+    recipient_state = resume_state_sha256(worker)
+    if packet["intended_recipient_state_sha256"] != recipient_state:
+        raise ValueError("handoff recipient state fingerprint mismatch")
+    recipient_task = live_task_id(worker)
+    if not recipient_task or packet["intended_recipient_task_id"] != recipient_task:
+        raise ValueError("handoff packet targets another or stale recipient task")
+    acknowledgement = continuity_path(
+        worker, CONTINUITY_ACKS_ROOT / (packet["handoff_id"] + ".json"),
+        "handoff acknowledgement target",
+    )
+    latch = context_checkpoint_latch(worker)
+    if acknowledgement.exists():
+        acknowledgement_record = read_json(acknowledgement)
+        expected_ack = {
+            "handoff_id": packet["handoff_id"],
+            "packet_sha256": packet["packet_sha256"],
+            "recipient_identity_sha256": recipient_identity,
+            "recipient_state_sha256": recipient_state,
+            "recipient_task_id": recipient_task,
+            "recipient_worker_id": recipient_worker_id,
+            "schema": "ai-human.handoff-acknowledgement/v1",
+            "status": "ACCEPTED",
+        }
+        for field, value in expected_ack.items():
+            if acknowledgement_record.get(field) != value:
+                raise ValueError(
+                    "existing handoff acknowledgement differs from the packet: " + field
+                )
+        accepted = parse_recorded_utc(
+            acknowledgement_record.get("accepted_utc"), "handoff accepted_utc"
+        )
+        created = parse_recorded_utc(packet["created_utc"], "handoff created_utc")
+        expires = parse_recorded_utc(packet["expires_utc"], "handoff expires_utc")
+        if accepted < created or accepted > expires:
+            raise ValueError("existing handoff acknowledgement was not timely")
+        if (
+            packet["purpose"] != "SESSION_CONTINUATION"
+            or not latch
+            or latch["record_sha256"] != packet["checkpoint_latch_sha256"]
+        ):
+            raise ValueError("handoff was already acknowledged")
+        (worker / CONTEXT_CHECKPOINT_LATCH_PATH).unlink()
+        try:
+            updated = refresh_lease_state(worker, lease)
+            ok, failures = validate_worker(worker, quiet=True)
+            if not ok:
+                raise ValueError(
+                    "handoff acknowledgement recovery validation failed: "
+                    + "; ".join(failures)
+                )
+        except Exception:
+            atomic_json(worker / CONTEXT_CHECKPOINT_LATCH_PATH, latch)
+            atomic_json(lease_file(worker), lease)
+            raise
+        print("AI-HUMAN HANDOFF CONSUME: RECOVERED")
+        print("- handoff id: " + packet["handoff_id"])
+        print("- acknowledgement preserved: YES")
+        print("- checkpoint latch cleared: YES")
+        print("- new expected-state hash: " + updated["state_hash"])
+        return
+    if parse_recorded_utc(packet["expires_utc"], "handoff expires_utc") <= datetime.datetime.now(
+        datetime.timezone.utc
+    ):
+        raise ValueError("handoff packet is expired")
+    if packet["purpose"] == "SESSION_CONTINUATION":
+        if packet["sender_worker_id"] != recipient_worker_id:
+            raise ValueError("session continuation sender and recipient differ")
+        if not latch or latch["record_sha256"] != packet["checkpoint_latch_sha256"]:
+            raise ValueError("session continuation does not match the active checkpoint latch")
+    elif latch:
+        raise ValueError("recipient must finish its context checkpoint before accepting new work")
+    record = {
+        "accepted_utc": now_utc(),
+        "handoff_id": packet["handoff_id"],
+        "packet_sha256": packet["packet_sha256"],
+        "recipient_identity_sha256": recipient_identity,
+        "recipient_state_sha256": recipient_state,
+        "recipient_task_id": recipient_task,
+        "recipient_worker_id": recipient_worker_id,
+        "schema": "ai-human.handoff-acknowledgement/v1",
+        "status": "ACCEPTED",
+    }
+    record["record_sha256"] = governed_record_sha256(record)
+    acknowledgement.parent.mkdir(parents=True, exist_ok=True)
+    latch_backup = latch.copy() if latch else None
+    try:
+        atomic_json(acknowledgement, record)
+        if latch:
+            (worker / CONTEXT_CHECKPOINT_LATCH_PATH).unlink()
+        updated = refresh_lease_state(worker, lease)
+        ok, failures = validate_worker(worker, quiet=True)
+        if not ok:
+            raise ValueError("handoff acceptance validation failed: " + "; ".join(failures))
+    except Exception:
+        if acknowledgement.exists():
+            acknowledgement.unlink()
+        if latch_backup:
+            atomic_json(worker / CONTEXT_CHECKPOINT_LATCH_PATH, latch_backup)
+        refresh_lease_state(worker, lease)
+        raise
+    print("AI-HUMAN HANDOFF CONSUME: PASS")
+    print("- handoff id: " + packet["handoff_id"])
+    print("- delivery state: ACCEPTED")
+    print("- worker id: " + recipient_worker_id)
+    print("- task id: " + recipient_task)
+    print("- next action: " + packet["next_action"])
+    print("- acknowledgement: " + str(acknowledgement))
+    print("- new expected-state hash: " + updated["state_hash"])
+
+
+def resource_path(worker, relative, label):
+    relative = safe_relative(relative, label)
+    key = portable_key(relative)
+    prefix = portable_key(RESOURCE_ROOT) + "/"
+    if not key.startswith(prefix):
+        raise ValueError(label + " is outside resource state")
+    return worker_target(worker, relative, label)
+
+
+def write_resource_policy_history(worker, policy):
+    digest = canonical_json_sha256(policy)
+    filename = (
+        f"v{policy['policy_version']:06d}-{policy['policy_id']}-{digest[:12]}.json"
+    )
+    path = resource_path(
+        worker, RESOURCE_POLICIES_ROOT / filename, "resource policy history target"
+    )
+    if path.exists():
+        if not path.is_file() or read_json(path) != policy:
+            raise ValueError("resource policy history target contains different data")
+        return path
+    path.parent.mkdir(parents=True, exist_ok=True)
+    atomic_json(path, policy)
+    return path
+
+
+def resource_configure(args):
+    worker = safe_worker(args.worker)
+    lease, _state_hash = require_lease(
+        worker, args.session_id, args.expected_state_hash
+    )
+    proposed = validate_resource_policy(
+        read_governor_input(args.policy, "resource policy source")
+    )
+    if proposed["owner"] != lease["actor"]:
+        raise ValueError("resource policy owner must match the active lease actor")
+    worker_cap = installed_worker_batch_cap(worker)
+    if proposed["max_tab_candidates"] > worker_cap:
+        raise ValueError(
+            "resource tab candidate limit cannot exceed the worker policy cap of "
+            + str(worker_cap)
+        )
+    current = resource_policy(worker, required=False)
+    if current:
+        failures = validate_resource_state(worker)
+        if failures:
+            raise ValueError("cannot replace invalid resource state: " + "; ".join(failures))
+        if proposed["policy_id"] != current["policy_id"]:
+            raise ValueError("resource policy id cannot change in place")
+        if proposed["owner"] != current["owner"]:
+            raise ValueError("resource policy owner cannot change in place")
+        if proposed["policy_version"] != current["policy_version"] + 1:
+            raise ValueError("resource policy version must advance by exactly one")
+        if proposed["approval_reference"] == current["approval_reference"]:
+            raise ValueError("a new resource policy version needs a new approval reference")
+        for existing in resource_policy_catalog(worker).values():
+            if (
+                existing["policy_version"] == proposed["policy_version"]
+                and existing != proposed
+            ):
+                raise ValueError("a different pending resource policy uses that version")
+        write_resource_policy_history(worker, current)
+    elif proposed["policy_version"] != 1:
+        raise ValueError("the first resource policy version must be 1")
+    history_path = write_resource_policy_history(worker, proposed)
+    policy_path = resource_path(worker, RESOURCE_POLICY_PATH, "resource policy target")
+    policy_path.parent.mkdir(parents=True, exist_ok=True)
+    atomic_json(policy_path, proposed)
+    updated = refresh_lease_state(worker, lease)
+    print("AI-HUMAN RESOURCE STEWARD CONFIGURATION: PASS")
+    print("- policy: " + proposed["policy_id"])
+    print("- policy version: " + str(proposed["policy_version"]))
+    print("- browser discard allowed: " + ("YES" if proposed["allow_browser_discard"] else "NO"))
+    print("- force quit allowed: NO")
+    print("- history: " + str(history_path))
+    print("- new expected-state hash: " + updated["state_hash"])
+
+
+def run_resource_probe(command):
+    try:
+        result = subprocess.run(
+            command, text=True, capture_output=True, check=False, timeout=5
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return result.stdout.strip() if result.returncode == 0 and result.stdout.strip() else None
+
+
+def process_observation_for_host(system):
+    if system == "Windows":
+        output = run_resource_probe(["tasklist", "/FO", "CSV", "/NH"])
+        if not output:
+            return {"reason": "Windows process table was unavailable", "status": "UNKNOWN"}
+        items = []
+        for row in csv.reader(output.splitlines()):
+            if len(row) < 5:
+                continue
+            try:
+                pid = int(row[1])
+                rss = int(re.sub(r"[^0-9]", "", row[4]) or "0") * 1024
+            except ValueError:
+                continue
+            items.append({"name": row[0], "pid": pid, "rss_bytes": rss})
+    else:
+        output = run_resource_probe(["ps", "-axo", "pid=,rss=,comm="])
+        if not output:
+            return {"reason": "POSIX process table was unavailable", "status": "UNKNOWN"}
+        items = []
+        for line in output.splitlines():
+            parts = line.strip().split(None, 2)
+            if len(parts) != 3:
+                continue
+            try:
+                items.append(
+                    {"name": parts[2], "pid": int(parts[0]), "rss_bytes": int(parts[1]) * 1024}
+                )
+            except ValueError:
+                continue
+    items = sorted(items, key=lambda item: (-item["rss_bytes"], item["pid"]))[:BATCH_CAP]
+    return {"items": items, "source": "HOST_PROCESS_TABLE", "status": "AVAILABLE"}
+
+
+def byte_value(number, unit):
+    multipliers = {"K": 1024, "M": 1024 ** 2, "G": 1024 ** 3, "T": 1024 ** 4}
+    return int(decimal.Decimal(number) * multipliers[unit.upper()])
+
+
+def mac_resource_memory_and_swap():
+    total_text = run_resource_probe(["sysctl", "-n", "hw.memsize"])
+    pressure_text = run_resource_probe(["memory_pressure", "-Q"])
+    if total_text and pressure_text:
+        match = re.search(r"free percentage:\s*([0-9]+(?:\.[0-9]+)?)%", pressure_text, re.I)
+    else:
+        match = None
+    if total_text and match:
+        total = int(total_text)
+        free_percent = decimal.Decimal(match.group(1))
+        available = int(decimal.Decimal(total) * free_percent / decimal.Decimal(100))
+        memory = {
+            "available_bytes": available,
+            "evidence": "sysctl hw.memsize; memory_pressure -Q",
+            "status": "AVAILABLE",
+            "total_bytes": total,
+            "used_percent": float(decimal.Decimal(100) - free_percent),
+        }
+    else:
+        memory = {
+            "reason": "macOS total/free memory signal was unavailable",
+            "status": "UNKNOWN",
+        }
+    swap_text = run_resource_probe(["sysctl", "vm.swapusage"])
+    match = re.search(
+        r"total\s*=\s*([0-9.]+)([KMGT])\s+used\s*=\s*([0-9.]+)([KMGT])",
+        swap_text or "", re.I,
+    )
+    if match:
+        swap = {
+            "evidence": "sysctl vm.swapusage",
+            "status": "AVAILABLE",
+            "total_bytes": byte_value(match.group(1), match.group(2)),
+            "used_bytes": byte_value(match.group(3), match.group(4)),
+        }
+    else:
+        swap = {"reason": "macOS swap signal was unavailable", "status": "UNKNOWN"}
+    return memory, swap
+
+
+def linux_resource_memory_and_swap():
+    path = Path("/proc/meminfo")
+    if not path.is_file():
+        unknown = {"reason": "Linux /proc/meminfo was unavailable", "status": "UNKNOWN"}
+        return unknown, dict(unknown)
+    values = {}
+    for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+        match = re.match(r"^([A-Za-z_()]+):\s+([0-9]+)\s+kB$", line)
+        if match:
+            values[match.group(1)] = int(match.group(2)) * 1024
+    total = values.get("MemTotal")
+    available = values.get("MemAvailable")
+    if total and available is not None:
+        memory = {
+            "available_bytes": available,
+            "evidence": "/proc/meminfo MemTotal and MemAvailable",
+            "status": "AVAILABLE",
+            "total_bytes": total,
+            "used_percent": round((total - available) * 100 / total, 2),
+        }
+    else:
+        memory = {"reason": "Linux memory totals were unavailable", "status": "UNKNOWN"}
+    swap_total = values.get("SwapTotal")
+    swap_free = values.get("SwapFree")
+    if swap_total is not None and swap_free is not None:
+        swap = {
+            "evidence": "/proc/meminfo SwapTotal and SwapFree",
+            "status": "AVAILABLE",
+            "total_bytes": swap_total,
+            "used_bytes": swap_total - swap_free,
+        }
+    else:
+        swap = {"reason": "Linux swap totals were unavailable", "status": "UNKNOWN"}
+    return memory, swap
+
+
+def windows_resource_memory_and_swap():
+    try:
+        import ctypes
+
+        class MemoryStatus(ctypes.Structure):
+            _fields_ = [
+                ("length", ctypes.c_ulong), ("memory_load", ctypes.c_ulong),
+                ("total_physical", ctypes.c_ulonglong),
+                ("available_physical", ctypes.c_ulonglong),
+                ("total_page_file", ctypes.c_ulonglong),
+                ("available_page_file", ctypes.c_ulonglong),
+                ("total_virtual", ctypes.c_ulonglong),
+                ("available_virtual", ctypes.c_ulonglong),
+                ("available_extended_virtual", ctypes.c_ulonglong),
+            ]
+
+        status = MemoryStatus()
+        status.length = ctypes.sizeof(MemoryStatus)
+        if not ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(status)):
+            raise OSError("GlobalMemoryStatusEx failed")
+        memory = {
+            "available_bytes": status.available_physical,
+            "evidence": "Windows GlobalMemoryStatusEx",
+            "status": "AVAILABLE",
+            "total_bytes": status.total_physical,
+            "used_percent": status.memory_load,
+        }
+        swap = {
+            "reason": (
+                "Windows GlobalMemoryStatusEx commit counters do not isolate physical "
+                "pagefile or swap use"
+            ),
+            "status": "UNKNOWN",
+        }
+        return memory, swap
+    except Exception:
+        unknown = {"reason": "Windows memory counters were unavailable", "status": "UNKNOWN"}
+        return unknown, dict(unknown)
+
+
+def collect_local_resource_observation():
+    system = platform.system()
+    if system == "Darwin":
+        platform_name = "macOS"
+        memory, swap = mac_resource_memory_and_swap()
+    elif system == "Windows":
+        platform_name = "Windows"
+        memory, swap = windows_resource_memory_and_swap()
+    elif system == "Linux":
+        platform_name = "Linux"
+        memory, swap = linux_resource_memory_and_swap()
+    else:
+        platform_name = "UNKNOWN"
+        unknown = {"reason": "Unsupported operating system", "status": "UNKNOWN"}
+        memory, swap = unknown, dict(unknown)
+    return {
+        "browser": {
+            "reason": "No trusted browser resource adapter supplied tab state",
+            "status": "UNKNOWN",
+        },
+        "captured_utc": now_utc(),
+        "host": {
+            "platform": platform_name,
+            "source": "LOCAL_READ_ONLY_PROBE",
+            "status": "AVAILABLE",
+        },
+        "memory": memory,
+        "observation_id": "host-" + now_utc().casefold() + "-" + secrets.token_hex(3),
+        "pressure": {
+            "reason": "No stable host-classified NORMAL/WARN/CRITICAL signal was available",
+            "status": "UNKNOWN",
+        },
+        "processes": process_observation_for_host(system),
+        "schema": "ai-human.resource-observation/v1",
+        "swap": swap,
+    }
+
+
+def resource_snapshot(args):
+    worker = safe_worker(args.worker)
+    lease, _state_hash = require_lease(
+        worker, args.session_id, args.expected_state_hash
+    )
+    failures = validate_resource_state(worker)
+    if failures:
+        raise ValueError("cannot record snapshot in invalid resource state: " + "; ".join(failures))
+    policy = resource_policy(worker)
+    observation = (
+        validate_resource_observation(read_governor_input(args.observation, "resource observation source"))
+        if args.observation else validate_resource_observation(collect_local_resource_observation())
+    )
+    captured = parse_recorded_utc(observation["captured_utc"], "resource captured_utc")
+    if abs(datetime.datetime.now(datetime.timezone.utc) - captured) > datetime.timedelta(
+        minutes=policy["observation_max_age_minutes"]
+    ):
+        raise ValueError("resource observation is outside the owner-configured freshness window")
+    snapshots = resource_snapshots(worker)
+    if any(item["snapshot_id"] == observation["observation_id"] for item in snapshots):
+        raise ValueError("resource observation id was already recorded")
+    sequence = len(snapshots) + 1
+    record = {
+        "created_utc": now_utc(),
+        "observation": observation,
+        "observation_sha256": canonical_json_sha256(observation),
+        "policy_sha256": canonical_json_sha256(policy),
+        "prior_snapshot_sha256": snapshots[-1]["record_sha256"] if snapshots else "NONE",
+        "schema": "ai-human.resource-snapshot/v1",
+        "sequence": sequence,
+        "snapshot_id": observation["observation_id"],
+    }
+    record["record_sha256"] = governed_record_sha256(record)
+    target = resource_path(
+        worker, RESOURCE_SNAPSHOTS_ROOT / f"{sequence:06d}-{record['snapshot_id']}.json",
+        "resource snapshot target",
+    )
+    target.parent.mkdir(parents=True, exist_ok=True)
+    atomic_json(target, record)
+    updated = refresh_lease_state(worker, lease)
+    print("AI-HUMAN RESOURCE SNAPSHOT: PASS")
+    print("- snapshot id: " + record["snapshot_id"])
+    print("- platform: " + observation["host"].get("platform", "UNKNOWN"))
+    print("- pressure: " + observation["pressure"].get("level", "UNKNOWN"))
+    print(
+        "- swap used bytes: "
+        + str(observation["swap"].get("used_bytes", "UNKNOWN"))
+    )
+    print("- browser data: " + observation["browser"]["status"])
+    print("- top applications: " + str(len(observation["processes"].get("items", []))))
+    print("- new expected-state hash: " + updated["state_hash"])
+
+
+def resource_plan(args):
+    worker = safe_worker(args.worker)
+    lease, _state_hash = require_lease(
+        worker, args.session_id, args.expected_state_hash
+    )
+    failures = validate_resource_state(worker)
+    if failures:
+        raise ValueError("cannot plan from invalid resource state: " + "; ".join(failures))
+    policy = resource_policy(worker)
+    snapshots = resource_snapshots(worker)
+    if not snapshots:
+        raise ValueError("resource plan requires a current snapshot")
+    snapshot = snapshots[-1]
+    captured = parse_recorded_utc(
+        snapshot["observation"]["captured_utc"], "resource captured_utc"
+    )
+    if abs(datetime.datetime.now(datetime.timezone.utc) - captured) > datetime.timedelta(
+        minutes=policy["observation_max_age_minutes"]
+    ):
+        raise ValueError("latest resource snapshot is stale")
+    plans = resource_plan_records(worker, snapshots)
+    outcomes = resource_outcome_records(worker, plans, snapshots)
+    completed = {item["plan_id"] for item in outcomes}
+    outstanding = next(
+        (
+            plan for plan in plans
+            if plan["decision"] == "CLEANUP_CANDIDATES" and plan["plan_id"] not in completed
+        ),
+        None,
+    )
+    if outstanding:
+        raise ValueError("resource cleanup plan is still awaiting a truthful outcome")
+    decision = resource_plan_decision(policy, snapshot["observation"])
+    sequence = len(plans) + 1
+    plan_id = f"resource-plan-{sequence:06d}-{snapshot['snapshot_id']}"
+    if len(plan_id.encode("utf-8")) > 100:
+        plan_id = f"resource-plan-{sequence:06d}-{snapshot['record_sha256'][:16]}"
+    record = {
+        **decision,
+        "created_utc": now_utc(),
+        "plan_id": plan_id,
+        "policy_sha256": canonical_json_sha256(policy),
+        "prior_plan_sha256": plans[-1]["record_sha256"] if plans else "NONE",
+        "schema": "ai-human.resource-plan/v1",
+        "sequence": sequence,
+        "snapshot_id": snapshot["snapshot_id"],
+        "snapshot_sha256": snapshot["record_sha256"],
+    }
+    record["record_sha256"] = governed_record_sha256(record)
+    target = resource_path(
+        worker, RESOURCE_PLANS_ROOT / f"{sequence:06d}-{plan_id}.json",
+        "resource plan target",
+    )
+    target.parent.mkdir(parents=True, exist_ok=True)
+    atomic_json(target, record)
+    updated = refresh_lease_state(worker, lease)
+    print("AI-HUMAN RESOURCE PLAN: PASS")
+    print("- plan id: " + plan_id)
+    print("- decision: " + record["decision"])
+    print("- tab candidates: " + (
+        ", ".join(item["tab_id"] for item in record["tab_candidates"]) or "NONE"
+    ))
+    print("- application action: " + record["application_action"])
+    print("- execution: " + record["execution"])
+    for reason in record["reasons"]:
+        print("- reason: " + reason)
+    print("- new expected-state hash: " + updated["state_hash"])
+
+
+def resource_measurably_improved(before, after):
+    before_host = before["host"].get("platform")
+    after_host = after["host"].get("platform")
+    if before_host != after_host:
+        return False
+    pressure_order = {"NORMAL": 0, "WARN": 1, "CRITICAL": 2}
+    before_pressure = before["pressure"]
+    after_pressure = after["pressure"]
+    if before_pressure["status"] == after_pressure["status"] == "AVAILABLE":
+        if pressure_order[after_pressure["level"]] < pressure_order[before_pressure["level"]]:
+            return True
+    before_memory = before["memory"]
+    after_memory = after["memory"]
+    if before_memory["status"] == after_memory["status"] == "AVAILABLE":
+        return (
+            after_memory["available_bytes"] > before_memory["available_bytes"]
+            and context_percent(after_memory["used_percent"])
+            < context_percent(before_memory["used_percent"])
+        )
+    return False
+
+
+def resource_record(args):
+    worker = safe_worker(args.worker)
+    lease, _state_hash = require_lease(
+        worker, args.session_id, args.expected_state_hash
+    )
+    failures = validate_resource_state(worker)
+    if failures:
+        raise ValueError("cannot record into invalid resource state: " + "; ".join(failures))
+    request = validate_resource_outcome_request(
+        read_governor_input(args.outcome, "resource outcome source")
+    )
+    snapshots = resource_snapshots(worker)
+    plans = resource_plan_records(worker, snapshots)
+    outcomes = resource_outcome_records(worker, plans, snapshots)
+    plan = next((item for item in plans if item["plan_id"] == request["plan_id"]), None)
+    if not plan:
+        raise ValueError("resource outcome references an unknown plan")
+    if any(item["plan_id"] == plan["plan_id"] for item in outcomes):
+        raise ValueError("resource plan already has an immutable outcome")
+    if request["status"].startswith("EXECUTED_") and plan["decision"] != "CLEANUP_CANDIDATES":
+        raise ValueError("resource plan authorized no adapter cleanup action")
+    snapshot_by_id = {item["snapshot_id"]: item for item in snapshots}
+    if request["status"].startswith("EXECUTED_"):
+        after = snapshot_by_id.get(request["after_snapshot_id"])
+        before = snapshot_by_id[plan["snapshot_id"]]
+        if not after or after["sequence"] <= before["sequence"]:
+            raise ValueError("resource outcome requires a later after snapshot")
+        improved = resource_measurably_improved(before["observation"], after["observation"])
+        if request["status"] == "EXECUTED_IMPROVED" and not improved:
+            raise ValueError("after snapshot does not prove improvement")
+        if request["status"] == "EXECUTED_NO_IMPROVEMENT" and improved:
+            raise ValueError("after snapshot contradicts the no-improvement outcome")
+    sequence = len(outcomes) + 1
+    record = {
+        "after_snapshot_id": request["after_snapshot_id"],
+        "created_utc": now_utc(),
+        "evidence": request["evidence"],
+        "plan_id": plan["plan_id"],
+        "plan_record_sha256": plan["record_sha256"],
+        "prior_outcome_sha256": outcomes[-1]["record_sha256"] if outcomes else "NONE",
+        "schema": "ai-human.resource-outcome/v1",
+        "sequence": sequence,
+        "status": request["status"],
+    }
+    record["record_sha256"] = governed_record_sha256(record)
+    target = resource_path(
+        worker, RESOURCE_OUTCOMES_ROOT / f"{sequence:06d}-{plan['plan_id']}.json",
+        "resource outcome target",
+    )
+    target.parent.mkdir(parents=True, exist_ok=True)
+    atomic_json(target, record)
+    updated = refresh_lease_state(worker, lease)
+    print("AI-HUMAN RESOURCE OUTCOME: PASS")
+    print("- plan id: " + plan["plan_id"])
+    print("- outcome: " + record["status"])
+    print("- new expected-state hash: " + updated["state_hash"])
+
+
+def resource_show(args):
+    worker = safe_worker(args.worker)
+    policy = resource_policy(worker, required=False)
+    print("AI-HUMAN RESOURCE STEWARD")
+    if not policy:
+        print("- status: UNCONFIGURED")
+        return
+    failures = validate_resource_state(worker)
+    if failures:
+        raise ValueError("invalid resource state: " + "; ".join(failures))
+    snapshots = resource_snapshots(worker)
+    plans = resource_plan_records(worker, snapshots)
+    outcomes = resource_outcome_records(worker, plans, snapshots)
+    print("- status: CONFIGURED")
+    print("- policy version: " + str(policy["policy_version"]))
+    print("- force quit allowed: NO")
+    print("- latest snapshot: " + (snapshots[-1]["snapshot_id"] if snapshots else "NONE"))
+    print("- latest decision: " + (plans[-1]["decision"] if plans else "NONE"))
+    print("- recorded outcomes: " + str(len(outcomes)))
+
+
+def exchange_init(args):
+    exchange = safe_exchange_root(args.exchange, must_exist=False)
+    config = validate_exchange_config(
+        read_governor_input(args.config, "exchange config source")
+    )
+    if args.owner != config["owner"]:
+        raise ValueError("exchange initializer must be the configured owner")
+    if exchange.exists() and any(exchange.iterdir()):
+        raise ValueError("exchange target is not empty")
+    exchange.mkdir(parents=True, exist_ok=True)
+    for name in (
+        "directory", "join-receipts", "join-history", "policies", "policy-revocations",
+        "missions", "messages", "inboxes", "journal", "indexes", "control-events",
+        ".staging",
+    ):
+        (exchange / name).mkdir()
+    atomic_json(exchange / "config.json", config)
+    atomic_json(
+        exchange / "control.json",
+        {"schema": "ai-human.exchange-control/v1", "status": "ACTIVE", "updated_utc": now_utc()},
+    )
+    print("AI-HUMAN WORKER EXCHANGE INIT: PASS")
+    print("- exchange id: " + config["exchange_id"])
+    print("- status: ACTIVE")
+    print("- messages sent: 0")
+
+
+def validate_exchange_entry_for_worker(worker, entry, config):
+    metadata = install_metadata(worker)
+    expected = {
+        "worker_id": installed_worker_id(worker),
+        "identity_sha256": worker_identity_sha256(worker),
+        "company": metadata["company"],
+        "legal_entity": metadata["legal_entity"],
+        "purpose": metadata["purpose_scope"],
+    }
+    for field, value in expected.items():
+        if entry[field] != value:
+            raise ValueError("directory entry " + field.replace("_", " ") + " differs from the worker")
+    if entry["operating_unit"] not in metadata["operating_units"]:
+        raise ValueError("directory entry operating unit is outside the worker identity")
+    if entry["human_owner"] != clean(parameter_value(worker, "Human owner"), "human owner"):
+        raise ValueError("directory entry human owner differs from the worker")
+    if entry["supervisor"] != str(metadata.get("supervisor_id", "")):
+        raise ValueError("directory entry supervisor differs from the worker")
+    if entry["access_class"] not in config["access_classes"]:
+        raise ValueError("directory entry access class is not configured")
+    if entry["status"] != "ACTIVE":
+        raise ValueError("a joining worker directory entry must be ACTIVE")
+    if entry["address"] != "inboxes/" + entry["worker_id"]:
+        raise ValueError("directory entry address is not the stable transport inbox")
+    return entry
+
+
+def controlled_state_hash_without(worker, omitted):
+    omitted = {portable_key(value) for value in omitted}
+    digest = hashlib.sha256()
+    for path in controlled_state_paths(worker):
+        relative = path.relative_to(worker).as_posix()
+        if portable_key(relative) in omitted:
+            continue
+        digest.update(relative.encode("utf-8") + b"\0")
+        digest.update(bytes.fromhex(sha256(path)) if path.is_file() else b"MISSING")
+        digest.update(b"\n")
+    return digest.hexdigest()
+
+
+def controlled_state_hash_with_file(worker, relative, file_sha256):
+    relative = safe_relative(relative, "exchange mutation local target")
+    key = portable_key(relative)
+    paths = {
+        portable_key(path.relative_to(worker)): (path.relative_to(worker).as_posix(), path)
+        for path in controlled_state_paths(worker)
+    }
+    paths.pop(key, None)
+    if file_sha256 != "NONE":
+        if not SHA256_HEX.fullmatch(str(file_sha256)):
+            raise ValueError("exchange mutation prior local hash is invalid")
+        paths[key] = (relative.as_posix(), None)
+    digest = hashlib.sha256()
+    for _path_key, (display, path) in sorted(paths.items(), key=lambda item: item[1][0]):
+        digest.update(display.encode("utf-8") + b"\0")
+        digest.update(
+            bytes.fromhex(file_sha256)
+            if path is None
+            else (bytes.fromhex(sha256(path)) if path.is_file() else b"MISSING")
+        )
+        digest.update(b"\n")
+    return digest.hexdigest()
+
+
+EXCHANGE_MUTATION_BINDING_FIELDS = {
+    "config_sha256", "directory_entry_sha256", "envelope_sha256",
+    "event_sha256", "join_proof_sha256", "message_id", "mission_id",
+    "mission_sha256", "result_id", "result_sha256",
+    "route_policy_inventory_sha256",
+}
+
+
+def exchange_mutation_file(worker):
+    return worker / EXCHANGE_MUTATION_PATH
+
+
+def validate_exchange_mutation(transaction):
+    fields = {
+        "before_state_sha256", "bindings", "created_utc", "exchange_id",
+        "exchange_path", "intent_sha256", "local_payload", "local_payload_sha256",
+        "local_relative", "operation", "prior_local_sha256", "record_sha256",
+        "schema", "session_id", "transport_event", "transport_staging_relative",
+        "worker_id",
+    }
+    require_exact_fields(transaction, fields, "worker exchange local mutation")
+    if transaction.get("schema") != "ai-human.exchange-mutation/v1":
+        raise ValueError("unsupported worker exchange mutation schema")
+    if transaction.get("operation") not in {"ACK", "DECIDE", "RESULT", "INTEGRATE", "LEAVE"}:
+        raise ValueError("worker exchange mutation operation is invalid")
+    for field in ("exchange_id", "worker_id"):
+        governor_safe_id(transaction.get(field, ""), "exchange mutation " + field.replace("_", " "))
+    bounded_clean(transaction.get("session_id", ""), "exchange mutation session id", 500)
+    exchange_path = bounded_clean(
+        transaction.get("exchange_path", ""), "exchange mutation transport path", 4096
+    )
+    if not Path(exchange_path).is_absolute():
+        raise ValueError("exchange mutation transport path must be absolute")
+    for field in (
+        "before_state_sha256", "intent_sha256", "local_payload_sha256", "record_sha256",
+    ):
+        if not SHA256_HEX.fullmatch(str(transaction.get(field, ""))):
+            raise ValueError("exchange mutation " + field.replace("_", " ") + " is invalid")
+    prior = transaction.get("prior_local_sha256")
+    if prior != "NONE" and not SHA256_HEX.fullmatch(str(prior)):
+        raise ValueError("exchange mutation prior local hash is invalid")
+    relative = safe_relative(transaction.get("local_relative", ""), "exchange mutation local target")
+    if not portable_key(relative).startswith(portable_key(EXCHANGE_LOCAL_ROOT) + "/"):
+        raise ValueError("exchange mutation local target is outside worker exchange state")
+    if relative in {EXCHANGE_JOIN_PATH}:
+        raise ValueError("exchange join proof uses its dedicated crash-recovery invariant")
+    payload = transaction.get("local_payload")
+    if not isinstance(payload, dict) or payload.get("record_sha256") != exchange_record_sha256(
+        payload, "record_sha256"
+    ):
+        raise ValueError("exchange mutation local payload integrity is invalid")
+    if atomic_json_sha256(payload) != transaction["local_payload_sha256"]:
+        raise ValueError("exchange mutation local payload hash mismatch")
+    transport_event = transaction.get("transport_event")
+    if transport_event != "NONE":
+        require_exact_fields(
+            transport_event, EXCHANGE_EVENT_FIELDS, "exchange mutation transport event"
+        )
+        if (
+            transport_event.get("event_sha256")
+            != exchange_record_sha256(transport_event, "event_sha256")
+        ):
+            raise ValueError("exchange mutation transport event hash mismatch")
+    if transaction["operation"] in {"ACK", "DECIDE", "RESULT"}:
+        if not isinstance(transport_event, dict):
+            raise ValueError("exchange lifecycle mutation requires its exact prepared event")
+    elif transport_event != "NONE":
+        raise ValueError("exchange mutation has an unexpected transport event")
+    transport_staging = transaction.get("transport_staging_relative")
+    if transaction["operation"] == "RESULT":
+        staging_relative = safe_relative(
+            transport_staging, "exchange mutation result staging path"
+        )
+        if staging_relative.parts[:1] != (".staging",):
+            raise ValueError("exchange mutation result staging path is outside relay staging")
+    elif transport_staging != "NONE":
+        raise ValueError("only an exchange result mutation may bind relay staging")
+    bindings = transaction.get("bindings")
+    require_exact_fields(bindings, EXCHANGE_MUTATION_BINDING_FIELDS, "exchange mutation bindings")
+    for field in ("message_id", "mission_id", "result_id"):
+        value = bindings.get(field)
+        if value != "NONE":
+            governor_safe_id(value, "exchange mutation " + field.replace("_", " "))
+    for field in EXCHANGE_MUTATION_BINDING_FIELDS - {"message_id", "mission_id", "result_id"}:
+        value = bindings.get(field)
+        if value != "NONE" and not SHA256_HEX.fullmatch(str(value)):
+            raise ValueError("exchange mutation binding " + field.replace("_", " ") + " is invalid")
+    if transport_event != "NONE" and (
+        bindings["event_sha256"] != transport_event["event_sha256"]
+        or bindings["message_id"] != transport_event["message_id"]
+        or transaction["worker_id"] != transport_event["recipient_worker_id"]
+    ):
+        raise ValueError("exchange mutation transport event differs from its exact bindings")
+    parse_recorded_utc(transaction.get("created_utc"), "exchange mutation created_utc")
+    if transaction.get("record_sha256") != exchange_record_sha256(transaction, "record_sha256"):
+        raise ValueError("worker exchange mutation record hash mismatch")
+    return transaction
+
+
+def exchange_mutation_event(exchange, bindings, worker_id):
+    if bindings["event_sha256"] == "NONE":
+        return None
+    event = next(
+        (
+            item for item in exchange_events(exchange, bindings["message_id"], worker_id)
+            if item["event_sha256"] == bindings["event_sha256"]
+        ),
+        None,
+    )
+    if not event:
+        raise ValueError("exchange mutation bound lifecycle event is missing")
+    return event
+
+
+def validate_exchange_mutation_local_payload(worker, transaction):
+    relative = safe_relative(
+        transaction["local_relative"], "exchange mutation local target"
+    )
+    if relative == EXCHANGE_LEAVE_PATH:
+        return validate_exchange_leave_receipt(transaction["local_payload"])
+    if len(relative.parts) != len(EXCHANGE_LOCAL_ROOT.parts) + 2:
+        raise ValueError("exchange mutation local receipt path has invalid semantics")
+    directory = relative.parts[-2]
+    stem = Path(relative.parts[-1]).stem
+    return validate_exchange_local_record(
+        transaction["local_payload"], directory, stem, exchange_worker_join(worker)
+    )
+
+
+def ensure_exchange_mutation_prelocal_transport(exchange, transaction):
+    if transaction["operation"] == "RESULT":
+        bindings = transaction["bindings"]
+        target = exchange_message_root(exchange, bindings["message_id"]) / "results" / (
+            transaction["worker_id"] + "-" + bindings["result_id"]
+        )
+        if target.exists():
+            result = exchange_load_result(
+                exchange, bindings["message_id"], transaction["worker_id"], bindings["result_id"]
+            )
+            if result["result_sha256"] != bindings["result_sha256"]:
+                raise ValueError("exchange mutation immutable result differs from its binding")
+        else:
+            staging = path_without_symlinks(
+                exchange, Path(transaction["transport_staging_relative"]),
+                "exchange mutation result staging",
+            )
+            staged_result = exchange_load_result(
+                exchange, bindings["message_id"], transaction["worker_id"],
+                bindings["result_id"], root_override=staging,
+            )
+            if staged_result["result_sha256"] != bindings["result_sha256"]:
+                raise ValueError("exchange mutation staged result differs from its binding")
+            target.parent.mkdir(parents=True, exist_ok=True)
+            os.replace(staging, target)
+            exchange_load_result(
+                exchange, bindings["message_id"], transaction["worker_id"], bindings["result_id"]
+            )
+        return
+    event = transaction["transport_event"]
+    if event != "NONE":
+        exchange_commit_event(exchange, event)
+
+
+def ensure_exchange_mutation_postlocal_transport(exchange, transaction):
+    if transaction["operation"] == "RESULT":
+        exchange_commit_event(exchange, transaction["transport_event"])
+
+
+def exchange_after_transport_mutation(_operation):
+    """Fault-injection seam after durable relay mutation and before worker-local state."""
+    return None
+
+
+def verify_exchange_mutation_transport(worker, exchange, transaction, require_final=True):
+    bindings = transaction["bindings"]
+    config = exchange_config(exchange)
+    if (
+        transaction["exchange_id"] != config["exchange_id"]
+        or bindings["config_sha256"] != canonical_json_sha256(config)
+        or transaction["worker_id"] != installed_worker_id(worker)
+    ):
+        raise ValueError("exchange mutation transport identity differs from current configuration")
+    envelope = None
+    if bindings["message_id"] != "NONE":
+        envelope = exchange_load_envelope(exchange, bindings["message_id"])
+        if envelope["envelope_sha256"] != bindings["envelope_sha256"]:
+            raise ValueError("exchange mutation envelope binding differs from immutable transport")
+        if transaction["worker_id"] not in envelope["request"]["recipients"]:
+            raise ValueError("exchange mutation worker is not an exact envelope recipient")
+    event = (
+        exchange_mutation_event(exchange, bindings, transaction["worker_id"])
+        if require_final or transaction["operation"] != "RESULT"
+        else None
+    )
+    operation = transaction["operation"]
+    if operation == "ACK" and (not event or event["state"] != "ACKNOWLEDGED"):
+        raise ValueError("exchange ACK mutation lacks its exact acknowledged event")
+    if operation == "DECIDE":
+        expected_state = (
+            "ACCEPTED" if transaction["local_payload"].get("decision") == "ACCEPT" else "REJECTED"
+        )
+        if not event or event["state"] != expected_state:
+            raise ValueError("exchange decision mutation lacks its exact lifecycle event")
+    if operation == "RESULT":
+        result = exchange_load_result(
+            exchange, bindings["message_id"], transaction["worker_id"], bindings["result_id"]
+        )
+        if (
+            result["result_sha256"] != bindings["result_sha256"]
+            or (require_final and (not event or event["state"] != "COMPLETED"))
+        ):
+            raise ValueError("exchange result mutation differs from its immutable result or event")
+    if operation == "INTEGRATE":
+        mission = exchange_missions(exchange).get(bindings["mission_id"])
+        if (
+            not mission
+            or mission["status"] != "ACTIVE"
+            or parse_recorded_utc(mission["expires_utc"], "mission expires_utc")
+            <= datetime.datetime.now(datetime.timezone.utc)
+            or canonical_json_sha256(mission) != bindings["mission_sha256"]
+        ):
+            raise ValueError("exchange integration mutation mission binding is invalid")
+        for item in transaction["local_payload"].get("inputs", []):
+            if exchange_current_state(exchange, item["message_id"], item["worker_id"]) != "COMPLETED":
+                raise ValueError("exchange integration mutation input is no longer complete")
+            result = exchange_load_result(
+                exchange, item["message_id"], item["worker_id"], item["result_id"]
+            )
+            envelope = exchange_load_envelope(exchange, item["message_id"])
+            exchange_current_envelope_access(exchange, envelope, item["worker_id"])
+            if result["result_sha256"] != item["result_sha256"]:
+                raise ValueError("exchange integration mutation result binding is invalid")
+    if operation == "LEAVE":
+        _config, proof, entry, reconciliation = exchange_leave_transport_snapshot(worker, exchange)
+        if (
+            canonical_json_sha256(entry) != bindings["directory_entry_sha256"]
+            or proof["proof_sha256"] != bindings["join_proof_sha256"]
+            or reconciliation["route_policy_inventory_sha256"]
+            != bindings["route_policy_inventory_sha256"]
+        ):
+            raise ValueError("exchange leave mutation transport readback differs from its bindings")
+
+
+def recover_exchange_mutation(
+    worker, exchange, session_id, expected_state_hash, expected_operation=None,
+    expected_intent_sha256=None,
+):
+    path = exchange_mutation_file(worker)
+    if path.is_symlink() or not path.is_file():
+        raise ValueError("no interrupted Worker Exchange local mutation is available")
+    transaction = validate_exchange_mutation(read_json(path))
+    if str(exchange) != transaction["exchange_path"]:
+        raise ValueError("exchange mutation recovery references another transport")
+    if expected_operation and transaction["operation"] != expected_operation:
+        raise ValueError("pending Worker Exchange mutation belongs to another operation")
+    if expected_intent_sha256 and transaction["intent_sha256"] != expected_intent_sha256:
+        raise ValueError("pending Worker Exchange mutation belongs to another exact command intent")
+    lease = read_lease(worker)
+    if lease.get("session_id") != session_id or transaction["session_id"] != session_id:
+        raise ValueError("exchange mutation recovery lease belongs to another writer")
+    current = controlled_state_hash(worker)
+    if expected_state_hash not in {
+        transaction["before_state_sha256"], current, str(lease.get("state_hash", "")),
+    }:
+        raise ValueError("exchange mutation recovery expected-state hash mismatch")
+    relative = safe_relative(transaction["local_relative"], "exchange mutation local target")
+    target = worker_target(worker, relative, "exchange mutation local target")
+    payload = transaction["local_payload"]
+    expected_local_sha = transaction["local_payload_sha256"]
+    current_local_sha = sha256(target) if target.is_file() and not target.is_symlink() else "NONE"
+    if target.is_symlink() or current_local_sha not in {
+        transaction["prior_local_sha256"], expected_local_sha,
+    }:
+        raise ValueError("exchange mutation recovery found conflicting local state")
+    with worker_operation_mutex(exchange):
+        lease = read_lease(worker)
+        if lease.get("session_id") != session_id:
+            raise ValueError("exchange mutation recovery lease belongs to another writer")
+        current = controlled_state_hash(worker)
+        current_local_sha = (
+            sha256(target) if target.is_file() and not target.is_symlink() else "NONE"
+        )
+        if target.is_symlink() or current_local_sha not in {
+            transaction["prior_local_sha256"], expected_local_sha,
+        }:
+            raise ValueError("exchange mutation recovery found conflicting local state")
+        lease_hash = str(lease.get("state_hash", ""))
+        if current_local_sha == expected_local_sha:
+            reconstructed = controlled_state_hash_with_file(
+                worker, relative, transaction["prior_local_sha256"]
+            )
+            if lease_hash == transaction["before_state_sha256"]:
+                if reconstructed != transaction["before_state_sha256"]:
+                    raise ValueError("exchange mutation recovery found unrelated controlled-state changes")
+            elif lease_hash != current:
+                raise ValueError("exchange mutation recovery lease hash is not a valid transaction phase")
+        elif current != transaction["before_state_sha256"] or lease_hash != current:
+            raise ValueError("exchange mutation recovery found unrelated controlled-state changes")
+        validate_exchange_mutation_local_payload(worker, transaction)
+        ensure_exchange_mutation_prelocal_transport(exchange, transaction)
+        verify_exchange_mutation_transport(worker, exchange, transaction, require_final=False)
+        if current_local_sha == expected_local_sha:
+            reconstructed = controlled_state_hash_with_file(
+                worker, relative, transaction["prior_local_sha256"]
+            )
+            if lease_hash == transaction["before_state_sha256"]:
+                if reconstructed != transaction["before_state_sha256"]:
+                    raise ValueError("exchange mutation recovery found unrelated controlled-state changes")
+                updated = refresh_lease_state(worker, lease)
+            elif lease_hash == current:
+                updated = lease
+            else:
+                raise ValueError("exchange mutation recovery lease hash is not a valid transaction phase")
+        else:
+            if current != transaction["before_state_sha256"] or lease_hash != current:
+                raise ValueError("exchange mutation recovery found unrelated controlled-state changes")
+            target.parent.mkdir(parents=True, exist_ok=True)
+            atomic_json(target, payload)
+            updated = refresh_lease_state(worker, lease)
+        ensure_exchange_mutation_postlocal_transport(exchange, transaction)
+        verify_exchange_mutation_transport(worker, exchange, transaction)
+        failures = validate_exchange_local_state(worker)
+        if failures:
+            raise ValueError("exchange mutation recovery left invalid local state: " + "; ".join(failures))
+        path.unlink()
+    return updated, transaction
+
+
+def exchange_operation_lease(worker, exchange, session_id, expected_state_hash, operation, intent):
+    intent_sha256 = canonical_json_sha256(intent)
+    if exchange_mutation_file(worker).exists():
+        updated, _transaction = recover_exchange_mutation(
+            worker, exchange, session_id, expected_state_hash,
+            expected_operation=operation, expected_intent_sha256=intent_sha256,
+        )
+        return updated, updated["state_hash"], True
+    lease, state_hash = require_lease(worker, session_id, expected_state_hash)
+    return lease, state_hash, False
+
+
+def exchange_commit_local_mutation(
+    worker, exchange, lease, operation, intent, local_relative, payload, bindings,
+    transport_event="NONE", transport_staging_relative="NONE",
+):
+    relative = safe_relative(local_relative, "exchange mutation local target")
+    target = worker_target(worker, relative, "exchange mutation local target")
+    if target.is_symlink():
+        raise ValueError("exchange mutation local target may not be a symbolic link")
+    prior_sha = sha256(target) if target.is_file() else "NONE"
+    payload_sha = atomic_json_sha256(payload)
+    if payload.get("record_sha256") != exchange_record_sha256(payload, "record_sha256"):
+        raise ValueError("exchange mutation local payload hash is invalid")
+    if exchange_mutation_file(worker).exists():
+        raise ValueError("another Worker Exchange local mutation requires recovery")
+    before_hash = controlled_state_hash(worker)
+    if before_hash != lease.get("state_hash"):
+        raise ValueError("controlled state changed before Worker Exchange local commit")
+    transaction = {
+        "before_state_sha256": before_hash,
+        "bindings": bindings,
+        "created_utc": now_utc(),
+        "exchange_id": exchange_config(exchange)["exchange_id"],
+        "exchange_path": str(exchange),
+        "intent_sha256": canonical_json_sha256(intent),
+        "local_payload": payload,
+        "local_payload_sha256": payload_sha,
+        "local_relative": relative.as_posix(),
+        "operation": operation,
+        "prior_local_sha256": prior_sha,
+        "record_sha256": "",
+        "schema": "ai-human.exchange-mutation/v1",
+        "session_id": lease["session_id"],
+        "transport_event": transport_event,
+        "transport_staging_relative": transport_staging_relative,
+        "worker_id": installed_worker_id(worker),
+    }
+    transaction["record_sha256"] = exchange_record_sha256(transaction, "record_sha256")
+    validate_exchange_mutation(transaction)
+    validate_exchange_mutation_local_payload(worker, transaction)
+    atomic_json(exchange_mutation_file(worker), transaction)
+    ensure_exchange_mutation_prelocal_transport(exchange, transaction)
+    verify_exchange_mutation_transport(worker, exchange, transaction, require_final=False)
+    if transport_event != "NONE" or transport_staging_relative != "NONE":
+        exchange_after_transport_mutation(operation)
+    atomic_json(target, payload)
+    failures = validate_exchange_local_state(worker)
+    if failures:
+        raise ValueError("exchange local commit produced invalid state: " + "; ".join(failures))
+    updated = refresh_lease_state(worker, lease)
+    ensure_exchange_mutation_postlocal_transport(exchange, transaction)
+    verify_exchange_mutation_transport(worker, exchange, transaction)
+    exchange_mutation_file(worker).unlink()
+    return updated
+
+
+def exchange_mutation_bindings(**overrides):
+    bindings = {field: "NONE" for field in EXCHANGE_MUTATION_BINDING_FIELDS}
+    bindings.update(overrides)
+    require_exact_fields(bindings, EXCHANGE_MUTATION_BINDING_FIELDS, "exchange mutation bindings")
+    return bindings
+
+
+def exchange_join_lease(worker, session_id, expected_state_hash, proof):
+    lease = read_lease(worker)
+    if lease.get("session_id") != session_id:
+        raise ValueError("session lease belongs to another writer")
+    current = controlled_state_hash(worker)
+    recorded = str(lease.get("state_hash", ""))
+    if current != recorded:
+        local = exchange_worker_join(worker, required=False)
+        if local != proof or controlled_state_hash_without(worker, {EXCHANGE_JOIN_PATH}) != recorded:
+            raise ValueError("controlled state changed outside the lease transaction")
+    if expected_state_hash not in {recorded, current}:
+        raise ValueError("expected-state hash mismatch; refresh before writing")
+    return lease, current
+
+
+def exchange_write_join_triplet(worker, exchange, entry, proof):
+    worker_id = entry["worker_id"]
+    targets = (
+        (exchange / "directory" / (worker_id + ".json"), entry),
+        (exchange / "join-receipts" / (worker_id + ".json"), proof),
+        (exchange / "join-history" / (proof["proof_sha256"] + ".json"), proof),
+        (worker_target(worker, EXCHANGE_JOIN_PATH, "worker exchange join target"), proof),
+    )
+    created = []
+    for target, expected in targets:
+        if target.exists():
+            if target.is_symlink() or not target.is_file() or read_json(target) != expected:
+                raise ValueError("exchange join recovery found conflicting partial state: " + str(target))
+    try:
+        for target, expected in targets:
+            if not target.exists():
+                target.parent.mkdir(parents=True, exist_ok=True)
+                atomic_json(target, expected)
+                created.append(target)
+    except Exception:
+        for target in reversed(created):
+            target.unlink(missing_ok=True)
+        raise
+    return created
+
+
+def exchange_join(args):
+    worker = safe_worker(args.worker)
+    exchange = safe_exchange_root(args.exchange)
+    config = exchange_config(exchange)
+    exchange_require_status(exchange, {"ACTIVE"})
+    entry = validate_exchange_entry_for_worker(
+        worker,
+        validate_exchange_directory_entry(
+            read_governor_input(args.entry, "exchange directory entry source")
+        ),
+        config,
+    )
+    proof = {
+        "config_sha256": canonical_json_sha256(config),
+        "directory_entry": entry,
+        "exchange_id": config["exchange_id"],
+        "joined_utc": entry["joined_utc"],
+        "proof_sha256": "",
+        "schema": "ai-human.exchange-join-proof/v1",
+    }
+    proof["proof_sha256"] = exchange_record_sha256(proof, "proof_sha256")
+    lease, before_hash = exchange_join_lease(
+        worker, args.session_id, args.expected_state_hash, proof
+    )
+    now = datetime.datetime.now(datetime.timezone.utc)
+    verified = parse_recorded_utc(entry["verified_utc"], "directory verified_utc")
+    partial_exists = any(path.exists() for path in (
+        exchange / "directory" / (entry["worker_id"] + ".json"),
+        exchange / "join-receipts" / (entry["worker_id"] + ".json"),
+        exchange / "join-history" / (proof["proof_sha256"] + ".json"),
+        worker / EXCHANGE_JOIN_PATH,
+    ))
+    if abs(now - verified) > datetime.timedelta(minutes=5) and not partial_exists:
+        raise ValueError("directory entry verification must be current")
+    with worker_operation_mutex(exchange):
+        current_config = exchange_config(exchange)
+        if canonical_json_sha256(current_config) != canonical_json_sha256(config):
+            raise ValueError("exchange configuration changed before join commit")
+        exchange_require_status(exchange, {"ACTIVE"})
+        validate_exchange_entry_for_worker(worker, entry, current_config)
+        created = exchange_write_join_triplet(worker, exchange, entry, proof)
+    updated = refresh_lease_state(worker, lease) if created or before_hash != lease["state_hash"] else lease
+    result = (
+        "RECOVERED"
+        if partial_exists and (created or before_hash != lease["state_hash"])
+        else ("PASS" if created else "IDEMPOTENT")
+    )
+    print("AI-HUMAN WORKER EXCHANGE JOIN: " + result)
+    print("- worker id: " + entry["worker_id"])
+    print("- exchange id: " + config["exchange_id"])
+    print("- join proof: " + proof["proof_sha256"])
+    print("- new expected-state hash: " + updated["state_hash"])
+
+
+def exchange_directory_refresh(args):
+    worker = safe_worker(args.worker)
+    exchange = safe_exchange_root(args.exchange)
+    config = exchange_config(exchange)
+    exchange_require_status(exchange, {"ACTIVE", "PAUSED"})
+    current_proof = exchange_worker_join(worker)
+    proposed_entry = validate_exchange_entry_for_worker(
+        worker,
+        validate_exchange_directory_entry(
+            read_governor_input(args.entry, "exchange refreshed directory entry source")
+        ),
+        config,
+    )
+    if current_proof["exchange_id"] != config["exchange_id"]:
+        raise ValueError("worker joined a different exchange")
+    current_entry = current_proof["directory_entry"]
+    if proposed_entry["worker_id"] != current_entry["worker_id"]:
+        raise ValueError("directory refresh cannot change worker identity")
+    changed_fields = {
+        field for field in EXCHANGE_DIRECTORY_FIELDS
+        if proposed_entry[field] != current_entry[field]
+    }
+    if changed_fields - {"verified_utc"}:
+        raise ValueError("directory refresh may change only verified_utc")
+    proposed_verified = parse_recorded_utc(
+        proposed_entry["verified_utc"], "refreshed directory verified_utc"
+    )
+    if abs(datetime.datetime.now(datetime.timezone.utc) - proposed_verified) > datetime.timedelta(minutes=5):
+        raise ValueError("refreshed directory verification must be current")
+    if changed_fields and proposed_verified <= parse_recorded_utc(
+        current_entry["verified_utc"], "current directory verified_utc"
+    ):
+        raise ValueError("directory verification must advance")
+    proposed_proof = {
+        "config_sha256": canonical_json_sha256(config),
+        "directory_entry": proposed_entry,
+        "exchange_id": config["exchange_id"],
+        "joined_utc": current_proof["joined_utc"],
+        "proof_sha256": "",
+        "schema": "ai-human.exchange-join-proof/v1",
+    }
+    proposed_proof["proof_sha256"] = exchange_record_sha256(
+        proposed_proof, "proof_sha256"
+    )
+    lease, before_hash = exchange_join_lease(
+        worker, args.session_id, args.expected_state_hash, proposed_proof
+    ) if current_proof == proposed_proof else require_lease(
+        worker, args.session_id, args.expected_state_hash
+    )
+    current_directory_path = exchange / "directory" / (proposed_entry["worker_id"] + ".json")
+    current_relay_path = exchange / "join-receipts" / (proposed_entry["worker_id"] + ".json")
+    history_path = exchange / "join-history" / (proposed_proof["proof_sha256"] + ".json")
+    local_path = worker / EXCHANGE_JOIN_PATH
+    with worker_operation_mutex(exchange):
+        current_config = exchange_config(exchange)
+        if canonical_json_sha256(current_config) != canonical_json_sha256(config):
+            raise ValueError("exchange configuration changed before directory refresh")
+        exchange_require_status(exchange, {"ACTIVE", "PAUSED"})
+        validate_exchange_entry_for_worker(worker, proposed_entry, current_config)
+        directory_value = read_json(current_directory_path) if current_directory_path.is_file() else None
+        relay_value = read_json(current_relay_path) if current_relay_path.is_file() else None
+        local_value = read_json(local_path) if local_path.is_file() else None
+        if directory_value not in (current_entry, proposed_entry):
+            raise ValueError("directory refresh found conflicting transport directory state")
+        if relay_value not in (current_proof, proposed_proof):
+            raise ValueError("directory refresh found conflicting current join receipt")
+        if local_value not in (current_proof, proposed_proof):
+            raise ValueError("directory refresh found conflicting worker join proof")
+        changed = False
+        if history_path.exists() and read_json(history_path) != proposed_proof:
+            raise ValueError("directory refresh history hash contains different bytes")
+        if not history_path.exists():
+            atomic_json(history_path, proposed_proof)
+            changed = True
+        for target, value in (
+            (current_directory_path, proposed_entry),
+            (current_relay_path, proposed_proof),
+            (local_path, proposed_proof),
+        ):
+            if not target.is_file() or read_json(target) != value:
+                atomic_json(target, value)
+                changed = True
+    updated = refresh_lease_state(worker, lease) if changed or before_hash != lease["state_hash"] else lease
+    print("AI-HUMAN WORKER EXCHANGE DIRECTORY REFRESH: " + ("PASS" if changed else "IDEMPOTENT"))
+    print("- worker id: " + proposed_entry["worker_id"])
+    print("- verified utc: " + proposed_entry["verified_utc"])
+    print("- join proof: " + proposed_proof["proof_sha256"])
+    print("- new expected-state hash: " + updated["state_hash"])
+
+
+def exchange_policy_add(args):
+    exchange = safe_exchange_root(args.exchange)
+    config = exchange_config(exchange)
+    if args.owner != config["owner"]:
+        raise ValueError("only the configured exchange owner may add a route policy")
+    exchange_require_status(exchange, {"ACTIVE"})
+    policy = validate_exchange_route_policy(
+        read_governor_input(args.policy, "exchange route policy source")
+    )
+    if policy["status"] != "ACTIVE":
+        raise ValueError("new exchange route policy must be ACTIVE")
+    if parse_recorded_utc(policy["expires_utc"], "route policy expires_utc") <= datetime.datetime.now(datetime.timezone.utc):
+        raise ValueError("exchange route policy is expired")
+    entries = exchange_directory(exchange)
+    for worker_id in (policy["sender_worker_id"], policy["recipient_worker_id"]):
+        if worker_id not in entries:
+            raise ValueError("route policy references a missing worker: " + worker_id)
+    sender_entry = entries[policy["sender_worker_id"]]
+    recipient_entry = entries[policy["recipient_worker_id"]]
+    boundary_fields = ("company", "legal_entity", "operating_unit", "human_owner")
+    crosses_boundary = any(
+        sender_entry[field] != recipient_entry[field] for field in boundary_fields
+    )
+    if crosses_boundary and policy["cross_boundary_authorization_reference"] == "NONE":
+        raise ValueError(
+            "cross-boundary route policy requires an explicit authorization reference"
+        )
+    if any(access not in config["access_classes"] for access in policy["access_classes"]):
+        raise ValueError("route policy uses an unconfigured access class")
+    target = exchange / "policies" / (policy["policy_id"] + ".json")
+    with worker_operation_mutex(exchange):
+        config = exchange_config(exchange)
+        if args.owner != config["owner"]:
+            raise ValueError("only the configured exchange owner may add a route policy")
+        exchange_require_status(exchange, {"ACTIVE"})
+        entries = exchange_directory(exchange)
+        for worker_id in (policy["sender_worker_id"], policy["recipient_worker_id"]):
+            exchange_active_entry(exchange, worker_id)
+        sender_entry = entries[policy["sender_worker_id"]]
+        recipient_entry = entries[policy["recipient_worker_id"]]
+        crosses_boundary = any(
+            sender_entry[field] != recipient_entry[field]
+            for field in ("company", "legal_entity", "operating_unit", "human_owner")
+        )
+        if crosses_boundary and policy["cross_boundary_authorization_reference"] == "NONE":
+            raise ValueError(
+                "cross-boundary route policy requires an explicit authorization reference"
+            )
+        if parse_recorded_utc(policy["expires_utc"], "route policy expires_utc") <= datetime.datetime.now(datetime.timezone.utc):
+            raise ValueError("exchange route policy is expired")
+        if target.exists():
+            raise ValueError("exchange route policy id already exists")
+        atomic_json(target, policy)
+    print("AI-HUMAN WORKER EXCHANGE POLICY: PASS")
+    print("- policy id: " + policy["policy_id"])
+    print("- exact route: " + policy["sender_worker_id"] + " -> " + policy["recipient_worker_id"])
+
+
+def exchange_policy_revoke(args):
+    exchange = safe_exchange_root(args.exchange)
+    config = exchange_config(exchange)
+    if args.owner != config["owner"]:
+        raise ValueError("only the configured exchange owner may revoke a route policy")
+    exchange_require_status(exchange, {"ACTIVE", "PAUSED"})
+    policy_id = governor_safe_id(args.policy_id, "exchange route policy id")
+    policies = exchange_route_policies(exchange)
+    if policy_id not in policies:
+        raise ValueError("exchange route policy is missing")
+    record = {
+        "approval_reference": bounded_clean(
+            args.approval_reference, "policy revocation approval reference", 1000
+        ),
+        "created_utc": now_utc(),
+        "policy_id": policy_id,
+        "reason": bounded_clean(args.reason, "policy revocation reason", 2000),
+        "record_sha256": "",
+        "schema": "ai-human.exchange-policy-revocation/v1",
+    }
+    record["record_sha256"] = exchange_record_sha256(record, "record_sha256")
+    target = exchange / "policy-revocations" / (policy_id + ".json")
+    with worker_operation_mutex(exchange):
+        config = exchange_config(exchange)
+        if args.owner != config["owner"]:
+            raise ValueError("only the configured exchange owner may revoke a route policy")
+        exchange_require_status(exchange, {"ACTIVE", "PAUSED"})
+        if policy_id not in exchange_route_policies(exchange):
+            raise ValueError("exchange route policy is missing")
+        if target.exists():
+            existing = validate_exchange_policy_revocation(read_json(target), policy_id)
+            if any(
+                existing[field] != record[field]
+                for field in ("approval_reference", "policy_id", "reason", "schema")
+            ):
+                raise ValueError("exchange route policy has a different revocation record")
+            created = False
+        else:
+            atomic_json(target, record)
+            created = True
+    print("AI-HUMAN WORKER EXCHANGE POLICY REVOKE: " + ("PASS" if created else "IDEMPOTENT"))
+    print("- policy id: " + policy_id)
+    print("- future delivery and retrieval: DENIED")
+
+
+def validate_exchange_policy_revocation(record, expected_policy_id=None):
+    require_exact_fields(
+        record,
+        {
+            "approval_reference", "created_utc", "policy_id", "reason",
+            "record_sha256", "schema",
+        },
+        "exchange policy revocation",
+    )
+    if record.get("schema") != "ai-human.exchange-policy-revocation/v1":
+        raise ValueError("unsupported exchange policy revocation schema")
+    policy_id = governor_safe_id(record.get("policy_id", ""), "revoked policy id")
+    if expected_policy_id is not None and policy_id != expected_policy_id:
+        raise ValueError("exchange policy revocation references another policy")
+    for field in ("approval_reference", "reason"):
+        bounded_clean(record.get(field, ""), "policy revocation " + field.replace("_", " "), 2000)
+    parse_recorded_utc(record.get("created_utc"), "policy revocation created_utc")
+    if record.get("record_sha256") != exchange_record_sha256(record, "record_sha256"):
+        raise ValueError("exchange policy revocation hash mismatch")
+    return record
+
+
+def exchange_route_reconciliation_snapshot(exchange, worker_id):
+    policies = exchange_route_policies(exchange)
+    revocations = exchange_policy_revocations(exchange)
+    now = datetime.datetime.now(datetime.timezone.utc)
+    count = 0
+    digest = hashlib.sha256()
+    for policy_id, policy in sorted(policies.items()):
+        if worker_id not in {policy["sender_worker_id"], policy["recipient_worker_id"]}:
+            continue
+        revocation = revocations.get(policy_id)
+        if revocation:
+            reconciliation = "REVOKED"
+            revocation_sha256 = revocation["record_sha256"]
+        elif (
+            policy["status"] != "ACTIVE"
+            or parse_recorded_utc(policy["expires_utc"], "route policy expires_utc") <= now
+        ):
+            reconciliation = "INACTIVE_OR_EXPIRED"
+            revocation_sha256 = "NONE"
+        else:
+            raise ValueError(
+                "active exchange route policy must be revoked before worker leave: " + policy_id
+            )
+        record = {
+            "policy_id": policy_id,
+            "policy_sha256": canonical_json_sha256(policy),
+            "reconciliation": reconciliation,
+            "revocation_sha256": revocation_sha256,
+        }
+        digest.update(
+            json.dumps(record, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode(
+                "utf-8"
+            ) + b"\n"
+        )
+        count += 1
+    return {
+        "route_policy_count": count,
+        "route_policy_inventory_sha256": digest.hexdigest(),
+    }
+
+
+def exchange_leave_transport_snapshot(worker, exchange):
+    config = exchange_config(exchange)
+    proof = exchange_worker_join(worker)
+    entry = proof["directory_entry"]
+    worker_id = installed_worker_id(worker)
+    if (
+        proof["exchange_id"] != config["exchange_id"]
+        or proof["config_sha256"] != canonical_json_sha256(config)
+        or entry["worker_id"] != worker_id
+        or entry["identity_sha256"] != worker_identity_sha256(worker)
+    ):
+        raise ValueError("worker exchange join proof does not match this worker and transport")
+    current = exchange_directory(exchange).get(worker_id)
+    if not current:
+        raise ValueError("worker is missing from the current exchange directory")
+    if current["status"] not in {"PAUSED", "RETIRED"}:
+        raise ValueError("pause or retire exchange membership before worker leave")
+    if any(
+        current[field] != entry[field]
+        for field in EXCHANGE_DIRECTORY_FIELDS - {"status"}
+    ):
+        raise ValueError("inactive exchange directory entry differs from the joined identity")
+    relay_path = exchange / "join-receipts" / (worker_id + ".json")
+    if relay_path.is_symlink() or not relay_path.is_file() or read_json(relay_path) != proof:
+        raise ValueError("exchange current join receipt differs from the worker proof")
+    return config, proof, current, exchange_route_reconciliation_snapshot(exchange, worker_id)
+
+
+def exchange_leave(args):
+    worker = safe_worker(args.worker)
+    exchange = safe_exchange_root(args.exchange)
+    intent = {
+        "exchange_id": exchange_config(exchange)["exchange_id"],
+        "operation": "LEAVE", "worker_id": installed_worker_id(worker),
+    }
+    lease, _state_hash, _recovered = exchange_operation_lease(
+        worker, exchange, args.session_id, args.expected_state_hash, "LEAVE", intent
+    )
+    exchange_require_status(exchange, {"ACTIVE", "PAUSED"})
+    with worker_operation_mutex(exchange):
+        exchange_require_status(exchange, {"ACTIVE", "PAUSED"})
+        config, proof, current, reconciliation = exchange_leave_transport_snapshot(
+            worker, exchange
+        )
+        body = {
+            "config_sha256": canonical_json_sha256(config),
+            "directory_entry_sha256": canonical_json_sha256(current),
+            "directory_status": current["status"],
+            "exchange_id": config["exchange_id"],
+            "exchange_path": str(exchange),
+            "join_proof_sha256": proof["proof_sha256"],
+            **reconciliation,
+            "schema": "ai-human.exchange-leave/v1",
+            "worker_id": current["worker_id"],
+        }
+        target = worker_target(worker, EXCHANGE_LEAVE_PATH, "worker exchange leave receipt")
+        existing = None
+        if target.exists():
+            if target.is_symlink() or not target.is_file():
+                raise ValueError("worker exchange leave receipt must be a real file")
+            existing = validate_exchange_leave_receipt(read_json(target))
+        if existing and all(existing.get(field) == value for field, value in body.items()):
+            receipt = existing
+            created = False
+        else:
+            receipt = {**body, "record_sha256": "", "verified_utc": now_utc()}
+            receipt["record_sha256"] = exchange_record_sha256(receipt, "record_sha256")
+            updated = exchange_commit_local_mutation(
+                worker, exchange, lease, "LEAVE", intent,
+                target.relative_to(worker), receipt,
+                exchange_mutation_bindings(
+                    config_sha256=canonical_json_sha256(config),
+                    directory_entry_sha256=canonical_json_sha256(current),
+                    join_proof_sha256=proof["proof_sha256"],
+                    route_policy_inventory_sha256=reconciliation[
+                        "route_policy_inventory_sha256"
+                    ],
+                ),
+            )
+            created = True
+    if not created:
+        updated = lease
+    print("AI-HUMAN WORKER EXCHANGE LEAVE: " + ("PASS" if created else "IDEMPOTENT"))
+    print("- worker id: " + current["worker_id"])
+    print("- directory status: " + current["status"])
+    print("- active routes remaining: 0")
+    print("- new expected-state hash: " + updated["state_hash"])
+
+
+def exchange_local_recover(args):
+    worker = safe_worker(args.worker)
+    exchange = safe_exchange_root(args.exchange)
+    updated, transaction = recover_exchange_mutation(
+        worker, exchange, args.session_id, args.expected_state_hash
+    )
+    print("AI-HUMAN WORKER EXCHANGE LOCAL RECOVERY: PASS")
+    print("- operation: " + transaction["operation"])
+    print("- local target: " + transaction["local_relative"])
+    print("- transport readback: VERIFIED")
+    print("- new expected-state hash: " + updated["state_hash"])
+
+
+def exchange_mission_create(args):
+    worker = safe_worker(args.worker)
+    require_lease(worker, args.session_id, args.expected_state_hash)
+    exchange = safe_exchange_root(args.exchange)
+    mission_source = validate_exchange_mission(
+        read_governor_input(args.mission, "exchange mission source")
+    )
+    with worker_operation_mutex(exchange):
+        config, entry = verify_joined_worker(worker, exchange)
+        exchange_require_status(exchange, {"ACTIVE"})
+        mission = validate_exchange_mission(mission_source)
+        if mission["source_owner_worker_id"] != entry["worker_id"]:
+            raise ValueError("only the declared source owner may create the mission")
+        if mission["status"] != "ACTIVE":
+            raise ValueError("a new mission room must be ACTIVE")
+        if mission["max_messages"] > config["max_conversation_messages"]:
+            raise ValueError("mission message budget exceeds the exchange limit")
+        if parse_recorded_utc(mission["expires_utc"], "mission expires_utc") <= datetime.datetime.now(datetime.timezone.utc):
+            raise ValueError("mission is expired")
+        directory = exchange_directory(exchange)
+        for member in mission["members"]:
+            exchange_active_entry(exchange, member)
+        target = exchange / "missions" / (mission["mission_id"] + ".json")
+        if target.exists():
+            raise ValueError("exchange mission id already exists")
+        atomic_json(target, mission)
+    print("AI-HUMAN WORKER EXCHANGE MISSION: PASS")
+    print("- mission id: " + mission["mission_id"])
+    print("- integration owner: " + mission["integration_owner_worker_id"])
+    print("- member count: " + str(len(mission["members"])))
+
+
+def exchange_conversation_envelopes(exchange, conversation_id):
+    messages = exchange / "messages"
+    values = []
+    for package in sorted(messages.iterdir(), key=lambda item: item.name.casefold()):
+        if package.is_symlink() or not package.is_dir():
+            raise ValueError("exchange messages contain a forbidden entry")
+        envelope = exchange_load_envelope(exchange, package.name)
+        if envelope["request"]["conversation_id"] == conversation_id:
+            values.append(envelope)
+    return values
+
+
+def exchange_mission_envelopes(exchange, mission_id):
+    values = []
+    for package in sorted((exchange / "messages").iterdir(), key=lambda item: item.name.casefold()):
+        if package.is_symlink() or not package.is_dir():
+            raise ValueError("exchange messages contain a forbidden entry")
+        envelope = exchange_load_envelope(exchange, package.name)
+        if envelope["request"]["mission_id"] == mission_id:
+            values.append(envelope)
+    return values
+
+
+def exchange_current_envelope_access(exchange, envelope, recipient):
+    request = envelope["request"]
+    sender = exchange_active_entry(exchange, envelope["sender_worker_id"])
+    target = exchange_active_entry(exchange, recipient)
+    if sender["identity_sha256"] != envelope["sender_identity_sha256"]:
+        raise ValueError("current exchange sender identity differs from the envelope")
+    if recipient not in request["recipients"]:
+        raise ValueError("exchange recipient is outside the exact envelope")
+    if request["message_type"] not in target["accepted_message_types"]:
+        raise ValueError("recipient no longer accepts this exchange message type")
+    if request["confidentiality"] != target["access_class"]:
+        raise ValueError("recipient access class no longer authorizes this envelope")
+    policy = exchange_policy_for(
+        exchange, envelope["sender_worker_id"], recipient, request["route"],
+        request["message_type"], request["confidentiality"],
+    )
+    snapshot = envelope["route_policies"].get(recipient)
+    if snapshot != {
+        "policy_id": policy["policy_id"], "policy_sha256": canonical_json_sha256(policy)
+    }:
+        raise ValueError("current exact route policy differs from the envelope authorization")
+    if request["route"] == "MISSION_ROOM":
+        mission = exchange_missions(exchange).get(request["mission_id"])
+        if (
+            not mission
+            or mission["status"] != "ACTIVE"
+            or parse_recorded_utc(mission["expires_utc"], "mission expires_utc")
+            <= datetime.datetime.now(datetime.timezone.utc)
+            or envelope["sender_worker_id"] not in mission["members"]
+            or recipient not in mission["members"]
+            or canonical_json_sha256(mission) != envelope["mission_sha256"]
+        ):
+            raise ValueError("current mission does not authorize the envelope")
+    return policy
+
+
+def validate_exchange_delivery_receipt(receipt, envelope, recipient):
+    fields = {
+        "delivered_utc", "envelope_sha256", "message_id", "receipt_sha256",
+        "recipient_worker_id", "schema",
+    }
+    if not isinstance(receipt, dict):
+        raise ValueError("exchange delivery receipt must be a JSON object")
+    require_exact_fields(receipt, fields, "exchange delivery receipt")
+    if (
+        receipt.get("schema") != "ai-human.exchange-delivery/v1"
+        or receipt.get("message_id") != envelope["message_id"]
+        or receipt.get("recipient_worker_id") != recipient
+        or receipt.get("envelope_sha256") != envelope["envelope_sha256"]
+        or receipt.get("receipt_sha256") != exchange_record_sha256(receipt, "receipt_sha256")
+    ):
+        raise ValueError("exchange delivery receipt integrity mismatch")
+    parse_recorded_utc(receipt.get("delivered_utc"), "exchange delivered_utc")
+    return receipt
+
+
+def exchange_idempotency_record(request):
+    record = {
+        "idempotency_key_sha256": hashlib.sha256(
+            request["idempotency_key"].encode("utf-8")
+        ).hexdigest(),
+        "index_sha256": "",
+        "message_id": request["message_id"],
+        "request_sha256": canonical_json_sha256(request),
+        "schema": "ai-human.exchange-idempotency/v1",
+    }
+    record["index_sha256"] = exchange_record_sha256(record, "index_sha256")
+    return record
+
+
+def validate_exchange_idempotency_index(record, request=None):
+    require_exact_fields(
+        record,
+        {
+            "idempotency_key_sha256", "index_sha256", "message_id",
+            "request_sha256", "schema",
+        },
+        "exchange idempotency index",
+    )
+    if record.get("schema") != "ai-human.exchange-idempotency/v1":
+        raise ValueError("unsupported exchange idempotency index schema")
+    governor_safe_id(record.get("message_id", ""), "exchange idempotency message id")
+    for field in ("idempotency_key_sha256", "index_sha256", "request_sha256"):
+        if not SHA256_HEX.fullmatch(str(record.get(field, ""))):
+            raise ValueError("exchange idempotency " + field.replace("_", " ") + " is invalid")
+    if record.get("index_sha256") != exchange_record_sha256(record, "index_sha256"):
+        raise ValueError("exchange idempotency index hash mismatch")
+    if request is not None and record != exchange_idempotency_record(request):
+        raise ValueError("exchange idempotency index differs from its exact request")
+    return record
+
+
+def exchange_complete_delivery(exchange, envelope, recipients=None):
+    message_id = envelope["message_id"]
+    sender = envelope["sender_worker_id"]
+    targets = envelope["request"]["recipients"] if recipients is None else recipients
+    for recipient in targets:
+        exchange_current_envelope_access(exchange, envelope, recipient)
+        if parse_recorded_utc(
+            envelope["request"]["expires_utc"], "exchange expires_utc"
+        ) <= datetime.datetime.now(datetime.timezone.utc):
+            raise ValueError("exchange refuses to deliver an expired envelope")
+        state = exchange_current_state(exchange, message_id, recipient)
+        if state is None:
+            exchange_append_event(exchange, message_id, recipient, sender, "QUEUED", "Relay accepted exact immutable envelope")
+            state = "QUEUED"
+        inbox = exchange / "inboxes" / recipient
+        inbox.mkdir(parents=True, exist_ok=True)
+        receipt_path = inbox / (message_id + ".json")
+        receipt = {
+            "delivered_utc": now_utc(),
+            "envelope_sha256": envelope["envelope_sha256"],
+            "message_id": message_id,
+            "recipient_worker_id": recipient,
+            "schema": "ai-human.exchange-delivery/v1",
+        }
+        receipt["receipt_sha256"] = exchange_record_sha256(receipt, "receipt_sha256")
+        if not receipt_path.exists():
+            atomic_json(receipt_path, receipt)
+        else:
+            validate_exchange_delivery_receipt(
+                read_json(receipt_path), envelope, recipient
+            )
+        if state == "QUEUED":
+            exchange_append_event(exchange, message_id, recipient, "relay", "DELIVERED", "Exact envelope bytes appended to the transport-owned inbox")
+    journal_hashes = {record["event_sha256"] for record in exchange_journal_records(exchange)}
+    for event in exchange_events(exchange, message_id):
+        if event["event_sha256"] not in journal_hashes:
+            exchange_append_journal(
+                exchange, "RECOVERED_EVENT", message_id,
+                event["recipient_worker_id"], event["event_sha256"],
+            )
+            journal_hashes.add(event["event_sha256"])
+
+
+def exchange_send(args):
+    worker = safe_worker(args.worker)
+    lease, _state_hash = require_lease(worker, args.session_id, args.expected_state_hash)
+    exchange = safe_exchange_root(args.exchange)
+    request_source = read_governor_input(args.request, "exchange message request source")
+    with worker_operation_mutex(exchange):
+        config, sender_entry = verify_joined_worker(worker, exchange)
+        exchange_require_status(exchange, {"ACTIVE"})
+        request = validate_exchange_request(request_source, config)
+        effective_cap = current_worker_effective_batch_cap(worker)
+        if request["fanout_count"] > effective_cap:
+            raise ValueError("exchange fanout exceeds the worker's current effective batch cap")
+        if len(request["attachments"]) > effective_cap:
+            raise ValueError("exchange attachments exceed the worker's current effective batch cap")
+        if contains_secret_material(request):
+            raise ValueError("exchange request appears to contain secret material")
+        if request["active_gates"] != active_gate_ids(worker):
+            raise ValueError("exchange message gate references differ from the sender's active gates")
+        sender_id = sender_entry["worker_id"]
+        join_proof = exchange_worker_join(worker)
+        if sender_id in request["recipients"]:
+            raise ValueError("exchange message cannot target its sender")
+        task_id = live_task_id(worker)
+        if not task_id:
+            raise ValueError("exchange send requires one live sender task")
+        entries = exchange_directory(exchange)
+        policy_records = {}
+        for recipient in request["recipients"]:
+            recipient_entry = exchange_active_entry(exchange, recipient)
+            if request["message_type"] not in recipient_entry["accepted_message_types"]:
+                raise ValueError("recipient does not accept this message type: " + recipient)
+            if request["confidentiality"] != recipient_entry["access_class"]:
+                raise ValueError("message confidentiality does not match recipient access class")
+            policy = exchange_policy_for(
+                exchange, sender_id, recipient, request["route"], request["message_type"],
+                request["confidentiality"],
+            )
+            policy_records[recipient] = {
+                "policy_id": policy["policy_id"],
+                "policy_sha256": canonical_json_sha256(policy),
+            }
+        if request["route"] in {"DIRECT", "CHIEF_MEDIATED"} and len(request["recipients"]) != 1:
+            raise ValueError("direct and Chief-mediated routes require one exact recipient")
+        if request["route"] == "CHIEF_MEDIATED" and entries[request["recipients"][0]]["access_class"] != "CHIEF":
+            raise ValueError("Chief-mediated routing must target a declared CHIEF worker")
+        mission_hash = "NONE"
+        if request["route"] == "MISSION_ROOM":
+            mission = exchange_missions(exchange).get(request["mission_id"])
+            if not mission or mission["status"] != "ACTIVE":
+                raise ValueError("mission room is missing or inactive")
+            if parse_recorded_utc(mission["expires_utc"], "mission expires_utc") <= datetime.datetime.now(datetime.timezone.utc):
+                raise ValueError("mission room is expired")
+            if sender_id not in mission["members"] or any(
+                recipient not in mission["members"] for recipient in request["recipients"]
+            ):
+                raise ValueError("mission-room delivery is outside exact membership")
+            if len(exchange_mission_envelopes(exchange, request["mission_id"])) >= mission["max_messages"]:
+                raise ValueError("mission-room message budget is exhausted")
+            mission_hash = canonical_json_sha256(mission)
+        conversation = exchange_conversation_envelopes(exchange, request["conversation_id"])
+        if len(conversation) >= config["max_conversation_messages"]:
+            raise ValueError("exchange conversation message budget is exhausted")
+        if request["reply_to_id"] != "NONE":
+            parent = exchange_load_envelope(exchange, request["reply_to_id"])
+            if parent["request"]["conversation_id"] != request["conversation_id"]:
+                raise ValueError("exchange reply crosses conversation identity")
+            if request["hop_count"] != parent["request"]["hop_count"] + 1:
+                raise ValueError("exchange reply hop count is not the exact next hop")
+            participants = {parent["sender_worker_id"], *parent["request"]["recipients"]}
+            if sender_id not in participants or any(
+                recipient not in participants for recipient in request["recipients"]
+            ):
+                raise ValueError("exchange reply participant did not participate in the parent envelope")
+        fingerprint = exchange_material_fingerprint(request, sender_id)
+        if (
+            request["message_type"] == "STATUS"
+            and not exchange_message_root(exchange, request["message_id"]).exists()
+        ):
+            window = datetime.timedelta(seconds=config["status_repeat_window_seconds"])
+            for prior in reversed(conversation):
+                if (
+                    prior["message_id"] != request["message_id"]
+                    and prior["material_fingerprint"] == fingerprint
+                ):
+                    created = parse_recorded_utc(prior["request"]["created_utc"], "prior status created_utc")
+                    if datetime.datetime.now(datetime.timezone.utc) - created < window:
+                        print("AI-HUMAN WORKER EXCHANGE SEND: QUIET")
+                        print("- reason: no material STATUS change inside the noise window")
+                        print("- message created: NO")
+                        return
+                    break
+        request_hash = canonical_json_sha256(request)
+        message_root = exchange_message_root(exchange, request["message_id"])
+        index_record = exchange_idempotency_record(request)
+        index_path = exchange / "indexes" / (index_record["idempotency_key_sha256"] + ".json")
+        for abandoned in (exchange / ".staging").glob(request["message_id"] + "-*"):
+            if abandoned.is_symlink() or not abandoned.is_dir():
+                raise ValueError("exchange found an unsafe abandoned staging item")
+            if "-result-" in abandoned.name and (abandoned / "result.json").is_file():
+                continue
+            shutil.rmtree(abandoned)
+        if message_root.exists():
+            existing = exchange_load_envelope(exchange, request["message_id"])
+            if existing["request_sha256"] != request_hash or existing["sender_worker_id"] != sender_id:
+                raise ValueError("exchange message id was reused with different bytes")
+            if index_path.exists():
+                validate_exchange_idempotency_index(read_json(index_path), request)
+            else:
+                atomic_json(index_path, index_record)
+            exchange_complete_delivery(exchange, existing)
+            print("AI-HUMAN WORKER EXCHANGE SEND: IDEMPOTENT")
+            print("- message id: " + request["message_id"])
+            print("- envelope sha256: " + existing["envelope_sha256"])
+            return
+        if index_path.exists():
+            try:
+                validate_exchange_idempotency_index(read_json(index_path), request)
+            except ValueError as exc:
+                raise ValueError("exchange idempotency key was reused for another message")
+        bundled = []
+        total = 0
+        staging = exchange / ".staging" / (request["message_id"] + "-" + secrets.token_hex(12))
+        staging.mkdir()
+        try:
+            for index, attachment_record in enumerate(request["attachments"]):
+                relative = safe_relative(attachment_record["path"], "exchange attachment path")
+                if is_protected_managed_path(relative.as_posix()):
+                    raise ValueError("exchange cannot copy controlled or private worker state")
+                source = path_without_symlinks(worker, relative, "exchange attachment source")
+                if not source.is_file():
+                    raise ValueError("exchange attachment is missing: " + relative.as_posix())
+                if source.suffix.casefold() in {".zip", ".tar", ".tgz", ".gz", ".7z", ".rar"}:
+                    raise ValueError("archive attachments are not accepted by the v1 exchange")
+                reject_exchange_sensitive_source(relative, source, "exchange attachment")
+                size = source.stat().st_size
+                if size > config["max_attachment_bytes"]:
+                    raise ValueError("exchange attachment exceeds the configured limit")
+                if sha256(source) != attachment_record["sha256"]:
+                    raise ValueError("exchange attachment hash differs from the request")
+                bundle = Path("attachments") / (f"{index:03d}-" + source.name)
+                target = staging / bundle
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(source, target)
+                if target.stat().st_size != size or sha256(target) != attachment_record["sha256"]:
+                    raise ValueError("exchange attachment changed during copy")
+                total += size
+                bundled.append({**attachment_record, "bundle_path": bundle.as_posix(), "size_bytes": size})
+            envelope = {
+                "attachments": bundled,
+                "authority": "DATA_ONLY_NO_PERMISSION_TRANSFER",
+                "delivery_locations": {
+                    recipient: "inboxes/" + recipient + "/" + request["message_id"] + ".json"
+                    for recipient in request["recipients"]
+                },
+                "envelope_sha256": "",
+                "material_fingerprint": fingerprint,
+                "mission_sha256": mission_hash,
+                "protocol": EXCHANGE_PROTOCOL,
+                "request": request,
+                "request_sha256": request_hash,
+                "route_policies": policy_records,
+                "schema": "ai-human.exchange-envelope/v1",
+                "sender_identity_sha256": sender_entry["identity_sha256"],
+                "sender_state_sha256": controlled_state_hash(worker),
+                "sender_task_id": task_id,
+                "sender_worker_id": sender_id,
+                "trusted_transport_receipt": {
+                    "config_sha256": canonical_json_sha256(config),
+                    "join_proof_sha256": join_proof["proof_sha256"],
+                    "lease_proof_sha256": canonical_json_sha256({
+                        "actor": lease["actor"], "session_id": lease["session_id"],
+                        "state_hash": lease["state_hash"],
+                    }),
+                    "trust_mode": "LOCAL_RELAY_VERIFIED_CURRENT_JOIN_AND_WRITER_LEASE",
+                    "verified_utc": now_utc(),
+                },
+                "transport_receipt_location": "journal/",
+                "message_id": request["message_id"],
+            }
+            envelope["envelope_sha256"] = exchange_envelope_sha256(envelope)
+            encoded_size = len(json.dumps(
+                envelope, ensure_ascii=False, separators=(",", ":"), sort_keys=True
+            ).encode("utf-8"))
+            if total + encoded_size > config["max_message_bytes"]:
+                raise ValueError("exchange message exceeds the configured byte limit")
+            atomic_json(staging / "envelope.json", envelope)
+            os.replace(staging, message_root)
+        except Exception:
+            if staging.exists():
+                shutil.rmtree(staging)
+            raise
+        atomic_json(index_path, index_record)
+        exchange_complete_delivery(exchange, envelope)
+    print("AI-HUMAN WORKER EXCHANGE SEND: PASS")
+    print("- message id: " + request["message_id"])
+    print("- route: " + request["route"])
+    print("- recipient count: " + str(len(request["recipients"])))
+    print("- envelope sha256: " + envelope["envelope_sha256"])
+
+
+def exchange_local_receipt(worker, directory, message_id, payload):
+    governor_safe_id(message_id, "exchange local receipt message id")
+    target = worker_target(
+        worker, EXCHANGE_LOCAL_ROOT / directory / (message_id + ".json"),
+        "worker exchange local receipt target",
+    )
+    payload = dict(payload)
+    payload["record_sha256"] = exchange_record_sha256(payload, "record_sha256")
+    if target.exists():
+        existing = read_json(target)
+        validate_exchange_local_record(
+            existing, directory, message_id, exchange_worker_join(worker)
+        )
+        variable_fields = {"acknowledged_utc", "decided_utc", "record_sha256"}
+        if any(
+            existing.get(field) != payload.get(field)
+            for field in set(payload) - variable_fields
+        ):
+            raise ValueError("worker exchange local receipt conflicts with prior state")
+        return existing, False, target.relative_to(worker)
+    return payload, True, target.relative_to(worker)
+
+
+def exchange_authorized_envelope(worker, exchange, message_id):
+    _config, entry = verify_joined_worker(worker, exchange)
+    envelope = exchange_load_envelope(exchange, message_id)
+    sender = exchange_active_entry(exchange, envelope["sender_worker_id"])
+    authentication = envelope.get("trusted_transport_receipt")
+    joins = exchange_join_catalog(exchange, envelope["sender_worker_id"])
+    join = joins.get(authentication.get("join_proof_sha256")) if isinstance(authentication, dict) else None
+    if (
+        not sender
+        or sender["identity_sha256"] != envelope["sender_identity_sha256"]
+        or not isinstance(authentication, dict)
+        or set(authentication) != {
+            "config_sha256", "join_proof_sha256", "lease_proof_sha256", "trust_mode", "verified_utc"
+        }
+        or not isinstance(join, dict)
+        or authentication["join_proof_sha256"] != join.get("proof_sha256")
+        or authentication["config_sha256"] != canonical_json_sha256(exchange_config(exchange))
+        or authentication["trust_mode"] != "LOCAL_RELAY_VERIFIED_CURRENT_JOIN_AND_WRITER_LEASE"
+        or not SHA256_HEX.fullmatch(str(authentication["lease_proof_sha256"]))
+    ):
+        raise ValueError("exchange sender authentication or trusted transport receipt is invalid")
+    parse_recorded_utc(authentication["verified_utc"], "transport receipt verified_utc")
+    recipient = entry["worker_id"]
+    if recipient not in envelope["request"]["recipients"]:
+        raise ValueError("exchange message is addressed to another worker")
+    exchange_current_envelope_access(exchange, envelope, recipient)
+    return envelope, recipient
+
+
+def exchange_ack(args):
+    worker = safe_worker(args.worker)
+    exchange = safe_exchange_root(args.exchange)
+    intent = {"message_id": args.message_id, "operation": "ACK"}
+    lease, _state_hash, _recovered = exchange_operation_lease(
+        worker, exchange, args.session_id, args.expected_state_hash, "ACK", intent
+    )
+    exchange_require_status(exchange, {"ACTIVE", "PAUSED"})
+    with worker_operation_mutex(exchange):
+        exchange_require_status(exchange, {"ACTIVE", "PAUSED"})
+        envelope, recipient = exchange_authorized_envelope(worker, exchange, args.message_id)
+        if parse_recorded_utc(envelope["request"]["expires_utc"], "exchange expires_utc") <= datetime.datetime.now(datetime.timezone.utc):
+            state = exchange_current_state(exchange, args.message_id, recipient)
+            if state not in EXCHANGE_TERMINAL_STATES:
+                exchange_append_event(exchange, args.message_id, recipient, "relay", "EXPIRED", "Message expired before acknowledgement")
+            raise ValueError("exchange message expired before acknowledgement")
+        state = exchange_current_state(exchange, args.message_id, recipient)
+        if state == "DELIVERED":
+            event = exchange_build_event(
+                exchange, args.message_id, recipient, recipient, "ACKNOWLEDGED",
+                "Recipient verified sender, exact target, envelope and attachment hashes",
+            )
+        elif state not in {"ACKNOWLEDGED", "ACCEPTED", "COMPLETED"}:
+            raise ValueError("exchange message cannot be acknowledged from state " + str(state))
+        else:
+            event = next(
+                item for item in exchange_events(exchange, args.message_id, recipient)
+                if item["state"] == "ACKNOWLEDGED"
+            )
+        payload = {
+            "acknowledged_utc": now_utc(),
+            "envelope_sha256": envelope["envelope_sha256"],
+            "message_id": args.message_id,
+            "recipient_worker_id": recipient,
+            "record_sha256": "",
+            "schema": "ai-human.exchange-local-receipt/v1",
+            "transport_state": "ACKNOWLEDGED",
+        }
+        receipt, created, relative = exchange_local_receipt(
+            worker, "received", args.message_id, payload
+        )
+        if created:
+            updated = exchange_commit_local_mutation(
+                worker, exchange, lease, "ACK", intent, relative, receipt,
+                exchange_mutation_bindings(
+                    config_sha256=canonical_json_sha256(exchange_config(exchange)),
+                    envelope_sha256=envelope["envelope_sha256"],
+                    event_sha256=event["event_sha256"],
+                    message_id=args.message_id,
+                ),
+                transport_event=event,
+            )
+        else:
+            updated = lease
+    print("AI-HUMAN WORKER EXCHANGE ACK: " + ("PASS" if created else "IDEMPOTENT"))
+    print("- message id: " + args.message_id)
+    print("- recipient: " + recipient)
+    print("- new expected-state hash: " + updated["state_hash"])
+
+
+def exchange_decide(args):
+    worker = safe_worker(args.worker)
+    exchange = safe_exchange_root(args.exchange)
+    reason = bounded_clean(args.reason, "exchange decision reason", 2000)
+    intent = {
+        "decision": args.decision, "message_id": args.message_id,
+        "operation": "DECIDE", "reason": reason,
+    }
+    lease, _state_hash, _recovered = exchange_operation_lease(
+        worker, exchange, args.session_id, args.expected_state_hash, "DECIDE", intent
+    )
+    exchange_require_status(exchange, {"ACTIVE", "PAUSED"})
+    state_name = "ACCEPTED" if args.decision == "ACCEPT" else "REJECTED"
+    with worker_operation_mutex(exchange):
+        exchange_require_status(exchange, {"ACTIVE", "PAUSED"})
+        envelope, recipient = exchange_authorized_envelope(worker, exchange, args.message_id)
+        acknowledged = require_exchange_local_record(worker, "received", args.message_id)
+        if acknowledged["envelope_sha256"] != envelope["envelope_sha256"]:
+            raise ValueError("worker-local acknowledgement differs from the immutable envelope")
+        current = exchange_current_state(exchange, args.message_id, recipient)
+        if parse_recorded_utc(
+            envelope["request"]["expires_utc"], "exchange expires_utc"
+        ) <= datetime.datetime.now(datetime.timezone.utc):
+            if current not in EXCHANGE_TERMINAL_STATES:
+                exchange_append_event(
+                    exchange, args.message_id, recipient, "relay", "EXPIRED",
+                    "Message expired before recipient decision",
+                )
+            raise ValueError("exchange message expired before recipient decision")
+        if current == "ACKNOWLEDGED":
+            event = exchange_build_event(
+                exchange, args.message_id, recipient, recipient, state_name,
+                reason,
+            )
+        elif current != state_name:
+            raise ValueError("exchange message cannot be decided from state " + str(current))
+        else:
+            event = next(
+                item for item in exchange_events(exchange, args.message_id, recipient)
+                if item["state"] == state_name
+            )
+        payload = {
+            "decision": args.decision,
+            "decided_utc": now_utc(),
+            "envelope_sha256": envelope["envelope_sha256"],
+            "message_id": args.message_id,
+            "reason": reason,
+            "recipient_worker_id": recipient,
+            "record_sha256": "",
+            "schema": "ai-human.exchange-local-decision/v1",
+            "work_queue_effect": "QUEUED_NOT_LIVE_TASK" if args.decision == "ACCEPT" else "NONE",
+        }
+        directory = "accepted" if args.decision == "ACCEPT" else "rejected"
+        receipt, created, relative = exchange_local_receipt(
+            worker, directory, args.message_id, payload
+        )
+        if created:
+            updated = exchange_commit_local_mutation(
+                worker, exchange, lease, "DECIDE", intent, relative, receipt,
+                exchange_mutation_bindings(
+                    config_sha256=canonical_json_sha256(exchange_config(exchange)),
+                    envelope_sha256=envelope["envelope_sha256"],
+                    event_sha256=event["event_sha256"],
+                    message_id=args.message_id,
+                ),
+                transport_event=event,
+            )
+        else:
+            updated = lease
+    print("AI-HUMAN WORKER EXCHANGE DECISION: " + ("PASS" if created else "IDEMPOTENT"))
+    print("- message id: " + args.message_id)
+    print("- decision: " + args.decision)
+    print("- live task interrupted: NO")
+    print("- new expected-state hash: " + updated["state_hash"])
+
+
+def validate_exchange_result_request(data, config):
+    if not isinstance(data, dict):
+        raise ValueError("exchange result must be a JSON object")
+    require_exact_fields(data, EXCHANGE_RESULT_FIELDS, "exchange result")
+    if data.get("schema") != "ai-human.exchange-result-request/v1":
+        raise ValueError("unsupported exchange result request schema")
+    for field in ("message_id", "result_id", "source_owner_worker_id"):
+        governor_safe_id(data.get(field, ""), "exchange result " + field.replace("_", " "))
+    bounded_clean(data.get("evidence", ""), "exchange result evidence", 2000)
+    bounded_clean(data.get("result_version", ""), "exchange result version", 200)
+    attachments = data.get("artifacts")
+    if not isinstance(attachments, list) or not attachments or len(attachments) > config["max_attachments"]:
+        raise ValueError("exchange result attachments must be a non-empty bounded list")
+    seen_paths = set()
+    for index, record in enumerate(attachments):
+        validate_exchange_attachment(record, "exchange result attachment " + str(index))
+        key = portable_key(record["path"])
+        if key in seen_paths:
+            raise ValueError("exchange result attachment source path is duplicated")
+        seen_paths.add(key)
+    facts = data.get("fact_claims")
+    if not isinstance(facts, list) or len(facts) > BATCH_CAP:
+        raise ValueError("exchange result fact claims must be a bounded list")
+    seen = set()
+    for index, fact in enumerate(facts):
+        if not isinstance(fact, dict):
+            raise ValueError("exchange result fact claim must be a JSON object")
+        require_exact_fields(fact, EXCHANGE_FACT_FIELDS, "exchange result fact claim " + str(index))
+        governor_safe_id(fact.get("fact_id", ""), "exchange fact id")
+        governor_safe_id(fact.get("owner_worker_id", ""), "exchange fact owner")
+        if not SHA256_HEX.fullmatch(str(fact.get("value_sha256", ""))):
+            raise ValueError("exchange fact value hash is invalid")
+        if fact["fact_id"] in seen:
+            raise ValueError("exchange result contains a duplicate fact id")
+        seen.add(fact["fact_id"])
+    return data
+
+
+def exchange_result_sha256(record):
+    return exchange_record_sha256(record, "result_sha256")
+
+
+def exchange_load_result(exchange, message_id, recipient_id, result_id, root_override=None):
+    governor_safe_id(result_id, "exchange result id")
+    root = (
+        Path(root_override)
+        if root_override is not None
+        else exchange_message_root(exchange, message_id) / "results" / (recipient_id + "-" + result_id)
+    )
+    if root.is_symlink() or not root.is_dir():
+        raise ValueError("exchange result root is invalid")
+    path = root / "result.json"
+    if not path.is_file() or path.is_symlink():
+        raise ValueError("exchange result is missing")
+    record = read_json(path)
+    fields = {
+        "artifacts", "created_utc", "recipient_identity_sha256", "recipient_worker_id",
+        "request", "request_sha256", "result_sha256", "schema",
+    }
+    require_exact_fields(record, fields, "exchange immutable result")
+    if record.get("schema") != "ai-human.exchange-result/v1":
+        raise ValueError("unsupported exchange result schema")
+    config = exchange_config(exchange)
+    request = validate_exchange_result_request(record.get("request"), config)
+    if contains_secret_material(request):
+        raise ValueError("exchange immutable result request appears to contain secret material")
+    if request["message_id"] != message_id or request["result_id"] != result_id:
+        raise ValueError("exchange result identity differs from its path")
+    if record.get("recipient_worker_id") != recipient_id:
+        raise ValueError("exchange result recipient differs from its path")
+    if record.get("request_sha256") != canonical_json_sha256(request):
+        raise ValueError("exchange result request hash mismatch")
+    if record.get("result_sha256") != exchange_result_sha256(record):
+        raise ValueError("exchange result hash mismatch")
+    if not SHA256_HEX.fullmatch(str(record.get("recipient_identity_sha256", ""))):
+        raise ValueError("exchange result recipient identity hash is invalid")
+    parse_recorded_utc(record.get("created_utc"), "exchange result created_utc")
+    bundled = record.get("artifacts")
+    if not isinstance(bundled, list) or len(bundled) != len(request["artifacts"]):
+        raise ValueError("exchange result artifact list differs from its request")
+    expected = {"result.json"}
+    aggregate_size = 0
+    for index, artifact in enumerate(bundled):
+        fields = set(EXCHANGE_ATTACHMENT_FIELDS) | {"bundle_path", "size_bytes"}
+        require_exact_fields(artifact, fields, "exchange result artifact " + str(index))
+        validate_exchange_attachment(
+            {field: artifact[field] for field in EXCHANGE_ATTACHMENT_FIELDS},
+            "exchange result artifact " + str(index),
+        )
+        if (
+            {field: artifact[field] for field in EXCHANGE_ATTACHMENT_FIELDS}
+            != request["artifacts"][index]
+        ):
+            raise ValueError("exchange result artifact differs from its signed request descriptor")
+        bundle = safe_relative(artifact["bundle_path"], "exchange result bundle path")
+        expected_bundle = Path("artifacts") / (
+            f"{index:03d}-" + Path(request["artifacts"][index]["path"]).name
+        )
+        if bundle != expected_bundle:
+            raise ValueError("exchange result bundle differs from its signed request position")
+        target = path_without_symlinks(root, bundle, "exchange result artifact")
+        reject_exchange_sensitive_source(
+            safe_relative(artifact["path"], "exchange signed result source path"),
+            target, "exchange result artifact",
+        )
+        size = positive_integer(
+            artifact["size_bytes"], "exchange result artifact size",
+            config["max_attachment_bytes"], allow_zero=True,
+        )
+        if not target.is_file() or target.stat().st_size != size or sha256(target) != artifact["sha256"]:
+            raise ValueError("exchange result artifact integrity mismatch")
+        aggregate_size += size
+        expected.add(bundle.as_posix())
+    if aggregate_size > config["max_message_bytes"]:
+        raise ValueError("exchange result artifacts exceed the configured aggregate byte limit")
+    for item in root.rglob("*"):
+        if item.is_symlink():
+            raise ValueError("exchange result may not contain symbolic links")
+        if item.is_file() and item.relative_to(root).as_posix() not in expected:
+            raise ValueError("exchange result contains an unsigned file")
+    return record
+
+
+def exchange_stage_result(worker, exchange, config, request, worker_entry, recipient):
+    staging = exchange / ".staging" / (
+        request["message_id"] + "-result-" + recipient + "-" + request["result_id"]
+    )
+    if staging.exists():
+        record = exchange_load_result(
+            exchange, request["message_id"], recipient, request["result_id"],
+            root_override=staging,
+        )
+        if record["request_sha256"] != canonical_json_sha256(request):
+            raise ValueError("exchange result staging belongs to another exact request")
+        return staging, record
+    staging.mkdir()
+    bundled = []
+    aggregate_size = 0
+    try:
+        for index, artifact in enumerate(request["artifacts"]):
+            relative = safe_relative(artifact["path"], "exchange result artifact path")
+            if is_protected_managed_path(relative.as_posix()):
+                raise ValueError("exchange result cannot copy controlled or private worker state")
+            source = path_without_symlinks(worker, relative, "exchange result artifact source")
+            if not source.is_file():
+                raise ValueError("exchange result artifact is missing")
+            if source.suffix.casefold() in {".zip", ".tar", ".tgz", ".gz", ".7z", ".rar"}:
+                raise ValueError("archive result artifacts are not accepted by the v1 exchange")
+            reject_exchange_sensitive_source(relative, source, "exchange result artifact")
+            size = source.stat().st_size
+            if size > config["max_attachment_bytes"] or sha256(source) != artifact["sha256"]:
+                raise ValueError("exchange result artifact size or hash is invalid")
+            aggregate_size += size
+            if aggregate_size > config["max_message_bytes"]:
+                raise ValueError(
+                    "exchange result artifacts exceed the configured aggregate byte limit"
+                )
+            bundle = Path("artifacts") / (f"{index:03d}-" + source.name)
+            target = staging / bundle
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(source, target)
+            if target.stat().st_size != size or sha256(target) != artifact["sha256"]:
+                raise ValueError("exchange result artifact changed during copy")
+            bundled.append({**artifact, "bundle_path": bundle.as_posix(), "size_bytes": size})
+        record = {
+            "artifacts": bundled,
+            "created_utc": now_utc(),
+            "recipient_identity_sha256": worker_entry["identity_sha256"],
+            "recipient_worker_id": recipient,
+            "request": request,
+            "request_sha256": canonical_json_sha256(request),
+            "result_sha256": "",
+            "schema": "ai-human.exchange-result/v1",
+        }
+        record["result_sha256"] = exchange_result_sha256(record)
+        atomic_json(staging / "result.json", record)
+        return staging, record
+    except Exception:
+        if staging.exists():
+            shutil.rmtree(staging)
+        raise
+
+
+def exchange_result(args):
+    worker = safe_worker(args.worker)
+    exchange = safe_exchange_root(args.exchange)
+    request_source = read_governor_input(args.result, "exchange result source")
+    request = validate_exchange_result_request(request_source, exchange_config(exchange))
+    intent = {"operation": "RESULT", "request_sha256": canonical_json_sha256(request)}
+    lease, _state_hash, _recovered = exchange_operation_lease(
+        worker, exchange, args.session_id, args.expected_state_hash, "RESULT", intent
+    )
+    with worker_operation_mutex(exchange):
+        exchange_require_status(exchange, {"ACTIVE", "PAUSED"})
+        config, worker_entry = verify_joined_worker(worker, exchange)
+        request = validate_exchange_result_request(request_source, config)
+        effective_cap = current_worker_effective_batch_cap(worker)
+        if len(request["artifacts"]) > effective_cap or len(request["fact_claims"]) > effective_cap:
+            raise ValueError("exchange result exceeds the worker's current effective batch cap")
+        if contains_secret_material(request):
+            raise ValueError("exchange result request appears to contain secret material")
+        if request["source_owner_worker_id"] != worker_entry["worker_id"]:
+            raise ValueError("exchange result source owner differs from the producing worker")
+        if any(fact["owner_worker_id"] != worker_entry["worker_id"] for fact in request["fact_claims"]):
+            raise ValueError("a worker may claim ownership only for facts it owns")
+        envelope, recipient = exchange_authorized_envelope(worker, exchange, request["message_id"])
+        accepted = require_exchange_local_record(worker, "accepted", request["message_id"])
+        if accepted["envelope_sha256"] != envelope["envelope_sha256"]:
+            raise ValueError("worker-local acceptance differs from the immutable envelope")
+        state = exchange_current_state(exchange, request["message_id"], recipient)
+        if state not in {"ACCEPTED", "COMPLETED"}:
+            raise ValueError("exchange result requires an ACCEPTED message")
+        result_root = exchange_message_root(exchange, request["message_id"]) / "results" / (
+            recipient + "-" + request["result_id"]
+        )
+        if result_root.exists():
+            existing = exchange_load_result(exchange, request["message_id"], recipient, request["result_id"])
+            if existing["request_sha256"] != canonical_json_sha256(request):
+                raise ValueError("exchange result id was reused with different bytes")
+            record = existing
+            created = False
+            staging = None
+        else:
+            if state == "COMPLETED":
+                raise ValueError("exchange message already has an immutable completed result")
+            staging, record = exchange_stage_result(
+                worker, exchange, config, request, worker_entry, recipient
+            )
+            created = True
+        if state == "ACCEPTED":
+            event = exchange_build_event(
+                exchange, request["message_id"], recipient, recipient, "COMPLETED",
+                ("Immutable result " if created else "Recovered immutable result ")
+                + record["result_sha256"],
+            )
+        else:
+            event = next(
+                item for item in exchange_events(exchange, request["message_id"], recipient)
+                if item["state"] == "COMPLETED"
+            )
+        payload = {
+            "envelope_sha256": envelope["envelope_sha256"],
+            "message_id": request["message_id"],
+            "record_sha256": "",
+            "result_id": request["result_id"],
+            "result_sha256": record["result_sha256"],
+            "schema": "ai-human.exchange-local-result/v1",
+        }
+        receipt, local_created, relative = exchange_local_receipt(
+            worker, "results", request["message_id"], payload
+        )
+        if local_created:
+            try:
+                updated = exchange_commit_local_mutation(
+                    worker, exchange, lease, "RESULT", intent, relative, receipt,
+                    exchange_mutation_bindings(
+                        config_sha256=canonical_json_sha256(config),
+                        envelope_sha256=envelope["envelope_sha256"],
+                        event_sha256=event["event_sha256"],
+                        message_id=request["message_id"],
+                        result_id=request["result_id"],
+                        result_sha256=record["result_sha256"],
+                    ),
+                    transport_event=event,
+                    transport_staging_relative=(
+                        staging.relative_to(exchange).as_posix() if staging is not None else
+                        ".staging/recovered-" + request["message_id"] + "-" + request["result_id"]
+                    ),
+                )
+            except Exception:
+                if (
+                    staging is not None and staging.exists()
+                    and not exchange_mutation_file(worker).exists()
+                ):
+                    shutil.rmtree(staging)
+                raise
+        else:
+            if state == "ACCEPTED":
+                raise ValueError("completed exchange result lacks its worker-local proof")
+            updated = lease
+    print("AI-HUMAN WORKER EXCHANGE RESULT: " + ("PASS" if created else "IDEMPOTENT"))
+    print("- message id: " + request["message_id"])
+    print("- result sha256: " + record["result_sha256"])
+    print("- new expected-state hash: " + updated["state_hash"])
+
+
+def validate_exchange_integration_request(data):
+    if not isinstance(data, dict):
+        raise ValueError("exchange integration request must be a JSON object")
+    require_exact_fields(data, EXCHANGE_INTEGRATION_FIELDS, "exchange integration request")
+    if data.get("schema") != "ai-human.exchange-integration-request/v1":
+        raise ValueError("unsupported exchange integration request schema")
+    governor_safe_id(data.get("mission_id", ""), "exchange integration mission id")
+    expected = data.get("expected")
+    if not isinstance(expected, list) or not expected or len(expected) > BATCH_CAP:
+        raise ValueError("exchange integration expected inputs must be a non-empty bounded list")
+    seen = set()
+    seen_workers = set()
+    for index, item in enumerate(expected):
+        if not isinstance(item, dict):
+            raise ValueError("exchange integration input must be a JSON object")
+        require_exact_fields(item, EXCHANGE_EXPECTED_RESULT_FIELDS, "exchange integration input " + str(index))
+        for field in ("message_id", "result_id", "worker_id"):
+            governor_safe_id(item.get(field, ""), "exchange integration " + field.replace("_", " "))
+        bounded_clean(item.get("result_version", ""), "exchange integration result version", 200)
+        if not SHA256_HEX.fullmatch(str(item.get("result_sha256", ""))):
+            raise ValueError("exchange integration result hash is invalid")
+        key = (item["worker_id"], item["message_id"])
+        if key in seen:
+            raise ValueError("exchange integration input is duplicated")
+        if item["worker_id"] in seen_workers:
+            raise ValueError("exchange integration may provide only one result per worker")
+        seen.add(key)
+        seen_workers.add(item["worker_id"])
+    return data
+
+
+def exchange_integrate(args):
+    worker = safe_worker(args.worker)
+    exchange = safe_exchange_root(args.exchange)
+    request = validate_exchange_integration_request(
+        read_governor_input(args.integration, "exchange integration source")
+    )
+    intent = {
+        "operation": "INTEGRATE", "request_sha256": canonical_json_sha256(request)
+    }
+    lease, _state_hash, _recovered = exchange_operation_lease(
+        worker, exchange, args.session_id, args.expected_state_hash, "INTEGRATE", intent
+    )
+    with worker_operation_mutex(exchange):
+        return exchange_integrate_locked(worker, exchange, request, intent, lease)
+
+
+def exchange_integrate_locked(worker, exchange, request, intent, lease):
+    exchange_require_status(exchange, {"ACTIVE", "PAUSED"})
+    config, entry = verify_joined_worker(worker, exchange)
+    if len(request["expected"]) > current_worker_effective_batch_cap(worker):
+        raise ValueError("exchange integration exceeds the worker's current effective batch cap")
+    mission = exchange_missions(exchange).get(request["mission_id"])
+    if (
+        not mission
+        or mission["status"] != "ACTIVE"
+        or parse_recorded_utc(mission["expires_utc"], "mission expires_utc")
+        <= datetime.datetime.now(datetime.timezone.utc)
+    ):
+        raise ValueError("exchange integration mission is missing, inactive or expired")
+    if mission["integration_owner_worker_id"] != entry["worker_id"]:
+        raise ValueError("only the declared integration owner may join mission results")
+    supplied_workers = {item["worker_id"] for item in request["expected"]}
+    required_workers = set(mission["required_result_worker_ids"])
+    if supplied_workers != required_workers:
+        missing = sorted(required_workers - supplied_workers)
+        extra = sorted(supplied_workers - required_workers)
+        detail = []
+        if missing:
+            detail.append("missing " + ", ".join(missing))
+        if extra:
+            detail.append("extra " + ", ".join(extra))
+        raise ValueError("exchange integration worker set differs from mission contract: " + "; ".join(detail))
+    records = []
+    fact_owners = {}
+    fact_values = {}
+    for expected in request["expected"]:
+        if expected["worker_id"] not in mission["members"]:
+            raise ValueError("exchange integration input is outside mission membership")
+        envelope = exchange_load_envelope(exchange, expected["message_id"])
+        if (
+            envelope["request"]["mission_id"] != mission["mission_id"]
+            or envelope["mission_sha256"] != canonical_json_sha256(mission)
+        ):
+            raise ValueError("exchange integration input belongs to another mission")
+        exchange_current_envelope_access(exchange, envelope, expected["worker_id"])
+        if exchange_current_state(
+            exchange, expected["message_id"], expected["worker_id"]
+        ) != "COMPLETED":
+            raise ValueError("exchange integration requires each exact message lifecycle to be COMPLETED")
+        result = exchange_load_result(
+            exchange, expected["message_id"], expected["worker_id"], expected["result_id"]
+        )
+        if result["result_sha256"] != expected["result_sha256"]:
+            raise ValueError("exchange integration result hash differs from the expected input")
+        if result["request"]["result_version"] != expected["result_version"]:
+            raise ValueError("exchange integration result version differs from the expected input")
+        if result["request"]["source_owner_worker_id"] != expected["worker_id"]:
+            raise ValueError("exchange integration result has the wrong source owner")
+        for fact in result["request"]["fact_claims"]:
+            owner = fact_owners.setdefault(fact["fact_id"], fact["owner_worker_id"])
+            value = fact_values.setdefault(fact["fact_id"], fact["value_sha256"])
+            if owner != fact["owner_worker_id"]:
+                raise ValueError("two workers claim ownership of the same fact")
+            if value != fact["value_sha256"]:
+                raise ValueError("mission results contain a visible fact conflict")
+        records.append({
+            "message_id": expected["message_id"], "result_id": expected["result_id"],
+            "result_sha256": result["result_sha256"], "result_version": expected["result_version"],
+            "worker_id": expected["worker_id"],
+        })
+    proof_body = {
+        "inputs": records,
+        "integration_owner_worker_id": entry["worker_id"],
+        "mission_id": mission["mission_id"],
+        "mission_sha256": canonical_json_sha256(mission),
+        "schema": "ai-human.exchange-integration-proof/v1",
+        "status": "INPUTS_VERIFIED_CONFLICT_FREE",
+    }
+    target = worker_target(
+        worker, EXCHANGE_LOCAL_ROOT / "integration" / (mission["mission_id"] + ".json"),
+        "worker exchange integration proof target",
+    )
+    if target.exists():
+        proof = validate_exchange_local_record(
+            read_json(target), "integration", mission["mission_id"], exchange_worker_join(worker)
+        )
+        if (
+            not isinstance(proof, dict)
+            or proof.get("record_sha256") != exchange_record_sha256(proof, "record_sha256")
+            or {key: proof.get(key) for key in proof_body} != proof_body
+        ):
+            raise ValueError("exchange mission already has a different integration proof")
+        created = False
+    else:
+        proof = {**proof_body, "created_utc": now_utc(), "record_sha256": ""}
+        proof["record_sha256"] = exchange_record_sha256(proof, "record_sha256")
+        updated = exchange_commit_local_mutation(
+            worker, exchange, lease, "INTEGRATE", intent,
+            target.relative_to(worker), proof,
+            exchange_mutation_bindings(
+                config_sha256=canonical_json_sha256(config),
+                mission_id=mission["mission_id"],
+                mission_sha256=canonical_json_sha256(mission),
+            ),
+        )
+        created = True
+    if not created:
+        updated = lease
+    print("AI-HUMAN WORKER EXCHANGE INTEGRATION: " + ("PASS" if created else "IDEMPOTENT"))
+    print("- mission id: " + mission["mission_id"])
+    print("- verified inputs: " + str(len(records)))
+    print("- conflicts: NONE")
+    print("- new expected-state hash: " + updated["state_hash"])
+
+
+def validate_exchange_transport(exchange):
+    failures = []
+    try:
+        config = exchange_config(exchange)
+        exchange_control(exchange)
+        allowed_top = {
+            "config.json", "control.json", "directory", "join-receipts", "join-history",
+            "policies", "policy-revocations", "missions", "messages", "inboxes",
+            "journal", "indexes", "control-events", ".staging",
+            ".ai-human-operation.mutex",
+        }
+        for path in exchange.iterdir():
+            if path.name not in allowed_top:
+                raise ValueError("exchange contains a forbidden top-level entry: " + path.name)
+            if path.is_symlink():
+                raise ValueError("exchange may not contain symbolic links")
+        for path in exchange.rglob("*"):
+            if path.is_symlink():
+                raise ValueError("exchange may not contain symbolic links: " + str(path.relative_to(exchange)))
+        staging = exchange / ".staging"
+        if not staging.is_dir() or any(staging.iterdir()):
+            raise ValueError("exchange has crash-left staging state; run exchange-recover")
+        entries = exchange_directory(exchange)
+        join_root = exchange / "join-receipts"
+        if not join_root.is_dir() or join_root.is_symlink():
+            raise ValueError("exchange join-receipt directory is missing")
+        join_receipts = {}
+        for path in join_root.iterdir():
+            if path.is_symlink() or not path.is_file() or path.suffix.casefold() != ".json":
+                raise ValueError("exchange join receipts contain a forbidden entry")
+            proof = validate_exchange_join_proof(read_json(path))
+            if path.name != proof.get("directory_entry", {}).get("worker_id", "") + ".json":
+                raise ValueError("exchange join receipt filename differs from worker id")
+            if proof.get("config_sha256") != canonical_json_sha256(config):
+                raise ValueError("exchange join receipt references another configuration")
+            if proof.get("exchange_id") != config["exchange_id"]:
+                raise ValueError("exchange join receipt references another exchange id")
+            worker_id = proof["directory_entry"]["worker_id"]
+            current_entry = entries.get(worker_id)
+            if not current_entry:
+                raise ValueError("exchange join receipt references a missing directory worker")
+            if current_entry["status"] == "ACTIVE":
+                if current_entry != proof["directory_entry"]:
+                    raise ValueError("active exchange directory differs from its current join receipt")
+            elif any(
+                current_entry[field] != proof["directory_entry"][field]
+                for field in EXCHANGE_DIRECTORY_FIELDS - {"status"}
+            ):
+                raise ValueError("inactive exchange directory differs from its joined identity")
+            join_receipts[worker_id] = proof
+        history_root = exchange / "join-history"
+        if not history_root.is_dir() or history_root.is_symlink():
+            raise ValueError("exchange join history is missing")
+        for path in history_root.iterdir():
+            if path.is_symlink() or not path.is_file() or path.suffix.casefold() != ".json":
+                raise ValueError("exchange join history contains a forbidden entry")
+            proof = validate_exchange_join_proof(read_json(path))
+            if path.name != proof["proof_sha256"] + ".json":
+                raise ValueError("exchange join history filename differs from proof hash")
+            if proof["config_sha256"] != canonical_json_sha256(config):
+                raise ValueError("exchange join history references another configuration")
+        for proof in join_receipts.values():
+            history_path = history_root / (proof["proof_sha256"] + ".json")
+            if not history_path.is_file() or read_json(history_path) != proof:
+                raise ValueError("exchange current join receipt is missing from immutable history")
+        policies = exchange_route_policies(exchange)
+        revocations = exchange_policy_revocations(exchange)
+        if any(policy_id not in policies for policy_id in revocations):
+            raise ValueError("exchange revocation references a missing route policy")
+        missions = exchange_missions(exchange)
+        for mission in missions.values():
+            for member in mission["members"]:
+                if member not in entries:
+                    raise ValueError("mission references a missing directory member")
+        journal = exchange_journal_records(exchange)
+        journal_event_hashes = [record["event_sha256"] for record in journal]
+        event_hashes = []
+        message_ids = set()
+        idempotency_hashes = set()
+        messages_root = exchange / "messages"
+        if not messages_root.is_dir() or messages_root.is_symlink():
+            raise ValueError("exchange messages directory is missing")
+        for package in sorted(messages_root.iterdir(), key=lambda item: item.name.casefold()):
+            if package.is_symlink() or not package.is_dir():
+                raise ValueError("exchange messages contain a forbidden entry")
+            envelope = exchange_load_envelope(exchange, package.name)
+            message_ids.add(envelope["message_id"])
+            sender = entries.get(envelope["sender_worker_id"])
+            if not sender or sender["identity_sha256"] != envelope["sender_identity_sha256"]:
+                raise ValueError("exchange envelope sender is forged or missing")
+            authentication = envelope.get("trusted_transport_receipt")
+            if not isinstance(authentication, dict) or set(authentication) != {
+                "config_sha256", "join_proof_sha256", "lease_proof_sha256", "trust_mode", "verified_utc"
+            }:
+                raise ValueError("exchange trusted transport receipt is missing")
+            join = exchange_join_catalog(exchange, envelope["sender_worker_id"]).get(
+                authentication["join_proof_sha256"]
+            )
+            if (
+                not join
+                or authentication["config_sha256"] != canonical_json_sha256(config)
+                or authentication["trust_mode"] != "LOCAL_RELAY_VERIFIED_CURRENT_JOIN_AND_WRITER_LEASE"
+                or not SHA256_HEX.fullmatch(str(authentication["lease_proof_sha256"]))
+            ):
+                raise ValueError("exchange trusted transport receipt is invalid")
+            parse_recorded_utc(authentication["verified_utc"], "transport receipt verified_utc")
+            request = envelope["request"]
+            for recipient in request["recipients"]:
+                if recipient not in entries:
+                    raise ValueError("exchange envelope recipient is missing")
+                snapshot = envelope["route_policies"].get(recipient)
+                if not isinstance(snapshot, dict) or set(snapshot) != {"policy_id", "policy_sha256"}:
+                    raise ValueError("exchange envelope route policy snapshot is invalid")
+                policy = policies.get(snapshot["policy_id"])
+                if not policy or canonical_json_sha256(policy) != snapshot["policy_sha256"]:
+                    raise ValueError("exchange envelope route policy proof is missing or changed")
+                if (
+                    policy["sender_worker_id"] != envelope["sender_worker_id"]
+                    or policy["recipient_worker_id"] != recipient
+                    or request["route"] not in policy["allowed_modes"]
+                    or request["message_type"] not in policy["allowed_message_types"]
+                    or request["confidentiality"] not in policy["access_classes"]
+                ):
+                    raise ValueError("exchange envelope was delivered outside its exact policy")
+                events = exchange_events(exchange, envelope["message_id"], recipient)
+                if not events or events[-1]["state"] == "QUEUED":
+                    raise ValueError("exchange message delivery is incomplete")
+                event_hashes.extend(event["event_sha256"] for event in events)
+                receipt_path = exchange / "inboxes" / recipient / (envelope["message_id"] + ".json")
+                if receipt_path.is_file() and not receipt_path.is_symlink():
+                    validate_exchange_delivery_receipt(
+                        read_json(receipt_path), envelope, recipient
+                    )
+                else:
+                    expired = parse_recorded_utc(
+                        request["expires_utc"], "exchange expires_utc"
+                    ) <= datetime.datetime.now(datetime.timezone.utc)
+                    try:
+                        exchange_current_envelope_access(exchange, envelope, recipient)
+                        current_access = True
+                    except ValueError:
+                        current_access = False
+                    if events[-1]["state"] not in {"EXPIRED", "FAILED"} or (
+                        not expired and current_access
+                    ):
+                        raise ValueError("exchange delivery receipt is missing")
+            if request["route"] == "MISSION_ROOM":
+                mission = missions.get(request["mission_id"])
+                if not mission or canonical_json_sha256(mission) != envelope["mission_sha256"]:
+                    raise ValueError("exchange mission proof is missing or changed")
+            elif envelope["mission_sha256"] != "NONE":
+                raise ValueError("non-mission envelope contains a mission proof")
+            result_root = package / "results"
+            if result_root.exists():
+                if result_root.is_symlink() or not result_root.is_dir():
+                    raise ValueError("exchange result root is invalid")
+                for result_dir in result_root.iterdir():
+                    if result_dir.is_symlink() or not result_dir.is_dir():
+                        raise ValueError("exchange result root contains a forbidden entry")
+                    prefix = next(
+                        (recipient + "-" for recipient in request["recipients"] if result_dir.name.startswith(recipient + "-")),
+                        None,
+                    )
+                    if not prefix:
+                        raise ValueError("exchange result path has an unauthorized recipient")
+                    exchange_load_result(
+                        exchange, envelope["message_id"], prefix[:-1], result_dir.name[len(prefix):]
+                    )
+            key_hash = hashlib.sha256(request["idempotency_key"].encode("utf-8")).hexdigest()
+            if key_hash in idempotency_hashes:
+                raise ValueError("exchange idempotency key is duplicated")
+            idempotency_hashes.add(key_hash)
+            index_path = exchange / "indexes" / (key_hash + ".json")
+            if not index_path.is_file():
+                raise ValueError("exchange idempotency index is missing")
+            validate_exchange_idempotency_index(read_json(index_path), request)
+        indexes = exchange / "indexes"
+        if not indexes.is_dir() or indexes.is_symlink():
+            raise ValueError("exchange idempotency index directory is missing")
+        for index_path in indexes.iterdir():
+            if index_path.is_symlink() or not index_path.is_file() or index_path.suffix.casefold() != ".json":
+                raise ValueError("exchange idempotency indexes contain a forbidden entry")
+            index = validate_exchange_idempotency_index(read_json(index_path))
+            if index_path.stem != index["idempotency_key_sha256"]:
+                raise ValueError("exchange idempotency index filename differs from its key hash")
+            if index_path.stem not in idempotency_hashes or index["message_id"] not in message_ids:
+                raise ValueError("exchange idempotency index is orphaned")
+        if sorted(event_hashes) != sorted(journal_event_hashes):
+            raise ValueError("exchange journal does not cover every lifecycle event exactly once")
+        inboxes = exchange / "inboxes"
+        if not inboxes.is_dir() or inboxes.is_symlink():
+            raise ValueError("exchange inbox directory is missing")
+        for inbox in inboxes.iterdir():
+            if inbox.is_symlink() or not inbox.is_dir() or inbox.name not in entries:
+                raise ValueError("exchange contains an unauthorized inbox")
+            for receipt_path in inbox.iterdir():
+                if receipt_path.is_symlink() or not receipt_path.is_file() or receipt_path.suffix.casefold() != ".json":
+                    raise ValueError("exchange inbox contains a forbidden entry")
+                if receipt_path.stem not in message_ids:
+                    raise ValueError("exchange inbox contains an orphan delivery")
+        controls = exchange / "control-events"
+        if not controls.is_dir() or controls.is_symlink():
+            raise ValueError("exchange control-event directory is missing")
+        for path in controls.iterdir():
+            if path.is_symlink() or not path.is_file() or path.suffix.casefold() != ".json":
+                raise ValueError("exchange control events contain a forbidden entry")
+            record = read_json(path)
+            if record.get("schema") != "ai-human.exchange-control-event/v1" or record.get("record_sha256") != exchange_record_sha256(record, "record_sha256"):
+                raise ValueError("exchange control event is invalid")
+        _ = config
+    except Exception as exc:
+        failures.append(str(exc))
+    return failures
+
+
+def exchange_audit(args):
+    exchange = safe_exchange_root(args.exchange)
+    failures = validate_exchange_transport(exchange)
+    if failures:
+        print("AI-HUMAN WORKER EXCHANGE AUDIT: FAIL")
+        for failure in failures:
+            print("- " + failure)
+        raise ValueError("exchange audit failed")
+    directory = exchange_directory(exchange)
+    messages = [path for path in (exchange / "messages").iterdir() if path.is_dir()]
+    print("AI-HUMAN WORKER EXCHANGE AUDIT: PASS")
+    print("- exchange id: " + exchange_config(exchange)["exchange_id"])
+    print("- directory workers: " + str(len(directory)))
+    print("- immutable messages: " + str(len(messages)))
+    print("- journal records: " + str(len(exchange_journal_records(exchange))))
+
+
+def exchange_recover(args):
+    exchange = safe_exchange_root(args.exchange)
+    config = exchange_config(exchange)
+    if args.owner != config["owner"]:
+        raise ValueError("only the configured exchange owner may recover the relay")
+    exchange_require_status(exchange, {"ACTIVE", "PAUSED"})
+    recovered = 0
+    with worker_operation_mutex(exchange):
+        config = exchange_config(exchange)
+        if args.owner != config["owner"]:
+            raise ValueError("only the configured exchange owner may recover the relay")
+        exchange_require_status(exchange, {"ACTIVE", "PAUSED"})
+        staging = exchange / ".staging"
+        for path in list(staging.iterdir()):
+            if path.is_symlink():
+                raise ValueError("exchange recovery refuses a symbolic-link staging item")
+            if path.is_dir():
+                if "-result-" in path.name and (path / "result.json").is_file():
+                    raise ValueError(
+                        "exchange result staging may belong to a prepared worker-local mutation; "
+                        "run that worker's exchange-local-recover first"
+                    )
+                shutil.rmtree(path)
+            elif path.is_file():
+                path.unlink()
+            else:
+                raise ValueError("exchange recovery found an unsafe staging item")
+            recovered += 1
+        journal_hashes = {record["event_sha256"] for record in exchange_journal_records(exchange)}
+        for package in sorted((exchange / "messages").iterdir(), key=lambda item: item.name.casefold()):
+            envelope = exchange_load_envelope(exchange, package.name)
+            request = envelope["request"]
+            key_hash = hashlib.sha256(request["idempotency_key"].encode("utf-8")).hexdigest()
+            index_path = exchange / "indexes" / (key_hash + ".json")
+            if not index_path.exists():
+                atomic_json(index_path, exchange_idempotency_record(request))
+                recovered += 1
+            else:
+                validate_exchange_idempotency_index(read_json(index_path), request)
+            for recipient in request["recipients"]:
+                before = exchange_current_state(exchange, envelope["message_id"], recipient)
+                expired = parse_recorded_utc(
+                    request["expires_utc"], "exchange expires_utc"
+                ) <= datetime.datetime.now(datetime.timezone.utc)
+                try:
+                    exchange_current_envelope_access(exchange, envelope, recipient)
+                    current_access = True
+                except ValueError:
+                    current_access = False
+                if expired or not current_access:
+                    state = before
+                    if state is None:
+                        exchange_append_event(
+                            exchange, envelope["message_id"], recipient,
+                            envelope["sender_worker_id"], "QUEUED",
+                            "Recovery found immutable envelope before delivery",
+                        )
+                        state = "QUEUED"
+                        recovered += 1
+                    if state not in EXCHANGE_TERMINAL_STATES:
+                        terminal = "EXPIRED" if expired else "FAILED"
+                        evidence = (
+                            "Recovery closed an expired undelivered envelope"
+                            if expired else
+                            "Recovery refused future delivery after current access was withdrawn"
+                        )
+                        exchange_append_event(
+                            exchange, envelope["message_id"], recipient, "relay", terminal,
+                            evidence,
+                        )
+                        recovered += 1
+                else:
+                    exchange_complete_delivery(exchange, envelope, [recipient])
+                    if before in {None, "QUEUED"}:
+                        recovered += 1
+                journal_hashes = {
+                    record["event_sha256"] for record in exchange_journal_records(exchange)
+                }
+                state = exchange_current_state(exchange, envelope["message_id"], recipient)
+                if expired and state not in EXCHANGE_TERMINAL_STATES:
+                    exchange_append_event(
+                        exchange, envelope["message_id"], recipient, "relay", "EXPIRED",
+                        "Recovery closed an expired delivery",
+                    )
+                    recovered += 1
+            for event in exchange_events(exchange, envelope["message_id"]):
+                if event["event_sha256"] not in journal_hashes:
+                    exchange_append_journal(
+                        exchange, "RECOVERED_EVENT", envelope["message_id"],
+                        event["recipient_worker_id"], event["event_sha256"],
+                    )
+                    journal_hashes.add(event["event_sha256"])
+                    recovered += 1
+        failures = validate_exchange_transport(exchange)
+        if failures:
+            raise ValueError("exchange recovery did not restore validity: " + "; ".join(failures))
+    print("AI-HUMAN WORKER EXCHANGE RECOVERY: PASS")
+    print("- recovered items: " + str(recovered))
+
+
+def exchange_control_command(args):
+    exchange = safe_exchange_root(args.exchange)
+    config = exchange_config(exchange)
+    if args.owner != config["owner"]:
+        raise ValueError("only the configured exchange owner may change relay status")
+    transitions = {
+        "PAUSE": ("ACTIVE", "PAUSED"),
+        "RESUME": ("PAUSED", "ACTIVE"),
+        "ARCHIVE": ("PAUSED", "ARCHIVED"),
+    }
+    expected, target = transitions[args.action]
+    with worker_operation_mutex(exchange):
+        config = exchange_config(exchange)
+        if args.owner != config["owner"]:
+            raise ValueError("only the configured exchange owner may change relay status")
+        current = exchange_control(exchange)["status"]
+        if current != expected:
+            raise ValueError("exchange " + args.action.casefold() + " requires status " + expected)
+        event = {
+            "action": args.action,
+            "actor": args.owner,
+            "created_utc": now_utc(),
+            "from_status": current,
+            "reason": bounded_clean(args.reason, "exchange control reason", 2000),
+            "record_sha256": "",
+            "schema": "ai-human.exchange-control-event/v1",
+            "to_status": target,
+        }
+        event["record_sha256"] = exchange_record_sha256(event, "record_sha256")
+        event_path = exchange / "control-events" / (
+            now_utc() + "-" + args.action.casefold() + "-" + secrets.token_hex(6) + ".json"
+        )
+        atomic_json(event_path, event)
+        atomic_json(exchange / "control.json", {
+            "schema": "ai-human.exchange-control/v1", "status": target, "updated_utc": now_utc()
+        })
+    print("AI-HUMAN WORKER EXCHANGE CONTROL: PASS")
+    print("- status: " + target)
+
+
+def exchange_directory_status(args):
+    exchange = safe_exchange_root(args.exchange)
+    config = exchange_config(exchange)
+    if args.owner != config["owner"]:
+        raise ValueError("only the configured exchange owner may change directory access")
+    exchange_require_status(exchange, {"ACTIVE", "PAUSED"})
+    worker_id = governor_safe_id(args.worker_id, "exchange directory worker id")
+    with worker_operation_mutex(exchange):
+        config = exchange_config(exchange)
+        if args.owner != config["owner"]:
+            raise ValueError("only the configured exchange owner may change directory access")
+        exchange_require_status(exchange, {"ACTIVE", "PAUSED"})
+        entries = exchange_directory(exchange)
+        if worker_id not in entries:
+            raise ValueError("exchange directory worker is missing")
+        entry = dict(entries[worker_id])
+        before = entry["status"]
+        if before == "RETIRED":
+            raise ValueError("a retired exchange directory identity cannot be reactivated")
+        if before == args.status:
+            raise ValueError("exchange directory worker already has that status")
+        entry["status"] = args.status
+        event = {
+            "action": "DIRECTORY_" + args.status,
+            "actor": args.owner,
+            "created_utc": now_utc(),
+            "from_status": before,
+            "reason": bounded_clean(args.reason, "exchange directory status reason", 2000),
+            "record_sha256": "",
+            "schema": "ai-human.exchange-control-event/v1",
+            "to_status": args.status,
+            "worker_id": worker_id,
+        }
+        event["record_sha256"] = exchange_record_sha256(event, "record_sha256")
+        atomic_json(exchange / "control-events" / (
+            now_utc() + "-directory-" + worker_id + "-" + secrets.token_hex(6) + ".json"
+        ), event)
+        atomic_json(exchange / "directory" / (worker_id + ".json"), entry)
+    print("AI-HUMAN WORKER EXCHANGE DIRECTORY STATUS: PASS")
+    print("- worker id: " + worker_id)
+    print("- status: " + args.status)
+
+
+def exchange_show(args):
+    worker = safe_worker(args.worker)
+    exchange = safe_exchange_root(args.exchange)
+    _config, entry = verify_joined_worker(worker, exchange)
+    inbox = exchange / "inboxes" / entry["worker_id"]
+    visible = []
+    if inbox.is_dir():
+        for receipt in sorted(inbox.iterdir(), key=lambda item: item.name.casefold()):
+            try:
+                envelope, recipient = exchange_authorized_envelope(worker, exchange, receipt.stem)
+            except ValueError:
+                continue
+            visible.append((envelope, exchange_current_state(exchange, receipt.stem, recipient)))
+    print("AI-HUMAN PROJECT MESSAGES")
+    print("- worker id: " + entry["worker_id"])
+    print("- visible messages: " + str(len(visible)))
+    for envelope, state in visible:
+        print("- " + envelope["message_id"] + " | from " + envelope["sender_worker_id"] + " | " + envelope["request"]["purpose"] + " | " + state)
+
+
+def exchange_export(args):
+    exchange = safe_exchange_root(args.exchange)
+    config = exchange_config(exchange)
+    if args.owner != config["owner"]:
+        raise ValueError("only the configured exchange owner may export relay proof")
+    output = Path(args.output).expanduser().resolve()
+    if output.exists() or output == Path(output.anchor) or output == Path.home().resolve():
+        raise ValueError("exchange export target must be a new file")
+    files = []
+    for path in sorted(exchange.rglob("*"), key=lambda item: item.relative_to(exchange).as_posix()):
+        if path.is_symlink():
+            raise ValueError("exchange export refuses symbolic links")
+        if path.is_file() and path.name != ".ai-human-operation.mutex":
+            files.append({
+                "path": path.relative_to(exchange).as_posix(),
+                "sha256": sha256(path),
+                "size_bytes": path.stat().st_size,
+            })
+    record = {
+        "created_utc": now_utc(),
+        "exchange_id": config["exchange_id"],
+        "files": files,
+        "schema": "ai-human.exchange-export/v1",
+    }
+    record["export_sha256"] = exchange_record_sha256(record, "export_sha256")
+    output.parent.mkdir(parents=True, exist_ok=True)
+    atomic_json(output, record)
+    print("AI-HUMAN WORKER EXCHANGE EXPORT: PASS")
+    print("- files: " + str(len(files)))
+    print("- export sha256: " + record["export_sha256"])
+
+
+def update_schedule_target(worker, relative, label):
+    relative = safe_relative(relative, label)
+    key = portable_key(relative)
+    prefix = portable_key(UPDATE_SCHEDULE_ROOT) + "/"
+    if key != portable_key(UPDATE_SCHEDULE_ROOT) and not key.startswith(prefix):
+        raise ValueError(label + " is outside update-schedule state")
+    return worker_target(worker, relative, label)
+
+
+def disabled_update_schedule(owner):
+    timestamp = now_utc()
+    return {
+        "created_utc": timestamp,
+        "owner": clean(owner, "update schedule owner"),
+        "schema": "ai-human.update-schedule-config/v1",
+        "status": "DISABLED",
+        "updated_utc": timestamp,
+    }
+
+
+def validate_update_schedule_config(value):
+    if not isinstance(value, dict):
+        raise ValueError("update schedule config must be a JSON object")
+    if value.get("schema") != "ai-human.update-schedule-config/v1":
+        raise ValueError("unsupported update schedule config schema")
+    status = value.get("status")
+    if status not in UPDATE_SCHEDULE_STATUSES:
+        raise ValueError("invalid update schedule status")
+    base = {"created_utc", "owner", "schema", "status", "updated_utc"}
+    if status == "DISABLED":
+        require_exact_fields(value, base, "disabled update schedule config")
+    else:
+        required = base | {
+            "approval_reference", "cadence", "config_id", "config_version",
+            "day_of_month", "local_time", "native_timezone_id", "not_before_local",
+            "max_retry_attempts", "native_timezone_confirmed", "platform", "python_executable",
+            "retry_policy", "rollout_lane",
+            "schedule_id", "timezone", "weekday",
+        }
+        require_exact_fields(value, required, "configured update schedule config")
+        safe_identity(str(value["config_id"]), "update schedule config id")
+        positive_integer(value["config_version"], "update schedule config version")
+        safe_identity(str(value["schedule_id"]), "update schedule id")
+        if value["cadence"] not in UPDATE_SCHEDULE_CADENCES:
+            raise ValueError("update schedule cadence must be WEEKLY or MONTHLY")
+        if value["platform"] not in UPDATE_SCHEDULE_PLATFORMS:
+            raise ValueError("update schedule platform must be MACOS or WINDOWS")
+        if value["rollout_lane"] not in {"PILOT", "GENERAL"}:
+            raise ValueError("update schedule rollout lane must be PILOT or GENERAL")
+        if value["retry_policy"] != "OWNER_OR_NEXT_OCCURRENCE":
+            raise ValueError("unsupported update schedule retry policy")
+        if (
+            isinstance(value["max_retry_attempts"], bool)
+            or not isinstance(value["max_retry_attempts"], int)
+            or not 1 <= value["max_retry_attempts"] <= BATCH_CAP
+        ):
+            raise ValueError("update schedule max retry attempts must be 1 through 25")
+        if not LOCAL_CLOCK.fullmatch(str(value["local_time"])):
+            raise ValueError("update schedule local time must be HH:MM")
+        validate_timezone(str(value["timezone"]))
+        bounded_clean(value["native_timezone_id"], "native time-zone id", 200)
+        if value["native_timezone_confirmed"] is not True:
+            raise ValueError("owner must confirm the native schedule zone matches the IANA zone")
+        if value["platform"] == "MACOS" and value["native_timezone_id"] != value["timezone"]:
+            raise ValueError("macOS native and IANA time-zone identifiers must match")
+        bounded_clean(value["approval_reference"], "approval reference", 1000)
+        executable = Path(str(value["python_executable"]))
+        if not executable.is_absolute():
+            raise ValueError("update schedule Python executable must be absolute")
+        if value["cadence"] == "WEEKLY":
+            if value["weekday"] not in UPDATE_WEEKDAYS or value["day_of_month"] is not None:
+                raise ValueError("weekly update schedule requires one weekday and no month day")
+        else:
+            day = value["day_of_month"]
+            if (
+                isinstance(day, bool) or not isinstance(day, int)
+                or not 1 <= day <= 28 or value["weekday"] is not None
+            ):
+                raise ValueError("monthly update schedule requires day 1 through 28 and no weekday")
+        moment = parse_offset_datetime(value["not_before_local"], "update schedule not-before")
+        validate_moment_in_timezone(moment, value["timezone"], "update schedule not-before")
+        hour, minute = (int(part) for part in value["local_time"].split(":"))
+        recurrence_matches = (
+            moment.weekday() == UPDATE_WEEKDAYS[value["weekday"]]
+            if value["cadence"] == "WEEKLY"
+            else moment.day == value["day_of_month"]
+        )
+        if (
+            not recurrence_matches
+            or (moment.hour, moment.minute, moment.second, moment.microsecond)
+            != (hour, minute, 0, 0)
+            or local_schedule_candidate(value, moment.date()).isoformat() != moment.isoformat()
+        ):
+            raise ValueError("update schedule not-before is not an exact configured occurrence")
+    created = parse_recorded_utc(value["created_utc"], "update schedule created_utc")
+    updated = parse_recorded_utc(value["updated_utc"], "update schedule updated_utc")
+    if updated < created:
+        raise ValueError("update schedule updated_utc precedes created_utc")
+    bounded_clean(value["owner"], "update schedule owner", 300)
+    return value
+
+
+def update_schedule_config(worker, required=False):
+    path = worker / UPDATE_SCHEDULE_CONFIG_PATH
+    if not path.is_file():
+        if required:
+            raise ValueError("native update schedule is not configured")
+        return None
+    return validate_update_schedule_config(read_json(path))
+
+
+def update_schedule_config_sha256(config):
+    return canonical_json_sha256(config)
+
+
+def update_legacy_migration_sha256(value):
+    return canonical_json_sha256(
+        {key: item for key, item in value.items() if key != "record_sha256"}
+    )
+
+
+def validate_update_legacy_migration(value, metadata=None, owner=None):
+    if not isinstance(value, dict):
+        raise ValueError("legacy update schedule migration must be a record")
+    schema = value.get("schema")
+    if schema == "ai-human.legacy-update-schedule-migration/v1":
+        status, scope, evidence = "VERIFIED_REMOVED_BY_OWNER_EVIDENCE", "external_id", "removal_evidence"
+    elif schema == "ai-human.legacy-update-schedule-migration/v2":
+        status, scope, evidence = "VERIFIED_ABSENT_BY_OWNER_EVIDENCE", "checked_scheduler", "absence_evidence"
+    else:
+        raise ValueError("unsupported legacy update schedule migration")
+    require_exact_fields(value, {
+        "approval_reference", scope, "owner", "recorded_utc",
+        "record_sha256", evidence, "schema", "status", "worker_id",
+    }, "legacy update schedule migration")
+    if value["status"] != status:
+        raise ValueError("unsupported legacy update schedule migration status")
+    for field, limit in (("approval_reference", 1000), (scope, 300), ("owner", 300), (evidence, 2000)):
+        if not isinstance(value[field], str):
+            raise ValueError("legacy update schedule " + field + " must be text")
+        bounded_clean(value[field], "legacy update schedule " + field, limit)
+    worker_id = safe_identity(str(value["worker_id"]), "legacy update schedule worker id")
+    if not SHA256_HEX.fullmatch(str(value["record_sha256"])):
+        raise ValueError("legacy update schedule migration has an invalid record hash")
+    if value["record_sha256"] != update_legacy_migration_sha256(value):
+        raise ValueError("legacy update schedule migration record hash mismatch")
+    if metadata is not None and worker_id != metadata.get("worker_id"):
+        raise ValueError("legacy update schedule migration belongs to a different worker")
+    if owner is not None and value["owner"] != owner:
+        raise ValueError("legacy update schedule migration belongs to a different owner")
+    parse_recorded_utc(value["recorded_utc"], "legacy update schedule recorded_utc")
+    return value
+
+
+def validate_native_update_schedule(value, config=None):
+    if not isinstance(value, dict):
+        raise ValueError("native update schedule proof must be a JSON object")
+    required = {
+        "adapter", "config_sha256", "definition_path", "definition_sha256",
+        "external_id", "native_timezone_id", "next_run_local", "next_run_source",
+        "platform", "reason", "schedule_id", "schema", "status", "verified_utc",
+    }
+    require_exact_fields(value, required, "native update schedule proof")
+    if value.get("schema") != "ai-human.native-update-schedule/v1":
+        raise ValueError("unsupported native update schedule proof schema")
+    if value["status"] not in UPDATE_NATIVE_STATUSES:
+        raise ValueError("invalid native update schedule proof status")
+    if value["platform"] not in UPDATE_SCHEDULE_PLATFORMS:
+        raise ValueError("invalid native update schedule platform")
+    for field in ("config_sha256", "definition_sha256"):
+        if not SHA256_HEX.fullmatch(str(value[field])):
+            raise ValueError("native update schedule has invalid " + field)
+    safe_identity(str(value["schedule_id"]), "native update schedule id")
+    bounded_clean(value["external_id"], "native update external id", 300)
+    bounded_clean(value["adapter"], "native update adapter", 100)
+    bounded_clean(value["native_timezone_id"], "native update time-zone id", 200)
+    parse_recorded_utc(value["verified_utc"], "native update verified_utc")
+    definition_relative = safe_relative(
+        value["definition_path"], "native update definition path"
+    )
+    if value["status"] == "UNAVAILABLE":
+        bounded_clean(value["reason"], "native update unavailable reason", 1000)
+    elif value["reason"] is not None:
+        raise ValueError("verified native update schedule may not contain an error reason")
+    if value["next_run_local"] is not None:
+        moment = parse_offset_datetime(value["next_run_local"], "native update next run")
+        if config:
+            validate_moment_in_timezone(moment, config["timezone"], "native update next run")
+        if value["next_run_source"] != "INTERNAL_RULE_AFTER_NATIVE_DEFINITION_READBACK":
+            raise ValueError("native schedule next run source is invalid")
+    elif value["next_run_source"] != "NONE":
+        raise ValueError("native schedule empty next run must have source NONE")
+    if config:
+        if value["schedule_id"] != config["schedule_id"]:
+            raise ValueError("native schedule id differs from config")
+        if value["config_sha256"] != update_schedule_config_sha256(config):
+            raise ValueError("native schedule config hash mismatch")
+        if value["platform"] != config["platform"]:
+            raise ValueError("native schedule platform differs from config")
+        if value["native_timezone_id"] != config["native_timezone_id"]:
+            raise ValueError("native schedule time zone differs from config")
+        if definition_relative != update_schedule_definition_path(config):
+            raise ValueError("native schedule definition path differs from config")
+        if value["external_id"] != native_update_external_id(config):
+            raise ValueError("native schedule external id differs from config")
+        expected_adapter = (
+            "launchd LaunchAgent"
+            if config["platform"] == "MACOS" else "Windows Task Scheduler"
+        )
+        if value["adapter"] != expected_adapter:
+            raise ValueError("native schedule adapter differs from config")
+        expected_status = {
+            "ENABLED": "VERIFIED_ACTIVE", "PAUSED": "VERIFIED_PAUSED",
+            "REMOVED": "VERIFIED_REMOVED",
+        }.get(config["status"])
+        if expected_status and value["status"] != expected_status:
+            raise ValueError("native schedule status differs from config")
+        if (
+            (expected_status in {"VERIFIED_ACTIVE", "VERIFIED_PAUSED"}
+             and value["next_run_local"] is None)
+            or (expected_status == "VERIFIED_REMOVED"
+                and value["next_run_local"] is not None)
+        ):
+            raise ValueError("native schedule next run contradicts its status")
+        if value["next_run_local"] is not None and not valid_update_occurrence(
+            config,
+            parse_offset_datetime(value["next_run_local"], "native update next run"),
+        ):
+            raise ValueError("native schedule next run is not a configured occurrence")
+    return value
+
+
+def native_update_schedule(worker, required=False, config=None):
+    path = worker / UPDATE_SCHEDULE_NATIVE_PATH
+    if not path.is_file():
+        if required:
+            raise ValueError("native update schedule proof is missing")
+        return None
+    return validate_native_update_schedule(read_json(path), config)
+
+
+def local_schedule_candidate(config, date_value):
+    hour, minute = (int(part) for part in config["local_time"].split(":"))
+    zone = ZoneInfo(config["timezone"])
+    naive = datetime.datetime.combine(date_value, datetime.time(hour, minute))
+    for fold in (0, 1):
+        candidate = naive.replace(tzinfo=zone, fold=fold)
+        round_trip = candidate.astimezone(datetime.timezone.utc).astimezone(zone)
+        if round_trip.replace(tzinfo=None) == naive:
+            return candidate
+    raise ValueError("update schedule local time does not exist on this date")
+
+
+def calculate_next_update_occurrence(config, after_local, inclusive=False):
+    zone = ZoneInfo(config["timezone"])
+    after_local = after_local.astimezone(zone)
+    for offset in range(370):
+        date_value = after_local.date() + datetime.timedelta(days=offset)
+        if config["cadence"] == "WEEKLY":
+            matches = date_value.weekday() == UPDATE_WEEKDAYS[config["weekday"]]
+        else:
+            matches = date_value.day == config["day_of_month"]
+        if not matches:
+            continue
+        try:
+            candidate = local_schedule_candidate(config, date_value)
+        except ValueError:
+            continue
+        if candidate > after_local or (inclusive and candidate == after_local):
+            return candidate
+    raise ValueError("cannot calculate the next update schedule occurrence")
+
+
+def next_update_occurrence(config, after_local, inclusive=False):
+    validate_update_schedule_config(config)
+    return calculate_next_update_occurrence(config, after_local, inclusive)
+
+
+def latest_due_update_occurrence(config, now_local):
+    not_before = parse_offset_datetime(config["not_before_local"], "update schedule not-before")
+    validate_moment_in_timezone(not_before, config["timezone"], "update schedule not-before")
+    zone = ZoneInfo(config["timezone"])
+    now_local = now_local.astimezone(zone)
+    if now_local < not_before:
+        return None
+    start = max(not_before - datetime.timedelta(seconds=1), now_local - datetime.timedelta(days=40))
+    candidate = next_update_occurrence(config, start)
+    latest = None
+    while candidate <= now_local:
+        latest = candidate
+        candidate = next_update_occurrence(config, candidate)
+    return latest
+
+
+def update_schedule_definition_path(config):
+    suffix = ".plist" if config["platform"] == "MACOS" else ".xml"
+    return UPDATE_SCHEDULE_DEFINITIONS_ROOT / (config["schedule_id"] + suffix)
+
+
+def native_update_external_id(config):
+    stem = "aihuman-update-" + config["schedule_id"][-16:]
+    return "com.aihuman.update." + config["schedule_id"][-16:] if config["platform"] == "MACOS" else "\\AI-Human\\" + stem
+
+
+def native_runner_arguments(worker, config):
+    return [
+        config["python_executable"],
+        "-I",
+        str(worker / ".ai-human/bin/ai_human.py"),
+        "update-schedule-tick", str(worker),
+        "--schedule-id", config["schedule_id"],
+        "--config-sha256", update_schedule_config_sha256(config),
+    ]
+
+
+def verify_native_update_runtime(worker, executable, timezone):
+    """Prove the chosen isolated interpreter imports the actual installed runner."""
+    runner = worker_target(worker, ".ai-human/bin/ai_human.py", "native update runner")
+    manifest = read_json(worker_target(worker, ".ai-human/release-manifest.json", "installed manifest"))
+    records = [
+        item for item in manifest["managed_files"]
+        if item.get("target") == ".ai-human/bin/ai_human.py"
+    ]
+    if len(records) != 1 or sha256(runner) != records[0]["sha256"]:
+        raise ValueError("native update runner differs from the installed managed hash")
+    probe = (
+        "import json,runpy,sys; from zoneinfo import ZoneInfo; "
+        "runpy.run_path(sys.argv[1],run_name='_aihuman_runtime_probe'); "
+        "ZoneInfo(sys.argv[2]); "
+        "print(json.dumps({'isolated':sys.flags.isolated,"
+        "'ignore_environment':sys.flags.ignore_environment,"
+        "'no_user_site':sys.flags.no_user_site,'timezone':sys.argv[2]}))"
+    )
+    result = subprocess.run(
+        [str(executable), "-I", "-B", "-c", probe, str(runner), timezone],
+        text=True, capture_output=True, check=False, timeout=30,
+    )
+    try:
+        proof = json.loads(result.stdout) if result.returncode == 0 else None
+    except (ValueError, TypeError):
+        proof = None
+    if proof != {
+        "isolated": 1, "ignore_environment": 1, "no_user_site": 1, "timezone": timezone,
+    }:
+        raise ValueError(
+            "isolated updater runtime or time-zone data is unavailable; verify the chosen "
+            "Python interpreter and its pinned timezone prerequisite outside user-only "
+            "site-packages before enabling or resuming a schedule"
+        )
+
+
+def render_macos_update_definition(worker, config):
+    hour, minute = (int(part) for part in config["local_time"].split(":"))
+    calendar = {"Hour": hour, "Minute": minute}
+    if config["cadence"] == "WEEKLY":
+        calendar["Weekday"] = (UPDATE_WEEKDAYS[config["weekday"]] + 1) % 7
+    else:
+        calendar["Day"] = config["day_of_month"]
+    logs = worker / UPDATE_SCHEDULE_ROOT / "logs"
+    value = {
+        "Label": native_update_external_id(config),
+        "LowPriorityIO": True,
+        "ProcessType": "Background",
+        "ProgramArguments": native_runner_arguments(worker, config),
+        "StandardErrorPath": str(logs / "native-update.err.log"),
+        "StandardOutPath": str(logs / "native-update.out.log"),
+        "StartCalendarInterval": calendar,
+    }
+    return plistlib.dumps(value, fmt=plistlib.FMT_XML, sort_keys=True)
+
+
+def render_windows_update_definition(worker, config):
+    namespace = "http://schemas.microsoft.com/windows/2004/02/mit/task"
+    ET.register_namespace("", namespace)
+    task = ET.Element("{" + namespace + "}Task", {"version": "1.4"})
+    registration = ET.SubElement(task, "{" + namespace + "}RegistrationInfo")
+    ET.SubElement(registration, "{" + namespace + "}Description").text = (
+        "AI-Human managed update " + config["schedule_id"] + " "
+        + update_schedule_config_sha256(config)
+    )
+    triggers = ET.SubElement(task, "{" + namespace + "}Triggers")
+    trigger = ET.SubElement(triggers, "{" + namespace + "}CalendarTrigger")
+    # Task Scheduler interprets a StartBoundary without an offset as local wall
+    # time.  Supplying the current UTC offset would freeze that offset and move
+    # the owner's requested clock time after a daylight-saving transition.
+    not_before = parse_offset_datetime(
+        config["not_before_local"], "update schedule not-before"
+    )
+    ET.SubElement(trigger, "{" + namespace + "}StartBoundary").text = (
+        not_before.strftime("%Y-%m-%dT%H:%M:%S")
+    )
+    ET.SubElement(trigger, "{" + namespace + "}Enabled").text = "true"
+    if config["cadence"] == "WEEKLY":
+        schedule = ET.SubElement(trigger, "{" + namespace + "}ScheduleByWeek")
+        days = ET.SubElement(schedule, "{" + namespace + "}DaysOfWeek")
+        ET.SubElement(days, "{" + namespace + "}" + config["weekday"].title())
+        ET.SubElement(schedule, "{" + namespace + "}WeeksInterval").text = "1"
+    else:
+        schedule = ET.SubElement(trigger, "{" + namespace + "}ScheduleByMonth")
+        days = ET.SubElement(schedule, "{" + namespace + "}DaysOfMonth")
+        ET.SubElement(days, "{" + namespace + "}Day").text = str(config["day_of_month"])
+        months = ET.SubElement(schedule, "{" + namespace + "}Months")
+        for month in (
+            "January", "February", "March", "April", "May", "June", "July",
+            "August", "September", "October", "November", "December",
+        ):
+            ET.SubElement(months, "{" + namespace + "}" + month)
+    principals = ET.SubElement(task, "{" + namespace + "}Principals")
+    principal = ET.SubElement(principals, "{" + namespace + "}Principal", {"id": "Author"})
+    ET.SubElement(principal, "{" + namespace + "}LogonType").text = "InteractiveToken"
+    ET.SubElement(principal, "{" + namespace + "}RunLevel").text = "LeastPrivilege"
+    settings = ET.SubElement(task, "{" + namespace + "}Settings")
+    ET.SubElement(settings, "{" + namespace + "}MultipleInstancesPolicy").text = "IgnoreNew"
+    ET.SubElement(settings, "{" + namespace + "}StartWhenAvailable").text = "true"
+    ET.SubElement(settings, "{" + namespace + "}RunOnlyIfNetworkAvailable").text = "true"
+    ET.SubElement(settings, "{" + namespace + "}Enabled").text = "true"
+    ET.SubElement(settings, "{" + namespace + "}ExecutionTimeLimit").text = "PT30M"
+    actions = ET.SubElement(task, "{" + namespace + "}Actions", {"Context": "Author"})
+    action = ET.SubElement(actions, "{" + namespace + "}Exec")
+    arguments = native_runner_arguments(worker, config)
+    ET.SubElement(action, "{" + namespace + "}Command").text = arguments[0]
+    ET.SubElement(action, "{" + namespace + "}Arguments").text = subprocess.list2cmdline(arguments[1:])
+    return ET.tostring(task, encoding="utf-8", xml_declaration=True)
+
+
+def windows_task_semantics(content):
+    if isinstance(content, bytes):
+        content = content.decode("utf-8")
+    if not isinstance(content, str) or "<!DOCTYPE" in content.upper():
+        raise ValueError("Windows task definition is not safe XML")
+    try:
+        root = ET.fromstring(content)
+    except ET.ParseError as error:
+        raise ValueError("Windows task definition is invalid XML") from error
+    namespace = "http://schemas.microsoft.com/windows/2004/02/mit/task"
+    prefix = "{" + namespace + "}"
+    if root.tag != prefix + "Task":
+        raise ValueError("Windows task definition has the wrong root namespace")
+
+    def one(parent, tag, label):
+        matches = parent.findall(prefix + tag)
+        if len(matches) != 1:
+            raise ValueError("Windows task definition requires exactly one " + label)
+        return matches[0]
+
+    def text_of(parent, tag, label):
+        value = one(parent, tag, label).text
+        if value is None or not value.strip():
+            raise ValueError("Windows task definition has empty " + label)
+        return value.strip()
+
+    registration = one(root, "RegistrationInfo", "registration block")
+    triggers = one(root, "Triggers", "trigger block")
+    trigger = one(triggers, "CalendarTrigger", "calendar trigger")
+    if len(list(triggers)) != 1:
+        raise ValueError("Windows task definition may contain only one trigger")
+    trigger_enabled_text = text_of(
+        trigger, "Enabled", "trigger enabled state"
+    ).casefold()
+    if trigger_enabled_text not in {"true", "false"}:
+        raise ValueError("Windows task definition has invalid enabled state")
+    weekly = trigger.findall(prefix + "ScheduleByWeek")
+    monthly = trigger.findall(prefix + "ScheduleByMonth")
+    if (len(weekly), len(monthly)) not in {(1, 0), (0, 1)}:
+        raise ValueError("Windows task definition must have one recurrence")
+    if weekly:
+        schedule = weekly[0]
+        days = one(schedule, "DaysOfWeek", "weekly days")
+        selected_days = [item.tag.removeprefix(prefix) for item in list(days)]
+        if len(selected_days) != 1 or selected_days[0].upper() not in UPDATE_WEEKDAYS:
+            raise ValueError("Windows task definition requires one valid weekday")
+        recurrence = {
+            "cadence": "WEEKLY",
+            "day": selected_days[0].upper(),
+            "interval": text_of(schedule, "WeeksInterval", "week interval"),
+        }
+    else:
+        schedule = monthly[0]
+        days = one(schedule, "DaysOfMonth", "monthly days")
+        day_values = [item.text.strip() for item in list(days) if item.text]
+        months = one(schedule, "Months", "monthly months")
+        month_values = sorted(item.tag.removeprefix(prefix) for item in list(months))
+        if len(day_values) != 1:
+            raise ValueError("Windows task definition requires one month day")
+        recurrence = {
+            "cadence": "MONTHLY", "day": day_values[0], "months": month_values,
+        }
+    principals = one(root, "Principals", "principals block")
+    principal = one(principals, "Principal", "principal")
+    if len(list(principals)) != 1:
+        raise ValueError("Windows task definition may contain only one principal")
+    user_nodes = principal.findall(prefix + "UserId")
+    if len(user_nodes) > 1:
+        raise ValueError("Windows task definition has duplicate user identity")
+    user_id = user_nodes[0].text.strip() if user_nodes and user_nodes[0].text else None
+    settings = one(root, "Settings", "settings block")
+    task_enabled_text = text_of(settings, "Enabled", "task enabled state").casefold()
+    if task_enabled_text not in {"true", "false"}:
+        raise ValueError("Windows task definition has invalid task enabled state")
+    actions = one(root, "Actions", "actions block")
+    action = one(actions, "Exec", "exec action")
+    if len(list(actions)) != 1:
+        raise ValueError("Windows task definition may contain only one action")
+    return {
+        "action_arguments": text_of(action, "Arguments", "action arguments"),
+        "action_command": text_of(action, "Command", "action command"),
+        "actions_context": actions.attrib.get("Context"),
+        "description": text_of(registration, "Description", "description"),
+        "enabled": task_enabled_text == "true",
+        "execution_time_limit": text_of(
+            settings, "ExecutionTimeLimit", "execution time limit"
+        ),
+        "logon_type": text_of(principal, "LogonType", "principal logon type"),
+        "multiple_instances": text_of(
+            settings, "MultipleInstancesPolicy", "multiple instances policy"
+        ),
+        "principal_id": principal.attrib.get("id"),
+        "recurrence": recurrence,
+        "run_level": text_of(principal, "RunLevel", "principal run level"),
+        "run_only_if_network": text_of(
+            settings, "RunOnlyIfNetworkAvailable", "network setting"
+        ).casefold(),
+        "start_boundary": text_of(trigger, "StartBoundary", "start boundary"),
+        "start_when_available": text_of(
+            settings, "StartWhenAvailable", "start-when-available setting"
+        ).casefold(),
+        "task_version": root.attrib.get("version"),
+        "trigger_enabled": trigger_enabled_text == "true",
+        "user_id": user_id,
+    }
+
+
+def canonical_windows_task(content, normalize_enabled=False, drop_user_id=False):
+    if isinstance(content, bytes):
+        content = content.decode("utf-8")
+    if not isinstance(content, str) or "<!DOCTYPE" in content.upper():
+        raise ValueError("Windows task definition is not safe XML")
+    try:
+        root = ET.fromstring(content)
+    except ET.ParseError as error:
+        raise ValueError("Windows task definition is invalid XML") from error
+    namespace = "http://schemas.microsoft.com/windows/2004/02/mit/task"
+    prefix = "{" + namespace + "}"
+    registration = root.find(prefix + "RegistrationInfo")
+    if registration is not None:
+        # Task Scheduler may add descriptive registration metadata. These fields do
+        # not change execution authority, trigger, action or retry behavior.
+        for child in list(registration):
+            if child.tag in {prefix + "Author", prefix + "Date", prefix + "URI"}:
+                registration.remove(child)
+    settings = root.find(prefix + "Settings")
+    if settings is not None:
+        harmless_defaults = {
+            "AllowHardTerminate": "true",
+            "AllowStartOnDemand": "true",
+            "DisallowStartIfOnBatteries": "true",
+            "Hidden": "false",
+            "Priority": "7",
+            "RunOnlyIfIdle": "false",
+            "StopIfGoingOnBatteries": "true",
+            "UseUnifiedSchedulingEngine": "false",
+            "WakeToRun": "false",
+        }
+        for child in list(settings):
+            local = child.tag.removeprefix(prefix)
+            if (
+                local in harmless_defaults
+                and not child.attrib
+                and not list(child)
+                and (child.text or "").strip().casefold()
+                == harmless_defaults[local]
+            ):
+                settings.remove(child)
+            elif local == "IdleSettings" and not child.attrib:
+                children = list(child)
+                values = {
+                    item.tag.removeprefix(prefix): (item.text or "").strip().casefold()
+                    for item in children
+                    if not item.attrib and not list(item)
+                }
+                if (
+                    len(children) == 2
+                    and len(values) == 2
+                    and values == {"RestartOnIdle": "false", "StopOnIdleEnd": "true"}
+                ):
+                    settings.remove(child)
+    if normalize_enabled:
+        enabled = root.find("./" + prefix + "Settings/" + prefix + "Enabled")
+        if enabled is not None:
+            enabled.text = "__VERIFIED_STATE__"
+    if drop_user_id:
+        principal = root.find("./" + prefix + "Principals/" + prefix + "Principal")
+        if principal is not None:
+            for user in principal.findall(prefix + "UserId"):
+                principal.remove(user)
+    serialized = ET.tostring(root, encoding="unicode")
+    return ET.canonicalize(xml_data=serialized, strip_text=True)
+
+
+def windows_task_missing(result):
+    if result.returncode == 0:
+        return False
+    # A failed query is not proof of absence. In particular, missing services,
+    # accounts and executables must leave the orphan-recovery journal intact.
+    # Unknown/localized diagnostics fail closed until a native adapter can
+    # provide structured absence proof.
+    lines = [
+        line.strip().casefold()
+        for output in (result.stdout or "", result.stderr or "")
+        for line in output.splitlines() if line.strip()
+    ]
+    if len(lines) != 1:
+        return False
+    detail = lines[0].removeprefix("error:").strip().rstrip(".")
+    return detail in {
+        "the system cannot find the file specified",
+        "the system cannot find the task specified",
+    }
+
+
+def render_update_schedule_definition(worker, config):
+    return (
+        render_macos_update_definition(worker, config)
+        if config["platform"] == "MACOS"
+        else render_windows_update_definition(worker, config)
+    )
+
+
+# Apple documents `launchctl print` as diagnostic output, not a stable API.
+# Native fixtures prove this exact build only. Never broaden this allowlist
+# without repeating the loaded-command/calendar and adversarial native matrix.
+MACOS_UPDATE_READBACK_BUILDS = frozenset({("27.0.1", "26A434")})
+
+
+class UnsupportedMacOSUpdateBuild(ValueError):
+    """Activation is unavailable; exact owned-job deactivation may still work."""
+
+
+def require_supported_macos_update_build():
+    values = []
+    for option in ("-productVersion", "-buildVersion"):
+        result = subprocess.run(
+            ["/usr/bin/sw_vers", option], text=True, capture_output=True,
+            check=False, timeout=15,
+        )
+        if result.returncode != 0:
+            raise ValueError("cannot verify the macOS native readback build")
+        values.append(result.stdout.strip())
+    if tuple(values) not in MACOS_UPDATE_READBACK_BUILDS:
+        raise UnsupportedMacOSUpdateBuild("unsupported macOS native readback build; registration refused")
+
+
+def parse_macos_launchctl_print(content, external_id, uid):
+    """Parse only the observed, tab-indented diagnostic grammar; never guess."""
+    if not isinstance(content, str) or len(content) > 65536:
+        raise ValueError("invalid macOS native readback size")
+    if any(ord(char) < 32 and char not in "\n\t" for char in content):
+        raise ValueError("macOS native readback contains control characters")
+    lines = [line for line in content.split("\n") if line]
+    header = "gui/" + str(uid) + "/" + external_id + " = {"
+    if not lines or lines[0] != header:
+        raise ValueError("macOS native readback has the wrong service header")
+    position = 1
+
+    def block(depth):
+        nonlocal position
+        result = {}
+        while position < len(lines):
+            line = lines[position]
+            position += 1
+            if line == "\t" * (depth - 1) + "}":
+                return result
+            if not line.startswith("\t" * depth) or line.startswith("\t" * (depth + 1)):
+                raise ValueError("macOS native readback indentation differs")
+            entry = line[depth:]
+            match = re.fullmatch(r"(.+?) (?:=|=>) (.+)", entry)
+            if not match:
+                raise ValueError("macOS native readback field is malformed")
+            key, value = match.groups()
+            if key in result:
+                raise ValueError("macOS native readback has a duplicate field")
+            if value == "{" and depth == 1 and key == "arguments":
+                arguments = []
+                while position < len(lines) and lines[position] != "\t}":
+                    argument = lines[position]
+                    position += 1
+                    if not argument.startswith("\t\t") or argument.startswith("\t\t\t"):
+                        raise ValueError("macOS native argument readback is malformed")
+                    arguments.append(argument[2:])
+                if position == len(lines):
+                    raise ValueError("macOS native argument readback is incomplete")
+                position += 1
+                result[key] = arguments
+            else:
+                if depth >= 6:
+                    raise ValueError("macOS native readback is too deeply nested")
+                result[key] = block(depth + 1) if value == "{" else value
+        raise ValueError("macOS native readback is incomplete")
+
+    result = block(1)
+    if position != len(lines):
+        raise ValueError("macOS native readback has trailing output")
+    return result
+
+
+def verify_macos_loaded_definition(content, definition, target, uid):
+    """Verify loaded execution semantics, not merely the on-disk plist hash."""
+    required_definition = {
+        "Label", "LowPriorityIO", "ProcessType", "ProgramArguments",
+        "StandardErrorPath", "StandardOutPath", "StartCalendarInterval",
+    }
+    if set(definition) != required_definition or (
+        definition["LowPriorityIO"] is not True or definition["ProcessType"] != "Background"
+    ):
+        raise ValueError("macOS update definition contains unsupported settings")
+    arguments = definition["ProgramArguments"]
+    if not isinstance(arguments, list) or not arguments or any(
+        not isinstance(item, str) or not item or any(ord(char) < 32 for char in item)
+        for item in arguments
+    ):
+        raise ValueError("macOS update arguments cannot be verified")
+    label = definition["Label"]
+    value = parse_macos_launchctl_print(content, label, uid)
+    required = {
+        "active count", "path", "type", "state", "program", "arguments",
+        "stdout path", "stderr path", "default environment", "environment",
+        "domain", "asid", "minimum runtime", "exit timeout", "runs", "last exit code",
+        "event triggers", "event channels", "spawn type", "jetsam priority",
+        "jetsam memory limit (active)", "jetsam memory limit (inactive)",
+        "jetsamproperties category", "jetsam thread limit", "cpumon",
+        "sanitizer flags", "properties",
+    }
+    runtime_fields = {
+        "inherited environment", "pid", "immediate reason", "forks", "execs",
+        "initialized", "trampolined", "started suspended", "proxy started suspended",
+        "checked allocations", "checked allocations reason", "checked allocations flags", "job state",
+        "resource coalition", "jetsam coalition",
+    }
+    if not required <= set(value) or set(value) - required - runtime_fields:
+        raise ValueError("macOS native readback contains missing or unsupported fields")
+    structured = {
+        "arguments", "default environment", "environment", "inherited environment",
+        "event triggers", "event channels", "resource coalition", "jetsam coalition",
+    }
+    if any(not isinstance(item, str) for key, item in value.items() if key not in structured):
+        raise ValueError("macOS native scalar readback contains unsupported structure")
+    expected = {
+        "path": str(Path(target).resolve()), "type": "LaunchAgent",
+        "program": arguments[0], "arguments": arguments,
+        "stdout path": definition["StandardOutPath"],
+        "stderr path": definition["StandardErrorPath"],
+        "minimum runtime": "10", "exit timeout": "5",
+        "spawn type": "background (5)",
+        "jetsam priority": "40",
+        "jetsam memory limit (active)": "(unlimited)",
+        "jetsam memory limit (inactive)": "(unlimited)",
+        "jetsamproperties category": "daemon", "jetsam thread limit": "32",
+        "cpumon": "default", "sanitizer flags": "0x0",
+        "properties": "low priority i/o | inferred program",
+        "environment": {"OSLogRateLimit": "64", "XPC_SERVICE_NAME": label},
+        "default environment": {"PATH": "/usr/bin:/bin:/usr/sbin:/sbin"},
+    }
+    if any(value[key] != item for key, item in expected.items()):
+        raise ValueError("macOS loaded command, arguments or execution settings differ")
+    inherited = value.get("inherited environment", {})
+    if not isinstance(inherited, dict) or any(
+        not isinstance(item, str) for item in inherited.values()
+    ):
+        raise ValueError("macOS inherited environment readback is malformed")
+    if any(key.startswith("PYTHON") for key in inherited) and arguments[1:2] != ["-I"]:
+        raise ValueError("macOS loaded Python environment requires an isolated interpreter")
+    if not re.fullmatch(r"gui/" + str(uid) + r" \[\d+\]", str(value["domain"])):
+        raise ValueError("macOS loaded service domain differs")
+    if value["state"] not in {"not running", "running", "xpcproxy"}:
+        raise ValueError("macOS loaded service has an unsupported state")
+    for coalition in ("resource coalition", "jetsam coalition"):
+        if coalition in value:
+            record = value[coalition]
+            if not isinstance(record, dict) or set(record) != {
+                "ID", "type", "state", "active count", "name"
+            } or record["name"] != label or record["type"] != coalition.split()[0]:
+                raise ValueError("macOS loaded coalition readback differs")
+    triggers = value["event triggers"]
+    if not isinstance(triggers, dict) or len(triggers) != 1:
+        raise ValueError("macOS loaded schedule requires exactly one trigger")
+    name, trigger = next(iter(triggers.items()))
+    if not re.fullmatch(re.escape(label) + r"\.\d+", name):
+        raise ValueError("macOS loaded trigger identity differs")
+    calendar = definition["StartCalendarInterval"]
+    if not isinstance(calendar, dict) or set(calendar) not in (
+        {"Hour", "Minute", "Weekday"}, {"Hour", "Minute", "Day"},
+    ) or any(type(item) is not int for item in calendar.values()):
+        raise ValueError("macOS update calendar is not one weekly or monthly occurrence")
+    expected_trigger = {
+        "keepalive": "0", "service": label,
+        "stream": "com.apple.launchd.calendarinterval",
+        "monitor": "com.apple.UserEventAgent-Aqua",
+        "descriptor": {'"' + key + '"': str(item) for key, item in calendar.items()},
+    }
+    if trigger != expected_trigger:
+        raise ValueError("macOS loaded calendar or trigger settings differ")
+    channels = value["event channels"]
+    if not isinstance(channels, dict) or set(channels) != {'"com.apple.launchd.calendarinterval"'}:
+        raise ValueError("macOS loaded service contains extra event channels")
+    channel = next(iter(channels.values()))
+    if not isinstance(channel, dict) or set(channel) != {
+        "port", "active", "managed", "reset", "hide", "watching"
+    } or channel["managed"] != "1" or channel["hide"] != "0" or not re.fullmatch(
+        r"0x[0-9a-f]+", str(channel["port"])
+    ) or any(channel[key] not in {"0", "1"} for key in ("active", "reset", "watching")):
+        raise ValueError("macOS loaded calendar channel differs")
+    return True
+
+
+def macos_update_service_missing(result, external_id, uid):
+    if result.returncode != 113 or (result.stdout or "").strip():
+        return False
+    expected = 'Could not find service "' + external_id + '" in domain for user gui: ' + str(uid)
+    lines = (result.stderr or "").strip().splitlines()
+    return lines in ([expected], ["Bad request.", expected])
+
+
+class NativeUpdateAdapter:
+    """Per-user native scheduler adapter using argument-vector OS tools."""
+
+    def __init__(self, worker, config):
+        self.worker = Path(worker)
+        self.config = config
+        self.external_id = native_update_external_id(config)
+
+    def observed_timezone_id(self):
+        if self.config["platform"] == "MACOS":
+            localtime = Path("/etc/localtime")
+            try:
+                resolved = localtime.resolve()
+                marker = "/zoneinfo/"
+                if marker in str(resolved):
+                    return str(resolved).split(marker, 1)[1]
+            except OSError:
+                pass
+            result = subprocess.run(
+                ["/usr/sbin/systemsetup", "-gettimezone"], text=True,
+                capture_output=True, check=False, timeout=15,
+            )
+            if result.returncode == 0 and ":" in result.stdout:
+                return result.stdout.split(":", 1)[1].strip()
+            raise ValueError("cannot verify the macOS native time zone")
+        result = subprocess.run(
+            ["tzutil.exe", "/g"], text=True, capture_output=True,
+            check=False, timeout=15,
+        )
+        if result.returncode != 0 or not result.stdout.strip():
+            raise ValueError("cannot verify the Windows native time zone")
+        return result.stdout.strip()
+
+    def _macos_target(self):
+        return path_without_symlinks(
+            Path.home(), Path("Library/LaunchAgents") / (self.external_id + ".plist"),
+            "macOS LaunchAgent target",
+        )
+
+    def _windows_current_sid(self):
+        result = subprocess.run(
+            ["whoami.exe", "/user", "/fo", "csv", "/nh"],
+            text=True, capture_output=True, check=False, timeout=15,
+        )
+        if result.returncode != 0:
+            raise ValueError("cannot verify the Windows task principal")
+        try:
+            rows = list(csv.reader(result.stdout.splitlines()))
+            sid = rows[0][1].strip() if len(rows) == 1 and len(rows[0]) == 2 else ""
+        except (csv.Error, IndexError):
+            sid = ""
+        if not re.fullmatch(r"S-\d+(?:-\d+)+", sid, flags=re.I):
+            raise ValueError("cannot verify the Windows task principal")
+        return sid.casefold()
+
+    def install(self, definition_path):
+        if self.config["platform"] == "MACOS":
+            require_supported_macos_update_build()
+        if self.observed_timezone_id() != self.config["native_timezone_id"]:
+            raise ValueError("native operating-system time zone differs from owner confirmation")
+        if self.config["platform"] == "MACOS":
+            target = self._macos_target()
+            target.parent.mkdir(parents=True, exist_ok=True)
+            logs = update_schedule_target(
+                self.worker, UPDATE_SCHEDULE_ROOT / "logs",
+                "native update schedule logs",
+            )
+            if logs.exists() and not logs.is_dir():
+                raise ValueError("native update schedule logs target is not a directory")
+            logs.mkdir(parents=True, exist_ok=True)
+            atomic_copy_file(definition_path, target)
+            domain = "gui/" + str(os.getuid())
+            subprocess.run(
+                ["/bin/launchctl", "bootout", domain, str(target)],
+                capture_output=True, check=False, timeout=15,
+            )
+            result = subprocess.run(
+                ["/bin/launchctl", "bootstrap", domain, str(target)],
+                text=True, capture_output=True, check=False, timeout=15,
+            )
+        else:
+            result = subprocess.run(
+                ["schtasks.exe", "/Create", "/TN", self.external_id, "/XML",
+                 str(definition_path), "/F"],
+                text=True, capture_output=True, check=False, timeout=30,
+            )
+        if result.returncode != 0:
+            raise ValueError("native update schedule registration failed")
+
+    def pause(self):
+        if self.config["platform"] == "MACOS":
+            target = self._macos_target()
+            self._macos_bootout()
+            # A booted-out LaunchAgent plist is loaded again at login.  Removing
+            # the managed copy makes PAUSED persistent; resume recreates it from
+            # the private, hash-verified definition.
+            target.unlink(missing_ok=True)
+            return
+        else:
+            result = subprocess.run(
+                ["schtasks.exe", "/Change", "/TN", self.external_id, "/Disable"],
+                text=True, capture_output=True, check=False, timeout=15,
+            )
+        if result.returncode != 0:
+            raise ValueError("native update schedule pause failed")
+
+    def resume(self, definition_path):
+        self.install(definition_path)
+        if self.config["platform"] == "WINDOWS":
+            result = subprocess.run(
+                ["schtasks.exe", "/Change", "/TN", self.external_id, "/Enable"],
+                text=True, capture_output=True, check=False, timeout=15,
+            )
+            if result.returncode != 0:
+                raise ValueError("native update schedule resume failed")
+
+    def remove(self):
+        if self.config["platform"] == "MACOS":
+            target = self._macos_target()
+            self._macos_bootout()
+            target.unlink(missing_ok=True)
+            return
+        result = subprocess.run(
+            ["schtasks.exe", "/Delete", "/TN", self.external_id, "/F"],
+            text=True, capture_output=True, check=False, timeout=15,
+        )
+        if result.returncode != 0 and not windows_task_missing(result):
+            raise ValueError("native update schedule removal failed")
+
+    def _macos_bootout(self):
+        service = "gui/" + str(os.getuid()) + "/" + self.external_id
+        result = subprocess.run(
+            ["/bin/launchctl", "bootout", service],
+            text=True, capture_output=True, check=False, timeout=15,
+        )
+        if result.returncode != 0:
+            absent = subprocess.run(
+                ["/bin/launchctl", "print", service],
+                text=True, capture_output=True, check=False, timeout=15,
+            )
+            if not macos_update_service_missing(absent, self.external_id, os.getuid()):
+                raise ValueError("cannot verify native update schedule pause or removal")
+
+    def verify_activation_launch(self, definition_path):
+        """Exercise the registered Mac job while the configuring CLI holds the mutex."""
+        uid = os.getuid()
+        service = "gui/" + str(uid) + "/" + self.external_id
+        definition = plistlib.loads(definition_path.read_bytes())
+        target = self._macos_target()
+
+        def readback():
+            result = subprocess.run(
+                ["/bin/launchctl", "print", service], check=True,
+                text=True, capture_output=True, timeout=15,
+            )
+            verify_macos_loaded_definition(result.stdout, definition, target, uid)
+            return parse_macos_launchctl_print(result.stdout, self.external_id, uid)
+
+        initial = readback()
+        if initial["state"] != "not running":
+            raise ValueError("cannot verify Mac schedule startup while the job is running")
+        count = int(initial["runs"])
+        subprocess.run(["/bin/launchctl", "kickstart", service], check=True,
+                       text=True, capture_output=True, timeout=15)
+        deadline = time.monotonic() + 20
+        while time.monotonic() < deadline:
+            observed = readback()
+            if observed["state"] == "not running" and int(observed["runs"]) > count:
+                if int(observed["runs"]) != count + 1 or observed.get("last exit code") != "0":
+                    raise ValueError(
+                        "Mac schedule startup failed (exit " + str(observed.get("last exit code"))
+                        + "). Check that macOS allows the background job to open this worker and its logs."
+                    )
+                return
+            time.sleep(0.2)
+        raise ValueError("Mac schedule startup timed out before a verified exit")
+
+    def query(self, definition_path, *, raw_absence=False, require_current_user=False):
+        if self.config["platform"] == "MACOS":
+            require_supported_macos_update_build()
+            target = self._macos_target()
+            result = subprocess.run(
+                ["/bin/launchctl", "print", "gui/" + str(os.getuid()) + "/" + self.external_id],
+                text=True, capture_output=True, check=False, timeout=15,
+            )
+            if not target.is_file():
+                if result.returncode == 0:
+                    raise ValueError("native update task remains loaded without its definition")
+                if not macos_update_service_missing(result, self.external_id, os.getuid()):
+                    raise ValueError("cannot verify native update schedule removal")
+                return {
+                    "status": (
+                        "PAUSED" if self.config.get("status") == "PAUSED" else "REMOVED"
+                    ),
+                    "definition_sha256": (
+                        sha256(definition_path)
+                        if self.config.get("status") == "PAUSED" else None
+                    ),
+                }
+            if result.returncode != 0:
+                raise ValueError("macOS update definition remains login-persistent without loaded proof")
+            expected = sha256(definition_path)
+            definition_ok = sha256(target) == expected
+            if result.returncode == 0 and definition_ok:
+                try:
+                    verify_macos_loaded_definition(
+                        result.stdout, plistlib.loads(Path(definition_path).read_bytes()),
+                        target, os.getuid(),
+                    )
+                except (ValueError, plistlib.InvalidFileException):
+                    definition_ok = False
+            return {
+                "status": "ACTIVE" if result.returncode == 0 else "PAUSED",
+                "definition_sha256": expected if definition_ok else None,
+            }
+        result = subprocess.run(
+            ["schtasks.exe", "/Query", "/TN", self.external_id, "/XML"],
+            text=True, capture_output=True, check=False, timeout=15,
+        )
+        if result.returncode != 0:
+            if windows_task_missing(result):
+                if not raw_absence and self.config.get("status") == "PAUSED":
+                    return {"status": "PAUSED", "definition_sha256": sha256(Path(definition_path))}
+                return {"status": "REMOVED", "definition_sha256": None}
+            raise ValueError("cannot verify the Windows update schedule")
+        definition_path = Path(definition_path)
+        if not definition_path.is_file():
+            raise ValueError("local Windows task definition is missing")
+        expected = sha256(definition_path)
+        expected_content = definition_path.read_bytes()
+        expected_semantics = windows_task_semantics(expected_content)
+        actual_semantics = windows_task_semantics(result.stdout)
+        enabled = actual_semantics["enabled"]
+        actual_user = actual_semantics["user_id"]
+        expected_user = expected_semantics["user_id"]
+        principal_ok = actual_user == expected_user
+        drop_actual_user = False
+        if require_current_user:
+            principal_ok = actual_user is not None and actual_user.casefold() == self._windows_current_sid()
+            principal_ok = principal_ok and (expected_user is None or actual_user == expected_user)
+            drop_actual_user = principal_ok and expected_user is None
+        elif expected_user is None and actual_user is not None:
+            principal_ok = actual_user.casefold() == self._windows_current_sid()
+            drop_actual_user = principal_ok
+        definition_ok = principal_ok and canonical_windows_task(
+            result.stdout, normalize_enabled=True, drop_user_id=drop_actual_user
+        ) == canonical_windows_task(
+            expected_content, normalize_enabled=True, drop_user_id=False
+        )
+        return {
+            "status": "ACTIVE" if enabled else "PAUSED",
+            "definition_sha256": expected if definition_ok else None,
+        }
+
+    def query_removed(self, definition_path):
+        """Read raw absence without treating an intentionally absent paused plist as PAUSED."""
+        if self.config["platform"] != "MACOS":
+            return self.query(definition_path, raw_absence=True)
+        target = self._macos_target()
+        result = subprocess.run(
+            ["/bin/launchctl", "print", "gui/" + str(os.getuid()) + "/" + self.external_id],
+            text=True, capture_output=True, check=False, timeout=15,
+        )
+        if target.exists() or result.returncode == 0:
+            return {"status": "ACTIVE", "definition_sha256": None}
+        if not macos_update_service_missing(result, self.external_id, os.getuid()):
+            raise ValueError("cannot verify native update schedule removal")
+        return {"status": "REMOVED", "definition_sha256": None}
+
+
+class WindowsUpdateCleanupAdapter(NativeUpdateAdapter):
+    """Stop an exactly owned task after zone drift, without enabling any task."""
+
+    cleanup_only = True
+
+    def install(self, definition_path):
+        raise ValueError("unconfirmed Windows timezone permits cleanup only")
+
+    def verify_cleanup_definition(self, definition_path, expected_sha256):
+        definition_path = Path(definition_path)
+        if sha256(definition_path) != expected_sha256:
+            raise ValueError("native cleanup definition differs from stored proof")
+        semantics = windows_task_semantics(definition_path.read_bytes())
+        prefix = "AI-Human managed update " + self.config["schedule_id"] + " "
+        config_hash = semantics["description"].removeprefix(prefix)
+        arguments = native_runner_arguments(self.worker, self.config)
+        arguments[-1] = config_hash
+        legacy_arguments = arguments[:1] + arguments[2:]
+        if (
+            not semantics["description"].startswith(prefix)
+            or not SHA256_HEX.fullmatch(config_hash)
+            or semantics["action_command"] != arguments[0]
+            or semantics["action_arguments"] not in (
+                subprocess.list2cmdline(arguments[1:]), subprocess.list2cmdline(legacy_arguments[1:]),
+            )
+        ):
+            raise ValueError("native cleanup definition belongs to another worker or task")
+        observed = self.query_removed(definition_path)
+        if observed != {"status": "REMOVED", "definition_sha256": None} and (
+            observed["status"] not in {"ACTIVE", "PAUSED"}
+            or observed["definition_sha256"] != expected_sha256
+        ):
+            raise ValueError("Windows cleanup requires exact task XML and current-user principal")
+        self._cleanup_binding = (definition_path, expected_sha256)
+
+    def remove(self):
+        binding = getattr(self, "_cleanup_binding", None)
+        if binding is None:
+            raise ValueError("native cleanup requires an exact owned definition")
+        self.verify_cleanup_definition(*binding)
+        super().remove()
+        if self.query_removed(binding[0]) != {"status": "REMOVED", "definition_sha256": None}:
+            raise ValueError("Windows cleanup task removal did not verify")
+
+    def pause(self):
+        # Keep the private definition but remove the native task. Recovery can
+        # preserve a paused state without registering a recurrence in a new zone.
+        self.remove()
+
+    def query_removed(self, definition_path):
+        return super().query(definition_path, raw_absence=True, require_current_user=True)
+
+    def query(self, definition_path):
+        observed = self.query_removed(definition_path)
+        if observed["status"] == "ACTIVE":
+            raise ValueError("cleanup-only Windows adapter cannot verify an active native task")
+        if observed["status"] == "REMOVED" and self.config.get("status") == "PAUSED":
+            return {"status": "PAUSED", "definition_sha256": sha256(Path(definition_path))}
+        return observed
+
+
+class MacOSUpdateCleanupAdapter(NativeUpdateAdapter):
+    """OS or timezone drift cannot grant activation or strand an owned job."""
+
+    cleanup_only = True
+
+    def install(self, definition_path):
+        raise ValueError("unconfirmed macOS runtime permits cleanup only")
+
+    def verify_cleanup_definition(self, definition_path, expected_sha256):
+        definition_path = Path(definition_path)
+        if sha256(definition_path) != expected_sha256:
+            raise ValueError("native cleanup definition differs from stored proof")
+        definition = plistlib.loads(definition_path.read_bytes())
+        arguments = definition.get("ProgramArguments")
+        expected = native_runner_arguments(self.worker, self.config)
+        legacy_expected = expected[:1] + expected[2:]
+        if (
+            definition.get("Label") != self.external_id
+            or not isinstance(arguments, list) or not arguments
+            or arguments[:-1] not in (expected[:-1], legacy_expected[:-1])
+            or not SHA256_HEX.fullmatch(str(arguments[-1]))
+        ):
+            raise ValueError("native cleanup definition belongs to another worker or task")
+        target = self._macos_target()
+        if target.exists() and (not target.is_file() or sha256(target) != expected_sha256):
+            raise ValueError("native cleanup target differs from the owned definition")
+        self._cleanup_binding = (definition_path, expected_sha256)
+
+    def _macos_bootout(self):
+        binding = getattr(self, "_cleanup_binding", None)
+        if binding is None:
+            raise ValueError("native cleanup requires an exact owned definition")
+        self.verify_cleanup_definition(*binding)
+        super()._macos_bootout()
+
+    def query(self, definition_path):
+        # Absence is a deactivation proof, never an active-definition proof.
+        if self.query_removed(definition_path) != {
+            "status": "REMOVED", "definition_sha256": None,
+        }:
+            raise ValueError("cleanup-only macOS adapter cannot verify an active native task")
+        return {
+            "status": "PAUSED" if self.config.get("status") == "PAUSED" else "REMOVED",
+            "definition_sha256": (
+                sha256(Path(definition_path)) if self.config.get("status") == "PAUSED" else None
+            ),
+        }
+
+
+def native_update_adapter(worker, config):
+    actual = "WINDOWS" if os.name == "nt" else "MACOS" if sys.platform == "darwin" else ""
+    if config["platform"] != actual:
+        raise ValueError(
+            config["platform"].title()
+            + " native schedule rendering is simulated on this host; real registration refused"
+        )
+    if actual == "MACOS":
+        require_supported_macos_update_build()
+    return NativeUpdateAdapter(worker, config)
+
+
+def native_update_cleanup_adapter(worker, config):
+    try:
+        adapter = native_update_adapter(worker, config)
+    except UnsupportedMacOSUpdateBuild:
+        # Only the normal factory's exact Mac build refusal permits this path.
+        # Wrong-host, permission and other failures retain their original denial.
+        return MacOSUpdateCleanupAdapter(worker, config)
+    if adapter.observed_timezone_id() != config["native_timezone_id"]:
+        # A confirmed zone mismatch permits exact-target deactivation only.
+        # Failure to read the timezone still raises; no compatibility is implied.
+        cleanup = MacOSUpdateCleanupAdapter if config["platform"] == "MACOS" else WindowsUpdateCleanupAdapter
+        return cleanup(worker, config)
+    return adapter
+
+
+def query_removed_native(adapter, definition_path):
+    query_removed = getattr(adapter, "query_removed", None)
+    return (
+        query_removed(definition_path)
+        if callable(query_removed) else adapter.query(definition_path)
+    )
+
+
+def verify_update_schedule_native_readback(worker, config=None):
+    config = config or update_schedule_config(worker, required=True)
+    if config["status"] == "DISABLED":
+        raise ValueError("disabled update schedule has no managed native task")
+    native = native_update_schedule(worker, required=True, config=config)
+    definition = update_schedule_target(
+        worker, native["definition_path"], "native update schedule definition"
+    )
+    if sha256(definition) != native["definition_sha256"]:
+        raise ValueError("native update definition differs from stored proof")
+    adapter = (
+        native_update_cleanup_adapter(worker, config)
+        if config["status"] in {"PAUSED", "REMOVED"}
+        else native_update_adapter(worker, config)
+    )
+    if not getattr(adapter, "cleanup_only", False) and adapter.observed_timezone_id() != config["native_timezone_id"]:
+        raise ValueError("native operating-system time zone differs from owner confirmation")
+    expected_status = {
+        "ENABLED": "ACTIVE", "PAUSED": "PAUSED", "REMOVED": "REMOVED",
+    }[config["status"]]
+    expected_digest = (
+        None if expected_status == "REMOVED" else native["definition_sha256"]
+    )
+    observed = (
+        query_removed_native(adapter, definition)
+        if expected_status == "REMOVED" else adapter.query(definition)
+    )
+    if observed != {
+        "status": expected_status, "definition_sha256": expected_digest,
+    }:
+        raise ValueError("native update schedule readback differs from stored proof")
+    return native, definition, adapter, expected_status
+
+
+def update_automation_row(worker, config, native=None, last_run=None):
+    path = worker / "AUTOMATIONS.md"
+    previous = next(
+        (row for row in parse_table_rows(path) if row and row[0] == "SYSTEM-MONTHLY-UPDATE-001"),
+        None,
+    )
+    prior_run = previous[6] if previous and len(previous) >= 7 else "NOT RUN"
+    if config["status"] == "DISABLED":
+        row = [
+            "SYSTEM-MONTHLY-UPDATE-001", "Owner must choose WEEKLY or MONTHLY, day, time and zone",
+            "No unattended source", "No unattended update is authorized",
+            "Owner has not enabled a native schedule", "OFF — OWNER CHOICE REQUIRED", prior_run,
+        ]
+    else:
+        day = config["weekday"].title() if config["cadence"] == "WEEKLY" else "day " + str(config["day_of_month"])
+        status = {
+            "ENABLED": "ACTIVE", "PAUSED": "PAUSED", "REMOVED": "VERIFIED REMOVED",
+        }[config["status"]]
+        if native and native.get("status") == "UNAVAILABLE":
+            status = "UNAVAILABLE"
+        row = [
+            "SYSTEM-MONTHLY-UPDATE-001",
+            config["cadence"].title() + " on " + day + " at " + config["local_time"] + " in " + config["timezone"],
+            "Latest approved release from the configured repository",
+            "Managed core only when idle, eligible, hash-verified and pilot-approved where required",
+            "Pause, live task, active writer, wrong zone, missing pilot approval, failed validation or rollback",
+            status, last_run or prior_run,
+        ]
+    return row
+
+
+def render_update_automation(worker, config, native=None, last_run=None):
+    content = (worker / "AUTOMATIONS.md").read_text(encoding="utf-8")
+    return update_task_table(
+        content,
+        "SYSTEM-MONTHLY-UPDATE-001",
+        update_automation_row(worker, config, native, last_run),
+    )
+
+
+def validate_update_schedule_state(worker, metadata, allow_transaction=False):
+    failures = []
+    transaction = worker / UPDATE_SCHEDULE_TRANSACTION_PATH
+    if transaction.exists() and not allow_transaction:
+        failures.append("interrupted update-schedule transaction requires recover-update-schedule")
+    try:
+        config = update_schedule_config(worker)
+    except Exception as exc:
+        return ["invalid update schedule config: " + str(exc)]
+    legacy_path = worker / UPDATE_LEGACY_MIGRATION_PATH
+    if legacy_path.is_file():
+        try:
+            validate_update_legacy_migration(
+                read_json(legacy_path), metadata,
+                clean(parameter_value(worker, "Human owner"), "update schedule owner"),
+            )
+        except Exception as exc:
+            failures.append("invalid legacy update schedule migration: " + str(exc))
+    if not config:
+        # Backward compatibility: a legacy ACTIVE setting may have an external adapter
+        # that this release did not create. Never create a duplicate automatically.
+        try:
+            read_update_version_report(worker, metadata=metadata)
+        except Exception as exc:
+            failures.append("invalid update version report: " + str(exc))
+        return failures
+    try:
+        native = native_update_schedule(worker, config=config)
+    except Exception as exc:
+        native = None
+        failures.append("invalid native update schedule proof: " + str(exc))
+    expected_settings = (
+        {"ACTIVE"} if config["status"] == "ENABLED"
+        else {"DISABLED"} if config["status"] in {"PAUSED", "REMOVED"}
+        else {"ACTIVE", "DISABLED"}
+    )
+    if metadata.get("automatic_updates") not in expected_settings:
+        failures.append("install metadata automatic-update setting differs from schedule config")
+    if config["status"] == "ENABLED" and (
+        not native or native.get("status") != "VERIFIED_ACTIVE"
+    ):
+        failures.append("enabled update schedule lacks verified active native state")
+    if config["status"] == "PAUSED" and (
+        not native or native.get("status") != "VERIFIED_PAUSED"
+    ):
+        failures.append("paused update schedule lacks verified paused native state")
+    if config["status"] == "REMOVED" and (
+        not native or native.get("status") != "VERIFIED_REMOVED"
+    ):
+        failures.append("removed update schedule lacks verified removed native state")
+    try:
+        definition = (
+            update_schedule_target(
+                worker, update_schedule_definition_path(config),
+                "native update schedule definition",
+            )
+            if config["status"] != "DISABLED" else None
+        )
+    except Exception as exc:
+        definition = None
+        failures.append("unsafe native update schedule definition: " + str(exc))
+    if native and native["status"] != "UNAVAILABLE":
+        if not definition or not definition.is_file() or sha256(definition) != native["definition_sha256"]:
+            failures.append("native update schedule definition hash mismatch")
+    try:
+        actual = next(
+            (
+                row for row in parse_table_rows(worker / "AUTOMATIONS.md")
+                if row and row[0] == "SYSTEM-MONTHLY-UPDATE-001"
+            ),
+            None,
+        )
+        if actual != update_automation_row(worker, config, native):
+            failures.append("visible update automation row differs from private schedule state")
+    except Exception as exc:
+        failures.append("invalid visible update automation row: " + str(exc))
+    try:
+        read_update_version_report(
+            worker,
+            config if config.get("status") != "DISABLED" else None,
+            metadata,
+        )
+    except Exception as exc:
+        failures.append("invalid update version report: " + str(exc))
+    return failures
+
+
 def state_hashes(worker):
-    return {name: sha256(worker / name) for name in STATE_FILES if (worker / name).is_file()}
+    hashes = {}
+    for name in (*STATE_FILES, GATE_PROFILE_PATH.as_posix()):
+        path = worker_target(worker, name, "worker recovery file")
+        if path.exists():
+            if not path.is_file() or path.stat().st_nlink != 1:
+                raise ValueError("worker recovery source must be a single regular file: " + name)
+            hashes[name] = sha256(path)
+    return hashes
+
+
+def snapshot_worker_state(worker, backup, version):
+    # Never traverse arbitrary project files, private profiles, memory, or account data.
+    hashes = state_hashes(worker)
+    private = backup / "worker-state"
+    private.mkdir(mode=0o700)
+    for name, digest in hashes.items():
+        source = worker_target(worker, name, "worker recovery source")
+        target = path_without_symlinks(private / "files", name, "worker recovery copy")
+        atomic_copy_file(source, target)
+        require_private_file(target)
+        if sha256(target) != digest:
+            raise ValueError("worker recovery copy differs from source: " + name)
+    manifest = {
+        "schema": "ai-human.worker-state-snapshot/v1",
+        "created_utc": now_utc(), "installed_version": version,
+        "worker_id": install_metadata(worker).get("worker_id"), "files": hashes,
+        "controlled_state_sha256": controlled_state_hash(worker),
+        "exclusions": "Other project files and private feature payloads are outside the copy scope.",
+    }
+    atomic_json(private / "manifest.json", manifest)
+    atomic_text(private / "RECOVER.md", (
+        "# Recover worker-owned records\n\n"
+        "Open this worker’s receipt and ask the Setup Helper to verify the backup tree proof. "
+        "Check the worker ID and installed version in manifest.json. Copy the named files from "
+        "files/ to a separate private recovery folder and compare every SHA-256 with the manifest. "
+        "Review differences against current work. Obtain owner approval before restoring selected "
+        "records at an idle checkpoint, then validate the worker and compare the restored hashes. "
+        "Keep current Gate 0 decisions and reconcile newer work before resuming.\n\n"
+        "The snapshot covers the listed operating records and confirmed Gate profile. "
+        "Private feature content, credentials and other project artifacts are outside its scope. "
+        "A managed rollback does not replay these user records.\n"
+    ))
+    return manifest
 
 
 def release_root_from_script():
@@ -1886,6 +12887,8 @@ def write_install_metadata(worker, manifest, settings=None):
         {
             "installed_version": manifest["version"],
             "managed_targets": managed_targets(manifest),
+            "managed_payload_proof": tree_proof(worker, targets=managed_targets(manifest)),
+            "managed_payload_proof_version": manifest["version"],
             "repository": manifest["repository"],
             "schema": "ai-human.workspace-install/v1",
         }
@@ -2140,12 +13143,19 @@ def validate_autonomy_state(worker, installed_version):
 
 def validate_worker(worker, quiet=False, allow_transaction=False):
     failures = []
+    if downgrade_transaction_path(worker).exists() and not allow_transaction:
+        failures.append("interrupted downgrade transaction requires recover-downgrade")
     if (worker / ".ai-human").is_symlink():
         failures.append(".ai-human may not be a symbolic link")
     transaction = worker / LIFECYCLE_TRANSACTION_PATH
     if transaction.exists() and not allow_transaction:
         failures.append(
             "interrupted lifecycle transaction requires recover-lifecycle before other work"
+        )
+    exchange_mutation = worker / EXCHANGE_MUTATION_PATH
+    if exchange_mutation.exists():
+        failures.append(
+            "interrupted Worker Exchange mutation requires exchange-local-recover or exact command retry"
         )
     for name in STATE_FILES:
         path = worker / name
@@ -2188,6 +13198,12 @@ def validate_worker(worker, quiet=False, allow_transaction=False):
                 failures.append(str(exc))
         if metadata.get("automatic_updates") not in {None, "DISABLED", "ACTIVE"}:
             failures.append("invalid automatic update setting")
+        if "batch_cap" in metadata and (
+            isinstance(metadata["batch_cap"], bool)
+            or not isinstance(metadata["batch_cap"], int)
+            or not 1 <= metadata["batch_cap"] <= BATCH_CAP
+        ):
+            failures.append("invalid installed batch cap")
         required_identity = {
             "company", "legal_entity", "operating_units", "jurisdictions",
             "purpose_scope", "user_relationship", "compliance_owner",
@@ -2331,6 +13347,13 @@ def validate_worker(worker, quiet=False, allow_transaction=False):
             failures.append("live task is missing from TODAY.md: " + task_id)
     failures.extend(validate_improvement_state(worker))
     failures.extend(validate_autonomy_state(worker, version))
+    failures.extend(validate_governor_state(worker))
+    failures.extend(validate_continuity_state(worker))
+    failures.extend(validate_resource_state(worker))
+    failures.extend(validate_work_map_state(worker))
+    failures.extend(validate_exchange_local_state(worker))
+    failures.extend(validate_update_schedule_state(worker, metadata, allow_transaction))
+    failures.extend(validate_h53_state(worker))
     failures.extend(validate_completion_records(worker))
     lease = None
     try:
@@ -2373,6 +13396,7 @@ def install(args):
     rendered_gate_files = render_gate_files(gate_profile)
     settings = {
         "automatic_updates": "ACTIVE" if args.automatic_updates else "DISABLED",
+        "batch_cap": args.batch_cap,
         **expected_profile,
         "gate_profile_id": gate_profile["profile_id"],
     }
@@ -2455,6 +13479,13 @@ def install(args):
             },
         )
         write_install_metadata(worker, manifest, settings)
+        if not args.automatic_updates and "AUTOMATIONS.md" in created:
+            schedule_config = disabled_update_schedule(args.owner)
+            atomic_json(worker / UPDATE_SCHEDULE_CONFIG_PATH, schedule_config)
+            atomic_text(
+                worker / "AUTOMATIONS.md",
+                render_update_automation(worker, schedule_config),
+            )
         if skipped:
             atomic_text(
                 worker / ".ai-human/ADOPTION-NOTICE.md",
@@ -2481,6 +13512,8 @@ def install(args):
     print("- preserved existing files: " + str(len(skipped)))
     print("- local gate profile: " + gate_profile["profile_id"] + " (CONFIRMED)")
     print("- unattended updates: " + settings["automatic_updates"].lower())
+    if not args.automatic_updates and "AUTOMATIONS.md" in created:
+        print("- native update schedule: OFF; owner may choose WEEKLY or MONTHLY")
 
 
 GATE_BINDING_START = "<!-- AI-HUMAN GATE PROFILE BINDING START -->"
@@ -3003,7 +14036,7 @@ def task_start(args):
             [
                 task_id,
                 title,
-                "Declared task; separately executed units remain capped at 25",
+                "Declared task; separately executed units use the Work Governor at or below the installed hard ceiling",
                 next_action,
                 "LIVE",
             ],
@@ -5002,40 +16035,46 @@ def backup_for_update(worker, old_manifest, new_manifest):
     backup = worker_target(
         worker, backup.relative_to(worker), "update backup directory"
     )
-    records = []
-    targets = update_backup_targets(old_manifest, new_manifest)
-    for relative in targets:
-        target = worker_target(worker, relative, "update backup source")
-        existed = target.is_file()
-        records.append(
-            {
-                "existed": existed,
-                "sha256": sha256(target) if existed else None,
-                "target": relative,
-            }
-        )
-        if existed:
-            destination = path_without_symlinks(
-                backup, Path("files") / safe_relative(relative, "backup record target"),
-                "update backup destination",
+    backup_parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix=".building-", dir=backup_parent) as temporary:
+        staging = Path(temporary) / "snapshot"
+        staging.mkdir(mode=0o700)
+        records = []
+        targets = update_backup_targets(old_manifest, new_manifest)
+        for relative in targets:
+            target = worker_target(worker, relative, "update backup source")
+            existed = target.is_file()
+            records.append(
+                {
+                    "existed": existed,
+                    "sha256": sha256(target) if existed else None,
+                    "target": relative,
+                }
             )
-            destination.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(target, destination)
-    atomic_json(
-        backup / "backup-manifest.json",
-        {
-            "created_utc": now_utc(), "files": records,
-            "from_manifest_sha256": hashlib.sha256(
-                json.dumps(old_manifest, sort_keys=True, separators=(",", ":")).encode("utf-8")
-            ).hexdigest(),
-            "from_version": old_version,
-            "schema": "ai-human.update-backup/v2",
-            "to_manifest_sha256": hashlib.sha256(
-                json.dumps(new_manifest, sort_keys=True, separators=(",", ":")).encode("utf-8")
-            ).hexdigest(),
-            "to_version": new_version,
-        },
-    )
+            if existed:
+                destination = path_without_symlinks(
+                    staging, Path("files") / safe_relative(relative, "backup record target"),
+                    "update backup destination",
+                )
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                atomic_copy_file(target, destination)
+        atomic_json(
+            staging / "backup-manifest.json",
+            {
+                "created_utc": now_utc(), "files": records,
+                "from_manifest_sha256": hashlib.sha256(
+                    json.dumps(old_manifest, sort_keys=True, separators=(",", ":")).encode("utf-8")
+                ).hexdigest(),
+                "from_version": old_version,
+                "schema": "ai-human.update-backup/v2",
+                "to_manifest_sha256": hashlib.sha256(
+                    json.dumps(new_manifest, sort_keys=True, separators=(",", ":")).encode("utf-8")
+                ).hexdigest(),
+                "to_version": new_version,
+            },
+        )
+        snapshot_worker_state(worker, staging, old_version)
+        os.rename(staging, backup)
     return backup
 
 
@@ -5122,16 +16161,71 @@ def transaction_file(worker):
     return worker / LIFECYCLE_TRANSACTION_PATH
 
 
+def lifecycle_manifest_digest(manifest):
+    # Preserve the canonical encoding used in historical v1 journals and v2 backups.
+    encoded = json.dumps(manifest, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def verify_lifecycle_source(release, manifest, repository, known_digest, args):
+    if manifest.get("repository") != repository:
+        raise ValueError("source repository differs from the worker's pinned repository")
+    if known_digest and lifecycle_manifest_digest(manifest) != known_digest:
+        raise ValueError("source manifest differs from the recorded release digest")
+    approved = getattr(args, "source_manifest_sha256", None)
+    if approved is not None:
+        raw = release_file(release, "release-manifest.json").read_bytes()
+        if (not SHA256_HEX.fullmatch(approved) or hashlib.sha256(raw).hexdigest() != approved
+                or json.loads(raw) != manifest):
+            raise ValueError("source manifest differs from the independently approved SHA-256")
+    elif args.source and not known_digest:
+        raise ValueError("local release needs an independently approved --source-manifest-sha256")
+
+
+def previous_release_digest(worker, version):
+    for name in ("update-receipt.json", "rollback-receipt.json"):
+        path = worker_target(worker, ".ai-human/" + name, "lifecycle receipt")
+        if not path.is_file():
+            continue
+        receipt = read_json(path)
+        if receipt.get("from_version") != version or receipt.get("validator") != "PASS":
+            continue
+        if receipt.get("from_manifest_sha256"):
+            return receipt["from_manifest_sha256"]
+        # Older receipts bind the original manifest through a verified backup tree.
+        if receipt.get("backup_proof") and receipt.get("backup"):
+            parent = worker_target(worker, ".ai-human/backups", "backup directory")
+            backup = Path(receipt["backup"])
+            if backup.parent == parent and backup.is_dir() and not backup.is_symlink():
+                verify_tree_proof(backup, receipt["backup_proof"])
+                original = read_json(backup / "files/.ai-human/release-manifest.json")
+                if original.get("version") == version:
+                    return lifecycle_manifest_digest(original)
+    return None
+
+
 def read_lifecycle_transaction(worker):
     value = read_json(transaction_file(worker))
     required = {
         "backup", "from_version", "managed_targets", "operation", "phase", "schema",
         "started_utc", "to_manifest_sha256", "to_version",
     }
-    if not isinstance(value, dict) or set(value) != required:
-        raise ValueError("lifecycle transaction fields differ from the required schema")
-    if value.get("schema") != "ai-human.lifecycle-transaction/v1":
+    if not isinstance(value, dict):
+        raise ValueError("invalid lifecycle transaction")
+    if value.get("schema") in {"ai-human.lifecycle-transaction/v2", "ai-human.lifecycle-transaction/v3"}:
+        if value["schema"].endswith("/v3"):
+            required.update({"backup_tree_sha256", "automatic", "source"})
+            if (not SHA256_HEX.fullmatch(str(value.get("backup_tree_sha256")))
+                    or type(value.get("automatic")) is not bool or not isinstance(value.get("source"), str)):
+                raise ValueError("invalid lifecycle transaction backup or source record")
+        required.update({"from_manifest_sha256", "repository"})
+        if (not SHA256_HEX.fullmatch(str(value.get("from_manifest_sha256")))
+                or not isinstance(value.get("repository"), str) or not value["repository"].strip()):
+            raise ValueError("invalid lifecycle transaction source identity")
+    elif value.get("schema") != "ai-human.lifecycle-transaction/v1":
         raise ValueError("unsupported lifecycle transaction schema")
+    if set(value) != required:
+        raise ValueError("lifecycle transaction fields differ from the required schema")
     if value.get("operation") not in {"UPDATE", "ROLLBACK"}:
         raise ValueError("invalid lifecycle transaction operation")
     if value.get("phase") not in {"PREPARED", "APPLIED"}:
@@ -5158,12 +16252,24 @@ def read_lifecycle_transaction(worker):
     return value
 
 
-def write_lifecycle_transaction(worker, operation, old_manifest, new_manifest, backup, phase):
+def write_lifecycle_transaction(worker, operation, old_manifest, new_manifest, backup, phase, *,
+                                automatic=False, source="", backup_proof=None):
     target = transaction_file(worker)
     if target.exists() and phase == "PREPARED":
         raise ValueError(
             "interrupted lifecycle transaction already exists; run recover-lifecycle"
         )
+    if phase == "APPLIED":
+        prepared = read_lifecycle_transaction(worker)
+        if (prepared["phase"] != "PREPARED" or prepared["operation"] != operation
+                or prepared["backup"] != str(Path(backup).relative_to(worker))
+                or prepared["from_manifest_sha256"] != lifecycle_manifest_digest(old_manifest)
+                or prepared["to_manifest_sha256"] != lifecycle_manifest_digest(new_manifest)):
+            raise ValueError("applied release differs from the prepared lifecycle transaction")
+        atomic_json(target, dict(prepared, phase="APPLIED"))
+        return
+    if backup_proof is None:
+        backup_proof = tree_proof(backup)
     atomic_json(
         target,
         {
@@ -5172,7 +16278,11 @@ def write_lifecycle_transaction(worker, operation, old_manifest, new_manifest, b
             "managed_targets": update_backup_targets(old_manifest, new_manifest),
             "operation": operation,
             "phase": phase,
-            "schema": "ai-human.lifecycle-transaction/v1",
+            "schema": "ai-human.lifecycle-transaction/v3",
+            "automatic": automatic, "source": str(source),
+            "backup_tree_sha256": backup_proof["tree_sha256"],
+            "repository": old_manifest["repository"],
+            "from_manifest_sha256": lifecycle_manifest_digest(old_manifest),
             "started_utc": now_utc(),
             "to_manifest_sha256": hashlib.sha256(
                 json.dumps(new_manifest, sort_keys=True, separators=(",", ":")).encode("utf-8")
@@ -5182,7 +16292,9 @@ def write_lifecycle_transaction(worker, operation, old_manifest, new_manifest, b
     )
 
 
-def apply_update(worker, release, manifest, at_checkpoint=False, automatic=False):
+def apply_update(
+    worker, release, manifest, at_checkpoint=False, automatic=False, quiet=False,
+):
     worker = Path(worker).resolve()
     release = Path(release).resolve()
     require_no_autonomy_effect(worker, "managed-core update")
@@ -5199,31 +16311,39 @@ def apply_update(worker, release, manifest, at_checkpoint=False, automatic=False
     old_version = metadata["installed_version"]
     new_version = manifest["version"]
     if version_tuple(new_version) <= version_tuple(old_version):
-        print("AI-HUMAN UPDATE: NO UPDATE")
-        print("- local version: " + old_version)
-        print("- release version: " + new_version)
+        if not quiet:
+            print("AI-HUMAN UPDATE: NO UPDATE")
+            print("- local version: " + old_version)
+            print("- release version: " + new_version)
         return {"status": "CURRENT", "from_version": old_version, "to_version": old_version}
     if automatic:
         eligible, reason = automatic_release_eligible(manifest, old_version)
         if not eligible:
             raise ValueError("automatic update refused: " + reason)
     if read_lease(worker, required=False):
-        print("AI-HUMAN UPDATE: DEFERRED")
-        print("- version: " + new_version)
-        print("- reason: an active writer lease exists; the version report records the deferral")
+        if not quiet:
+            print("AI-HUMAN UPDATE: DEFERRED")
+            print("- version: " + new_version)
+            print("- reason: an active writer lease exists; the version report records the deferral")
         return {"status": "DEFERRED", "from_version": old_version, "to_version": new_version, "reason": "ACTIVE_WRITER"}
     if live_task(worker) and (automatic or not at_checkpoint):
         record_deferred(worker, new_version)
-        print("AI-HUMAN UPDATE: DEFERRED")
-        print("- version: " + new_version)
-        print("- reason: live task exists; update recorded for a checkpoint")
+        if not quiet:
+            print("AI-HUMAN UPDATE: DEFERRED")
+            print("- version: " + new_version)
+            print("- reason: live task exists; update recorded for a checkpoint")
         return {"status": "DEFERRED", "from_version": old_version, "to_version": new_version, "reason": "LIVE_TASK"}
     before_state = state_hashes(worker)
     old_manifest = read_json(worker / ".ai-human/release-manifest.json")
     backup = backup_for_update(worker, old_manifest, manifest)
+    backup_proof = tree_proof(backup)
+    recovery_state = read_json(backup / "worker-state/manifest.json")
+    if before_state != recovery_state["files"] or controlled_state_hash(worker) != recovery_state["controlled_state_sha256"]:
+        raise ValueError("worker state changed while the recovery snapshot was prepared")
     expected_backup_targets = update_backup_targets(old_manifest, manifest)
     write_lifecycle_transaction(
-        worker, "UPDATE", old_manifest, manifest, backup, "PREPARED"
+        worker, "UPDATE", old_manifest, manifest, backup, "PREPARED",
+        automatic=automatic, source=release, backup_proof=backup_proof
     )
     try:
         copy_release_files(worker, release, manifest)
@@ -5236,7 +16356,7 @@ def apply_update(worker, release, manifest, at_checkpoint=False, automatic=False
         write_lifecycle_transaction(
             worker, "UPDATE", old_manifest, manifest, backup, "APPLIED"
         )
-        if before_state != state_hashes(worker):
+        if before_state != state_hashes(worker) or recovery_state["controlled_state_sha256"] != controlled_state_hash(worker):
             raise ValueError("update changed company, role or user state")
         ok, failures = validate_worker(worker, quiet=True, allow_transaction=True)
         if not ok:
@@ -5257,6 +16377,7 @@ def apply_update(worker, release, manifest, at_checkpoint=False, automatic=False
             worker / ".ai-human/update-receipt.json",
             {
                 "automatic": automatic, "backup": str(backup),
+                "backup_proof": backup_proof,
                 "failure": str(exc), "from_version": old_version,
                 "rollback": "PASS" if rollback_ok else "FAIL",
                 "rollback_failures": rollback_failures,
@@ -5271,16 +16392,23 @@ def apply_update(worker, release, manifest, at_checkpoint=False, automatic=False
         worker / ".ai-human/update-receipt.json",
         {
             "automatic": automatic, "backup": str(backup), "from_version": old_version,
+            "from_manifest_sha256": lifecycle_manifest_digest(old_manifest),
+            "backup_proof": backup_proof,
+            "installed_payload_proof": install_metadata(worker)["managed_payload_proof"],
             "schema": "ai-human.update-receipt/v2", "state_preserved": True,
+            "worker_snapshot_manifest": "worker-state/manifest.json",
+            "worker_state_after_sha256": canonical_json_sha256(state_hashes(worker)),
+            "controlled_state_after_sha256": controlled_state_hash(worker),
             "status": "UPDATED", "to_version": new_version, "validator": "PASS",
         },
     )
     transaction_file(worker).unlink(missing_ok=True)
-    print("AI-HUMAN UPDATE: PASS")
-    print("- previous version: " + old_version)
-    print("- new version: " + new_version)
-    print("- company, role and user state hashes: preserved")
-    print("- rollback backup: " + str(backup))
+    if not quiet:
+        print("AI-HUMAN UPDATE: PASS")
+        print("- previous version: " + old_version)
+        print("- new version: " + new_version)
+        print("- company, role and user state hashes: preserved")
+        print("- rollback backup: " + str(backup))
     return {"status": "UPDATED", "from_version": old_version, "to_version": new_version}
 
 
@@ -5336,7 +16464,7 @@ def release_publisher(repository):
     )
 
 
-def github_release(repository, requested_version=None):
+def github_release(repository, requested_version=None, *, require_immutable=False):
     if not isinstance(repository, str) or not GITHUB_REPOSITORY.fullmatch(repository):
         raise ValueError("release repository must be an exact GitHub owner/name")
     expected_owner = release_publisher(repository)
@@ -5359,6 +16487,8 @@ def github_release(repository, requested_version=None):
         raise ValueError("tagged release version differs from the requested version")
     if (data.get("author") or {}).get("login") != expected_owner:
         raise ValueError("latest release was not published by the pinned release owner")
+    if require_immutable and data.get("immutable") is not True:
+        raise ValueError("unattended updates require a platform-verified immutable release")
     commit_request = urllib.request.Request(
         "https://api.github.com/repos/" + repository + "/commits/" + urllib.parse.quote(tag),
         headers={"Accept": "application/vnd.github+json", "User-Agent": "ai-human-workspace"},
@@ -5376,15 +16506,20 @@ def github_release(repository, requested_version=None):
         raise ValueError(
             "latest release tag lacks a valid GitHub signature by the pinned release owner"
         )
-    return version, data["zipball_url"], commit_sha
+    # Resolve the tag once, then download that exact verified commit. Never trust
+    # a mutable tag archive URL (or an arbitrary URL supplied in release metadata).
+    archive_url = "https://api.github.com/repos/" + repository + "/zipball/" + commit_sha
+    return version, archive_url, commit_sha
 
 
 def latest_release(repository):
     return github_release(repository)
 
 
-def download_release(repository, requested_version=None):
-    version, url, commit_sha = github_release(repository, requested_version)
+def download_release(repository, requested_version=None, *, require_immutable=False):
+    version, url, commit_sha = github_release(
+        repository, requested_version, require_immutable=require_immutable
+    )
     temp = tempfile.TemporaryDirectory(prefix="ai-human-release-")
     root = Path(temp.name)
     archive = root / "release.zip"
@@ -5428,45 +16563,72 @@ def update(args):
 def recover_lifecycle(args):
     worker = safe_worker(args.worker)
     transaction = read_lifecycle_transaction(worker)
-    if transaction["phase"] == "APPLIED":
-        try:
-            installed = read_json(worker / ".ai-human/release-manifest.json")
-            installed_digest = hashlib.sha256(
-                json.dumps(installed, sort_keys=True, separators=(",", ":")).encode("utf-8")
-            ).hexdigest()
-            if (
-                installed.get("version") == transaction["to_version"]
-                and installed_digest == transaction["to_manifest_sha256"]
-                and validate_worker(worker, quiet=True, allow_transaction=True)[0]
-            ):
-                transaction_file(worker).unlink(missing_ok=True)
-                atomic_json(
-                    worker / ".ai-human/lifecycle-recovery-receipt.json",
-                    {
-                        "action": "FINALIZED_APPLIED_TRANSACTION",
-                        "recovered_utc": now_utc(),
-                        "schema": "ai-human.lifecycle-recovery/v1",
-                        "validator": "PASS",
-                        "version": transaction["to_version"],
-                    },
-                )
-                print("AI-HUMAN LIFECYCLE RECOVERY: PASS")
-                print("- result: completed applied transaction was verified and finalized")
-                print("- version: " + transaction["to_version"])
-                return
-        except Exception:
-            pass
+    repository = transaction.get("repository") or install_metadata(worker)["repository"]
+    if transaction.get("repository") and repository != install_metadata(worker)["repository"]:
+        raise ValueError("transaction repository differs from the worker's pinned repository")
+    if transaction["phase"] == "APPLIED" and transaction.get("backup_tree_sha256"):
+        backup = worker_target(worker, transaction["backup"], "prepared backup")
+        if backup.parent != worker / ".ai-human/backups":
+            raise ValueError("prepared backup is outside the worker backup directory")
+        proof = tree_proof(backup)
+        if proof["tree_sha256"] != transaction["backup_tree_sha256"]:
+            raise ValueError("prepared backup tree changed during lifecycle recovery")
+        snapshot = read_json(backup / "worker-state/manifest.json")
+        controlled = controlled_state_hash(worker)
+        if state_hashes(worker) != snapshot["files"] or controlled != snapshot["controlled_state_sha256"]:
+            raise ValueError("worker state differs from the prepared snapshot; reconcile at a checkpoint")
+        installed = read_json(worker / ".ai-human/release-manifest.json")
+        if (installed.get("version") == transaction["to_version"]
+                and installed.get("repository") == repository
+                and lifecycle_manifest_digest(installed) == transaction["to_manifest_sha256"]
+                and validate_worker(worker, quiet=True, allow_transaction=True)[0]):
+            metadata = install_metadata(worker)
+            verify_tree_proof(worker, metadata["managed_payload_proof"], targets=managed_targets(installed))
+            operation = transaction["operation"].lower()
+            receipt = {
+                "from_version": transaction["from_version"], "to_version": transaction["to_version"],
+                "from_manifest_sha256": transaction["from_manifest_sha256"], "validator": "PASS",
+                "backup": str(backup), "backup_proof": proof, "state_preserved": True,
+                "worker_snapshot_manifest": "worker-state/manifest.json",
+                "worker_state_after_sha256": canonical_json_sha256(snapshot["files"]),
+                "controlled_state_after_sha256": controlled,
+                "installed_payload_proof": metadata["managed_payload_proof"],
+            }
+            if operation == "update":
+                receipt.update(automatic=transaction["automatic"], status="UPDATED", schema="ai-human.update-receipt/v2")
+            else:
+                receipt.update(source=transaction["source"])
+            receipt_path = worker_target(worker, ".ai-human/" + operation + "-receipt.json", "operation receipt")
+            atomic_json(receipt_path, receipt)
+            atomic_json(worker / ".ai-human/lifecycle-recovery-receipt.json", {
+                "action": "FINALIZED_APPLIED_TRANSACTION", "recovered_utc": now_utc(),
+                "schema": "ai-human.lifecycle-recovery/v2", "validator": "PASS",
+                "version": transaction["to_version"], "backup": str(backup),
+                "backup_tree_sha256": proof["tree_sha256"], "state_preserved": True,
+                "operation_receipt": receipt_path.name, "operation_receipt_sha256": sha256(receipt_path),
+            })
+            transaction_file(worker).unlink()
+            print("AI-HUMAN LIFECYCLE RECOVERY: PASS")
+            print("- verified applied release, preserved worker state and saved the " + operation + " receipt")
+            return
     temporary = None
     try:
         if args.source:
             release, manifest = load_release(args.source)
         else:
-            repository = install_metadata(worker)["repository"]
             temporary, release, manifest = download_release(
                 repository, transaction["from_version"]
             )
         if manifest["version"] != transaction["from_version"]:
             raise ValueError("recovery source differs from the pre-transaction version")
+        known_digest = transaction.get("from_manifest_sha256")
+        if not known_digest:
+            prior_path = worker_target(worker, ".ai-human/release-manifest.json", "installed manifest")
+            if prior_path.is_file():
+                installed = read_json(prior_path)
+                if installed.get("version") == transaction["from_version"] and installed.get("repository") == repository:
+                    known_digest = lifecycle_manifest_digest(installed)
+        verify_lifecycle_source(release, manifest, repository, known_digest, args)
         before = state_hashes(worker)
         copy_release_files(worker, release, manifest)
         retained = set(managed_targets(manifest)) | {
@@ -5484,7 +16646,6 @@ def recover_lifecycle(args):
         ok, failures = validate_worker(worker, quiet=True, allow_transaction=True)
         if not ok:
             raise ValueError("recovered worker validation failed: " + "; ".join(failures))
-        transaction_file(worker).unlink(missing_ok=True)
         atomic_json(
             worker / ".ai-human/lifecycle-recovery-receipt.json",
             {
@@ -5494,6 +16655,7 @@ def recover_lifecycle(args):
                 "validator": "PASS", "version": manifest["version"],
             },
         )
+        transaction_file(worker).unlink(missing_ok=True)
         print("AI-HUMAN LIFECYCLE RECOVERY: PASS")
         print("- restored trusted release: " + manifest["version"])
         print("- company, role and user state hashes: preserved")
@@ -5506,7 +16668,299 @@ def downgrade_preparation_receipt(worker):
     return worker / ".ai-human/control/downgrade-preparation.json"
 
 
-def render_downgrade_automation(content, timestamp):
+def downgrade_transaction_path(worker):
+    return worker_target(worker, ".ai-human/control/downgrade-transaction.json", "downgrade transaction")
+
+
+def downgrade_private_roots():
+    """One explicit registry; future private-state features extend this inventory."""
+    return tuple(downgrade_root_versions())
+
+
+def downgrade_root_versions():
+    # The improvement root existed in v2.3, but its v2 records need v2.4.
+    # Its legacy content-specific rollback check remains below.
+    return {
+        IMPROVEMENT_ROOT: (2, 4, 0), AUTONOMY_ROOT: (2, 4, 0),
+        PERSONAL_ROOT: (2, 5, 0), EXCHANGE_LOCAL_ROOT: (2, 5, 0),
+        UPDATE_SCHEDULE_ROOT: (2, 5, 0), MEMORY_ROOT: (2, 5, 0),
+        CHIEF_ROOT: (2, 5, 0), GOVERNOR_ROOT: (2, 5, 0),
+        CONTINUITY_ROOT: (2, 5, 0), RESOURCE_ROOT: (2, 5, 0),
+    }
+
+
+def validate_downgrade_versions(current, target):
+    before, after = version_tuple(current), version_tuple(target)
+    if after >= before or not any(after < boundary <= before for boundary in {(2, 4, 0), (2, 5, 0)}):
+        raise ValueError("prepare-downgrade requires an older target crossing a v2.4 or v2.5 private-state boundary")
+
+
+def require_downgrade_restore_support(installed_version, items):
+    versions = downgrade_root_versions()
+    required = max([(2, 4, 0)] + [versions[safe_relative(item["original"], "private restore root")] for item in items])
+    if version_tuple(installed_version) < required:
+        raise ValueError("update to v" + ".".join(map(str, required)) + " or later before restoring this private state")
+
+
+def validate_downgrade_root_origin(root, manifest):
+    minimum = downgrade_root_versions()[root]
+    if version_tuple(manifest["from_version"]) < minimum:
+        raise ValueError("downgrade archive root is newer than its originating version: " + root.as_posix())
+    if version_tuple(manifest["target_version"]) >= minimum:
+        raise ValueError("downgrade archive includes state supported by its target version: " + root.as_posix())
+
+
+def verify_downgrade_controls_reconciled(worker):
+    plans = governor_plan_records(worker)
+    completed = governor_outcomes_by_plan(governor_outcome_records(worker, plans))
+    if any(plan["effective_batch"] > 0 and plan["plan_id"] not in completed for plan in plans):
+        raise ValueError("record the outstanding governor plan outcome before downgrade preparation")
+    policy = governor_policy(worker, required=False)
+    if policy and any(plan["policy_sha256"] == canonical_json_sha256(policy)
+                      and completed.get(plan["plan_id"], {}).get("status") in GOVERNOR_FATAL_OUTCOMES
+                      for plan in plans):
+        raise ValueError("complete owner recovery of the current governor policy before downgrade preparation")
+    if context_checkpoint_latch(worker):
+        raise ValueError("complete the required context checkpoint before downgrade preparation")
+    acknowledgements = handoff_acknowledgements(worker)
+    now = datetime.datetime.now(datetime.timezone.utc)
+    for packet in handoff_packets(worker):
+        if parse_recorded_utc(packet["expires_utc"], "handoff expiry") <= now:
+            continue
+        # Cross-worker acknowledgements belong to the recipient. A same-ID local
+        # file cannot prove external acceptance and cannot grant downgrade authority.
+        accepted = packet["intended_recipient_worker_id"] == installed_worker_id(worker) and any(
+            all(ack[field] == packet[packet_field] for field, packet_field in (
+                ("handoff_id", "handoff_id"), ("packet_sha256", "packet_sha256"),
+                ("recipient_worker_id", "intended_recipient_worker_id"),
+                ("recipient_identity_sha256", "intended_recipient_identity_sha256"),
+                ("recipient_task_id", "intended_recipient_task_id"),
+                ("recipient_state_sha256", "intended_recipient_state_sha256"),
+            )) and parse_recorded_utc(packet["created_utc"], "handoff creation")
+            <= parse_recorded_utc(ack["accepted_utc"], "handoff acceptance")
+            <= min(now, parse_recorded_utc(packet["expires_utc"], "handoff expiry"))
+            for ack in acknowledgements
+        )
+        if not accepted:
+            raise ValueError("unresolved unexpired handoff prevents downgrade preparation; complete local handoff or wait for expiry")
+
+
+def downgrade_fields(value, fields, label):
+    if not isinstance(value, dict):
+        raise ValueError(label + " must be a JSON object")
+    require_exact_fields(value, set(fields.split()), label)
+
+
+def downgrade_boundary(name):
+    """Fault-injection seam; production never reads a crash flag from user input."""
+
+
+def downgrade_unrelated_hash(worker, items):
+    excluded = [Path(item["original"]) for item in items]
+    paths = set(controlled_state_paths(worker)) | {worker / name for name in STATE_FILES}
+    manifest = read_json(worker / ".ai-human/release-manifest.json")
+    paths.update(worker / relative for relative in managed_targets(manifest))
+    digest = hashlib.sha256()
+    for path in sorted(paths, key=lambda value: value.relative_to(worker).as_posix()):
+        relative = path.relative_to(worker)
+        if relative == Path("AUTOMATIONS.md") or any(relative == root or root in relative.parents for root in excluded):
+            continue
+        worker_target(worker, relative, "downgrade unrelated state")
+        digest.update(relative.as_posix().encode() + b"\0")
+        digest.update(bytes.fromhex(sha256(path)) if path.is_file() else b"MISSING")
+        digest.update(b"\n")
+    return digest.hexdigest()
+
+
+def write_downgrade_transaction(worker, transaction, phase):
+    transaction["phase"] = phase
+    transaction["record_sha256"] = canonical_json_sha256({key: value for key, value in transaction.items() if key != "record_sha256"})
+    atomic_json(downgrade_transaction_path(worker), transaction)
+
+
+def start_downgrade_transaction(worker, archive, manifest, receipt, intent):
+    path = downgrade_transaction_path(worker)
+    if path.exists():
+        raise ValueError("interrupted downgrade transaction; run recover-downgrade")
+    validate_downgrade_versions(manifest["from_version"], manifest["target_version"])
+    for item in manifest["items"]:
+        validate_downgrade_root_origin(safe_relative(item["original"], "private downgrade root"), manifest)
+    if intent == "RESTORE":
+        expected = {Path(item["original"]).name for item in manifest["items"]} | {"AUTOMATIONS.before.md", "archive-manifest.json"}
+        if {child.name for child in archive.iterdir()} != expected or any(child.is_symlink() for child in archive.iterdir()):
+            raise ValueError("unexpected object in downgrade archive; preserve and reconcile before restoration")
+    backup = worker_target(worker, archive.relative_to(worker) / "AUTOMATIONS.before.md", "downgrade automation backup")
+    # This is a byte-preserving recovery source, not normalized display text.
+    # read_text translates CRLF/mixed newlines and would invalidate its raw hash.
+    restored_text = backup.read_bytes().decode("utf-8")
+    exported_text = render_downgrade_automation(restored_text, receipt["prepared_utc"], manifest)
+    expected_current = restored_text if intent == "EXPORT" else exported_text
+    if sha256(worker / "AUTOMATIONS.md") != hashlib.sha256(expected_current.encode()).hexdigest():
+        raise ValueError("visible automation state changed before downgrade transaction; preserve and reconcile it first")
+    transaction = {
+        "schema": "ai-human.downgrade-transaction/v1", "intent": intent, "destination": intent,
+        "worker_path_sha256": hashlib.sha256(str(worker.resolve()).encode()).hexdigest(),
+        "worker_identity_sha256": worker_identity_sha256(worker),
+        "installed_version": install_metadata(worker)["installed_version"],
+        "install_sha256": sha256(worker / ".ai-human/install.json"),
+        "release_manifest_sha256": sha256(worker / ".ai-human/release-manifest.json"),
+        "archive_manifest": manifest, "prepared_receipt": receipt,
+        "unrelated_sha256": downgrade_unrelated_hash(worker, manifest["items"]),
+        "restored_automation_sha256": hashlib.sha256(restored_text.encode()).hexdigest(),
+        "exported_automation_sha256": hashlib.sha256(exported_text.encode()).hexdigest(),
+    }
+    write_downgrade_transaction(worker, transaction, "PREPARED")
+    downgrade_boundary("journal")
+    return transaction
+
+
+def read_downgrade_transaction(worker):
+    transaction = read_json(downgrade_transaction_path(worker))
+    downgrade_fields(transaction, "schema intent destination worker_path_sha256 worker_identity_sha256 installed_version install_sha256 release_manifest_sha256 archive_manifest prepared_receipt unrelated_sha256 restored_automation_sha256 exported_automation_sha256 phase record_sha256", "downgrade transaction")
+    if transaction["schema"] != "ai-human.downgrade-transaction/v1" or transaction["intent"] not in {"EXPORT", "RESTORE"} or transaction["destination"] not in {"EXPORT", "RESTORE"} or transaction["phase"] not in {"PREPARED", "MOVING", "AUTOMATION", "RECEIPT", "VALIDATING"}:
+        raise ValueError("invalid downgrade transaction state")
+    if transaction["record_sha256"] != canonical_json_sha256({key: value for key, value in transaction.items() if key != "record_sha256"}):
+        raise ValueError("downgrade transaction digest mismatch")
+    if transaction["worker_path_sha256"] != hashlib.sha256(str(worker.resolve()).encode()).hexdigest() or transaction["worker_identity_sha256"] != worker_identity_sha256(worker):
+        raise ValueError("downgrade transaction belongs to another worker")
+    if transaction["installed_version"] != install_metadata(worker)["installed_version"] or transaction["install_sha256"] != sha256(worker / ".ai-human/install.json") or transaction["release_manifest_sha256"] != sha256(worker / ".ai-human/release-manifest.json"):
+        raise ValueError("downgrade transaction release binding changed")
+    receipt = transaction["prepared_receipt"]
+    downgrade_fields(receipt, "archive from_version prepared_utc schema target_version validator", "transaction preparation receipt")
+    if receipt["schema"] != "ai-human.downgrade-preparation/v1" or receipt["validator"] != "PASS":
+        raise ValueError("invalid transaction preparation receipt")
+    validate_downgrade_versions(receipt["from_version"], receipt["target_version"])
+    parse_recorded_utc(receipt["prepared_utc"], "downgrade preparation time")
+    relative = safe_relative(receipt["archive"], "transaction archive")
+    if len(relative.parts) != 3 or relative.parts[:2] != (".ai-human", "downgrade-exports"):
+        raise ValueError("transaction archive is outside the protected export area")
+    archive = worker_target(worker, relative, "transaction archive")
+    if not archive.is_dir():
+        raise ValueError("transaction archive is missing")
+    manifest = transaction["archive_manifest"]
+    downgrade_fields(manifest, "created_utc from_version items schema target_version", "transaction archive manifest")
+    if manifest["schema"] != "ai-human.downgrade-archive/v1" or manifest["created_utc"] != receipt["prepared_utc"] or any(manifest[key] != receipt[key] for key in ("from_version", "target_version")):
+        raise ValueError("transaction archive manifest differs from its receipt")
+    items = manifest["items"]
+    if not isinstance(items, list) or len(items) > len(downgrade_private_roots()):
+        raise ValueError("transaction root inventory is invalid")
+    seen = set()
+    positions = []
+    for item in items:
+        downgrade_fields(item, "file_count original sha256", "transaction root")
+        root = safe_relative(item["original"], "transaction private root")
+        if root not in downgrade_private_roots() or root in seen or type(item["file_count"]) is not int or item["file_count"] < 0 or not isinstance(item["sha256"], str) or not SHA256_HEX.fullmatch(item["sha256"]):
+            raise ValueError("transaction root inventory is invalid or duplicated")
+        validate_downgrade_root_origin(root, manifest)
+        seen.add(root)
+        source = worker_target(worker, root, "transaction private root")
+        archived = worker_target(worker, relative / root.name, "transaction archived root")
+        if source.exists() == archived.exists():
+            raise ValueError("private root must exist exactly once in worker or archive: " + str(root))
+        located = source if source.exists() else archived
+        if tree_sha256(located) != (item["sha256"], item["file_count"]):
+            raise ValueError("transaction private root integrity mismatch: " + str(root))
+        positions.append((source, archived))
+    if downgrade_unrelated_hash(worker, items) != transaction["unrelated_sha256"]:
+        raise ValueError("unrelated worker state changed during downgrade transaction")
+    backup = worker_target(worker, relative / "AUTOMATIONS.before.md", "transaction automation backup")
+    if not backup.is_file() or sha256(backup) != transaction["restored_automation_sha256"]:
+        raise ValueError("transaction automation backup integrity mismatch")
+    restored = backup.read_bytes().decode("utf-8")
+    if hashlib.sha256(render_downgrade_automation(restored, receipt["prepared_utc"], manifest).encode()).hexdigest() != transaction["exported_automation_sha256"]:
+        raise ValueError("transaction exported automation digest differs")
+    if sha256(worker / "AUTOMATIONS.md") not in {transaction["restored_automation_sha256"], transaction["exported_automation_sha256"]}:
+        raise ValueError("visible automation state changed outside downgrade transaction")
+    manifest_path = worker_target(worker, relative / "archive-manifest.json", "transaction archive manifest")
+    if manifest_path.exists() and read_json(manifest_path) != manifest:
+        raise ValueError("archive manifest changed outside downgrade transaction")
+    receipt_path = worker_target(worker, ".ai-human/control/downgrade-preparation.json", "transaction receipt")
+    if receipt_path.exists() and read_json(receipt_path) != receipt:
+        raise ValueError("preparation receipt changed outside downgrade transaction")
+    allowed = {root.name for root in seen} | {"AUTOMATIONS.before.md", "archive-manifest.json"}
+    atomic_temps = []
+    expected_manifest_bytes = (json.dumps(manifest, indent=2, sort_keys=True) + "\n").encode()
+    for child in archive.iterdir():
+        if child.is_symlink():
+            raise ValueError("unexpected object in downgrade transaction archive")
+        if child.name in allowed:
+            continue
+        if not re.fullmatch(r"\.archive-manifest\.json\.(?:[0-9a-f]{32}\.tmp|[a-z0-9_]{8})", child.name):
+            raise ValueError("unexpected object in downgrade transaction archive")
+        info = child.stat()
+        if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1 or info.st_size > len(expected_manifest_bytes) or len(atomic_temps) >= BATCH_CAP:
+            raise ValueError("unbounded or unsafe downgrade atomic temporary file")
+        with child.open("rb") as stream:
+            partial = stream.read(len(expected_manifest_bytes) + 1)
+        if not expected_manifest_bytes.startswith(partial):
+            raise ValueError("downgrade atomic temporary file differs from expected manifest bytes")
+        atomic_temps.append(child)
+    return transaction, archive, positions, atomic_temps
+
+
+def finish_downgrade_transaction(worker, destination):
+    transaction, archive, positions, atomic_temps = read_downgrade_transaction(worker)
+    if live_task(worker) or read_lease(worker, required=False):
+        raise ValueError("downgrade recovery requires a checkpoint without an active writer")
+    if destination == "RESTORE":
+        require_downgrade_restore_support(transaction["installed_version"], transaction["archive_manifest"]["items"])
+    transaction["destination"] = destination
+    write_downgrade_transaction(worker, transaction, "MOVING")
+    for path in atomic_temps:
+        path.unlink()
+    downgrade_boundary("atomic-temp-cleanup")
+    for index, (source, archived) in enumerate(positions):
+        origin, target = (source, archived) if destination == "EXPORT" else (archived, source)
+        if origin.exists():
+            if target.exists():
+                raise ValueError("downgrade destination unexpectedly exists; refusing replacement")
+            # Atomic directory rename on one worker filesystem; never copy/delete.
+            os.replace(origin, target)
+        downgrade_boundary("move-" + str(index))
+        read_downgrade_transaction(worker)
+    atomic_json(archive / "archive-manifest.json", transaction["archive_manifest"])
+    downgrade_boundary("archive-manifest")
+    write_downgrade_transaction(worker, transaction, "AUTOMATION")
+    restored = (archive / "AUTOMATIONS.before.md").read_bytes().decode("utf-8")
+    content = render_downgrade_automation(restored, transaction["prepared_receipt"]["prepared_utc"], transaction["archive_manifest"]) if destination == "EXPORT" else restored
+    atomic_text(worker / "AUTOMATIONS.md", content)
+    downgrade_boundary("automation")
+    write_downgrade_transaction(worker, transaction, "RECEIPT")
+    receipt_path = downgrade_preparation_receipt(worker)
+    if destination == "EXPORT":
+        atomic_json(receipt_path, transaction["prepared_receipt"])
+    else:
+        receipt_path.unlink(missing_ok=True)
+    downgrade_boundary("receipt")
+    write_downgrade_transaction(worker, transaction, "VALIDATING")
+    read_downgrade_transaction(worker)
+    if destination == transaction["intent"]:
+        ok, failures = validate_worker(worker, quiet=True, allow_transaction=True)
+        if not ok:
+            raise ValueError("downgrade transaction destination validation failed: " + "; ".join(failures))
+    # Reversing restores the exact pre-transaction byte inventory. A restoration
+    # attempt may have begun from a worker already failing a managed-file check;
+    # do not strand its private roots merely because that pre-existing fault remains.
+    downgrade_boundary("validated")
+    downgrade_transaction_path(worker).unlink()
+    downgrade_boundary("complete")
+    return destination
+
+
+def recover_downgrade(args):
+    worker = safe_worker(args.worker)
+    if not downgrade_transaction_path(worker).exists():
+        print("AI-HUMAN DOWNGRADE RECOVERY: NO_PENDING_TRANSACTION")
+        return
+    transaction, _archive, _positions, _atomic_temps = read_downgrade_transaction(worker)
+    destination = transaction["destination"]
+    if args.mode == "RESTORE_PREVIOUS":
+        destination = "RESTORE" if transaction["intent"] == "EXPORT" else "EXPORT"
+    finish_downgrade_transaction(worker, destination)
+    print("AI-HUMAN DOWNGRADE RECOVERY: PASS — " + destination)
+
+
+def render_downgrade_automation(content, timestamp, manifest=None):
     rows = {
         "USER-QUARTERLY-IMPROVEMENT-001": [
             "USER-QUARTERLY-IMPROVEMENT-001", "Private v2 state exported for downgrade",
@@ -5522,33 +16976,105 @@ def render_downgrade_automation(content, timestamp):
             "Always remain unavailable on the downgraded release",
             "EXPORTED FOR DOWNGRADE", timestamp,
         ],
+        "SYSTEM-MONTHLY-UPDATE-001": [
+            "SYSTEM-MONTHLY-UPDATE-001", "Private native-update state exported for downgrade",
+            "No unattended update source remains registered",
+            "No unattended update is authorized on the downgraded release",
+            "Update to the originating release before restoring the archived state",
+            "EXPORTED FOR DOWNGRADE", timestamp,
+        ],
     }
+    # Genuine v2.4 archives rendered exactly the first two rows. Reconstruct
+    # those historical bytes; never rewrite the saved receipt/archive.
+    selected = {"USER-QUARTERLY-IMPROVEMENT-001", "USER-SILENT-AUTONOMY-001"}
+    if manifest is not None and version_tuple(manifest["from_version"]) >= (2, 5, 0):
+        roots = {item["original"] for item in manifest["items"]}
+        selected = {identifier for identifier, root in (
+            ("USER-QUARTERLY-IMPROVEMENT-001", IMPROVEMENT_ROOT),
+            ("USER-SILENT-AUTONOMY-001", AUTONOMY_ROOT),
+            ("SYSTEM-MONTHLY-UPDATE-001", UPDATE_SCHEDULE_ROOT),
+        ) if root.as_posix() in roots}
     output = content
     for identifier, row in rows.items():
-        output = update_task_table(output, identifier, row)
+        if identifier in selected:
+            if manifest is not None and version_tuple(manifest["from_version"]) >= (2, 5, 0):
+                # Retained v2.4 facilities validate their own row in its original
+                # position. Do not move a replaced update row past those rows.
+                lines = output.splitlines(keepends=True)
+                matching = [index for index, line in enumerate(lines)
+                            if line.startswith("| " + identifier + " |")]
+                if len(matching) != 1:
+                    raise ValueError("downgrade automation row is missing or duplicated: " + identifier)
+                lines[matching[0]] = markdown_table_row(row) + "\n"
+                output = "".join(lines)
+            else:
+                output = update_task_table(output, identifier, row)
     return output
+
+
+def verify_exchange_downgrade_reconciled(worker):
+    root = worker / EXCHANGE_LOCAL_ROOT
+    if not root.exists():
+        return None
+    if root.is_symlink() or not root.is_dir():
+        raise ValueError("worker exchange state root must be a real directory")
+    leave_path = worker / EXCHANGE_LEAVE_PATH
+    if leave_path.is_symlink() or not leave_path.is_file():
+        raise ValueError(
+            "pause or retire exchange membership, revoke active routes, and run exchange-leave before downgrade"
+        )
+    receipt = validate_exchange_leave_receipt(read_json(leave_path))
+    exchange = safe_exchange_root(receipt["exchange_path"])
+    config, proof, current, reconciliation = exchange_leave_transport_snapshot(
+        worker, exchange
+    )
+    expected = {
+        "config_sha256": canonical_json_sha256(config),
+        "directory_entry_sha256": canonical_json_sha256(current),
+        "directory_status": current["status"],
+        "exchange_id": config["exchange_id"],
+        "exchange_path": str(exchange),
+        "join_proof_sha256": proof["proof_sha256"],
+        **reconciliation,
+        "schema": "ai-human.exchange-leave/v1",
+        "worker_id": current["worker_id"],
+    }
+    if any(receipt.get(field) != value for field, value in expected.items()):
+        raise ValueError(
+            "worker exchange leave receipt no longer matches current transport membership and routes"
+        )
+    return receipt
 
 
 def prepare_downgrade(args):
     worker = safe_worker(args.worker)
+    if map_external_schedule_exists(work_map(worker, required=False)):
+        raise ValueError("remove and visibly verify the external radar schedule before downgrade preparation")
     metadata = install_metadata(worker)
     current = metadata["installed_version"]
-    version_tuple(args.target_version)
-    if version_tuple(current) < (2, 4, 0) or version_tuple(args.target_version) >= (2, 4, 0):
-        raise ValueError("prepare-downgrade applies only from v2.4+ to a pre-v2.4 release")
+    validate_downgrade_versions(current, args.target_version)
     if live_task(worker):
         raise ValueError("reach a checkpoint with no live task before preparing a downgrade")
     if read_lease(worker, required=False):
         raise ValueError("release the active writer lease before preparing a downgrade")
     require_no_autonomy_effect(worker, "downgrade preparation")
     schedule = improvement_schedule(worker)
-    if external_improvement_schedule_still_exists(schedule):
+    if version_tuple(args.target_version) < (2, 4, 0) and external_improvement_schedule_still_exists(schedule):
         raise ValueError(
             "remove and visibly verify the external personal-improvement schedule before downgrade preparation"
         )
+    verify_exchange_downgrade_reconciled(worker)
+    if external_update_schedule_still_exists(worker):
+        raise ValueError(
+            "remove and visibly verify the native update schedule before downgrade preparation"
+        )
+    update_config = update_schedule_config(worker)
+    if update_config and update_config.get("status") == "REMOVED":
+        verify_update_schedule_native_readback(worker, update_config)
     ok, failures = validate_worker(worker, quiet=True)
     if not ok:
         raise ValueError("pre-downgrade validation failed: " + "; ".join(failures))
+    verify_downgrade_controls_reconciled(worker)
     receipt_path = downgrade_preparation_receipt(worker)
     if receipt_path.exists():
         raise ValueError("a downgrade preparation already exists; restore it before preparing another")
@@ -5556,63 +17082,28 @@ def prepare_downgrade(args):
     archive = worker_target(
         worker,
         Path(".ai-human/downgrade-exports")
-        / ("v" + current + "-before-v" + args.target_version + "-" + timestamp),
+        / ("v" + current + "-before-v" + args.target_version + "-" + timestamp + "-" + secrets.token_hex(6)),
         "downgrade archive",
     )
+    inventory = []
+    for relative, minimum_version in downgrade_root_versions().items():
+        if version_tuple(args.target_version) >= minimum_version:
+            continue
+        source = worker_target(worker, relative, "private downgrade source")
+        if source.exists():
+            digest, count = tree_sha256(source)
+            inventory.append({"file_count": count, "original": relative.as_posix(), "sha256": digest})
+    manifest = {"created_utc": timestamp, "from_version": current, "items": inventory,
+                "schema": "ai-human.downgrade-archive/v1", "target_version": args.target_version}
+    receipt = {"archive": archive.relative_to(worker).as_posix(), "from_version": current,
+               "prepared_utc": timestamp, "schema": "ai-human.downgrade-preparation/v1",
+               "target_version": args.target_version, "validator": "PASS"}
+    for item in inventory:
+        validate_downgrade_root_origin(Path(item["original"]), manifest)
     archive.mkdir(parents=True)
-    automations_path = worker / "AUTOMATIONS.md"
-    automation_before = automations_path.read_text(encoding="utf-8")
-    atomic_text(archive / "AUTOMATIONS.before.md", automation_before)
-    moved = []
-    try:
-        for relative in (IMPROVEMENT_ROOT, AUTONOMY_ROOT):
-            source = worker / relative
-            if source.is_dir():
-                target = archive / relative.name
-                shutil.move(str(source), str(target))
-                digest, count = tree_sha256(target)
-                moved.append(
-                    {
-                        "file_count": count,
-                        "original": relative.as_posix(),
-                        "sha256": digest,
-                    }
-                )
-        atomic_json(
-            archive / "archive-manifest.json",
-            {
-                "created_utc": timestamp,
-                "from_version": current,
-                "items": moved,
-                "schema": "ai-human.downgrade-archive/v1",
-                "target_version": args.target_version,
-            },
-        )
-        atomic_text(automations_path, render_downgrade_automation(automation_before, timestamp))
-        atomic_json(
-            receipt_path,
-            {
-                "archive": archive.relative_to(worker).as_posix(),
-                "from_version": current,
-                "prepared_utc": timestamp,
-                "schema": "ai-human.downgrade-preparation/v1",
-                "target_version": args.target_version,
-                "validator": "PASS",
-            },
-        )
-        ok, failures = validate_worker(worker, quiet=True)
-        if not ok:
-            raise ValueError("prepared worker validation failed: " + "; ".join(failures))
-    except Exception:
-        receipt_path.unlink(missing_ok=True)
-        atomic_text(automations_path, automation_before)
-        for record in reversed(moved):
-            original = worker / record["original"]
-            archived = archive / Path(record["original"]).name
-            if archived.exists() and not original.exists():
-                shutil.move(str(archived), str(original))
-        shutil.rmtree(archive, ignore_errors=True)
-        raise
+    atomic_copy_file(worker / "AUTOMATIONS.md", archive / "AUTOMATIONS.before.md")
+    start_downgrade_transaction(worker, archive, manifest, receipt, "EXPORT")
+    finish_downgrade_transaction(worker, "EXPORT")
     print("AI-HUMAN DOWNGRADE PREPARATION: PASS")
     print("- target version: " + args.target_version)
     print("- v2 private state archive: " + str(archive))
@@ -5643,15 +17134,22 @@ def restore_downgrade(args):
     } or manifest.get("schema") != "ai-human.downgrade-archive/v1":
         raise ValueError("downgrade archive manifest is invalid")
     items = manifest.get("items")
-    if not isinstance(items, list) or len(items) > 2:
+    if not isinstance(items, list) or len(items) > len(downgrade_private_roots()):
         raise ValueError("downgrade archive inventory is invalid")
+    if any(manifest[key] != receipt[key] for key in ("from_version", "target_version")) or manifest["created_utc"] != receipt["prepared_utc"]:
+        raise ValueError("downgrade archive differs from its preparation receipt")
     validated = []
+    seen = set()
     for item in items:
         if not isinstance(item, dict) or set(item) != {"file_count", "original", "sha256"}:
             raise ValueError("downgrade archive item fields are invalid")
         original = safe_relative(item["original"], "downgrade restore target")
-        if original not in {IMPROVEMENT_ROOT, AUTONOMY_ROOT}:
+        if original not in downgrade_private_roots():
             raise ValueError("downgrade archive contains an unexpected private-state target")
+        validate_downgrade_root_origin(original, manifest)
+        if original in seen or type(item["file_count"]) is not int or item["file_count"] < 0 or not isinstance(item["sha256"], str) or not SHA256_HEX.fullmatch(item["sha256"]):
+            raise ValueError("downgrade archive contains a duplicate or invalid inventory record")
+        seen.add(original)
         source = archive / original.name
         digest, count = tree_sha256(source)
         if digest != item["sha256"] or count != item["file_count"]:
@@ -5659,29 +17157,19 @@ def restore_downgrade(args):
         if (worker / original).exists():
             raise ValueError("restore target already exists: " + original.as_posix())
         validated.append((source, worker / original))
+    require_downgrade_restore_support(metadata["installed_version"], items)
     automation_backup = archive / "AUTOMATIONS.before.md"
     if not automation_backup.is_file():
         raise ValueError("downgrade archive lacks the visible automation backup")
-    automation_path = worker / "AUTOMATIONS.md"
-    automation_before_restore = automation_path.read_text(encoding="utf-8")
-    restored = []
+    start_downgrade_transaction(worker, archive, manifest, receipt, "RESTORE")
     try:
-        for source, target in validated:
-            shutil.move(str(source), str(target))
-            restored.append((source, target))
-        atomic_copy_file(automation_backup, automation_path)
-        receipt_path.unlink()
-        ok, failures = validate_worker(worker, quiet=True)
-        if not ok:
-            raise ValueError("restored worker validation failed: " + "; ".join(failures))
-    except Exception:
-        atomic_text(automation_path, automation_before_restore)
-        for source, target in reversed(restored):
-            if target.exists() and not source.exists():
-                shutil.move(str(target), str(source))
-        if not receipt_path.exists():
-            atomic_json(receipt_path, receipt)
-        raise
+        finish_downgrade_transaction(worker, "RESTORE")
+    except Exception as exc:
+        # Preserve legacy caught-error rollback. A termination is a BaseException
+        # and leaves the durable transaction for explicit recovery instead.
+        if downgrade_transaction_path(worker).exists():
+            finish_downgrade_transaction(worker, "EXPORT")
+        raise ValueError("restored worker validation failed: " + str(exc)) from exc
     print("AI-HUMAN DOWNGRADE PREPARATION RESTORE: PASS")
     print("- private v2 state: RESTORED")
     print("- visible automation state: RESTORED")
@@ -5689,10 +17177,17 @@ def restore_downgrade(args):
 
 def rollback(args):
     worker = safe_worker(args.worker)
+    if read_lease(worker, required=False):
+        raise ValueError("rollback requires a checkpoint without an active writer")
+    if live_task(worker) and not getattr(args, "at_checkpoint", False):
+        raise ValueError("rollback with a live task requires an explicitly approved --at-checkpoint")
+    if map_external_schedule_exists(work_map(worker, required=False)):
+        raise ValueError("remove and visibly verify the external radar schedule before rollback")
     require_no_autonomy_effect(worker, "managed-core rollback")
     metadata = install_metadata(worker)
     current = metadata["installed_version"]
-    version_tuple(args.version)
+    if version_tuple(args.version) >= version_tuple(current):
+        raise ValueError("rollback requires a version earlier than the installed version")
     temporary = None
     if args.source:
         release, target_manifest = load_release(args.source)
@@ -5704,8 +17199,17 @@ def rollback(args):
         if temporary:
             temporary.cleanup()
         raise ValueError("rollback source version differs from the requested version")
+    blockers = []
+    for root, minimum_version in downgrade_root_versions().items():
+        if minimum_version != (2, 5, 0) or version_tuple(args.version) >= minimum_version:
+            continue
+        path = worker / root
+        if path.exists() or path.is_symlink():
+            label = {PERSONAL_ROOT: "private H-54 personal context",
+                     EXCHANGE_LOCAL_ROOT: "H-55 worker-exchange state",
+                     UPDATE_SCHEDULE_ROOT: "native update-schedule state"}.get(root, root.as_posix())
+            blockers.append(label)
     if version_tuple(current) >= (2, 4, 0) and version_tuple(args.version) < (2, 4, 0):
-        blockers = []
         autonomy_root = worker / AUTONOMY_ROOT
         if autonomy_root.is_dir() and any(path.is_file() for path in autonomy_root.rglob("*")):
             blockers.append("v2.4 autonomy state")
@@ -5718,21 +17222,27 @@ def rollback(args):
             for path in runs_root.glob("*.json")
         ):
             blockers.append("v2 personal-improvement runs")
-        if blockers:
-            if temporary:
-                temporary.cleanup()
-            raise ValueError(
-                "rollback would orphan state unreadable by " + args.version + ": "
-                + ", ".join(blockers) + "; export or remove it through a governed migration first"
-            )
+    if blockers:
+        if temporary:
+            temporary.cleanup()
+        raise ValueError(
+            "rollback would orphan state unreadable by " + args.version + ": "
+            + ", ".join(blockers) + "; export or remove it through a governed migration first"
+        )
     try:
+        known_digest = previous_release_digest(worker, args.version)
+        verify_lifecycle_source(release, target_manifest, metadata["repository"], known_digest, args)
         current_manifest = read_json(worker / ".ai-human/release-manifest.json")
         before = state_hashes(worker)
         forward_backup = backup_for_update(worker, current_manifest, target_manifest)
+        backup_proof = tree_proof(forward_backup)
+        snapshot = read_json(forward_backup / "worker-state/manifest.json")
+        if before != snapshot["files"] or controlled_state_hash(worker) != snapshot["controlled_state_sha256"]:
+            raise ValueError("worker state changed during rollback preparation")
         expected_targets = update_backup_targets(current_manifest, target_manifest)
         write_lifecycle_transaction(
             worker, "ROLLBACK", current_manifest, target_manifest,
-            forward_backup, "PREPARED",
+            forward_backup, "PREPARED", source=release, backup_proof=backup_proof,
         )
         try:
             copy_release_files(worker, release, target_manifest)
@@ -5746,7 +17256,7 @@ def rollback(args):
                 worker, "ROLLBACK", current_manifest, target_manifest,
                 forward_backup, "APPLIED",
             )
-            if before != state_hashes(worker):
+            if before != state_hashes(worker) or controlled_state_hash(worker) != snapshot["controlled_state_sha256"]:
                 raise ValueError("rollback changed company, role or user state")
             ok, failures = validate_worker(worker, quiet=True, allow_transaction=True)
             if not ok:
@@ -5765,6 +17275,12 @@ def rollback(args):
             worker / ".ai-human/rollback-receipt.json",
             {
                 "from_version": current, "source": str(release),
+                "from_manifest_sha256": lifecycle_manifest_digest(current_manifest),
+                "worker_snapshot_manifest": "worker-state/manifest.json",
+                "worker_state_after_sha256": canonical_json_sha256(before),
+                "controlled_state_after_sha256": controlled_state_hash(worker),
+                "backup": str(forward_backup), "backup_proof": backup_proof,
+                "installed_payload_proof": install_metadata(worker)["managed_payload_proof"],
                 "state_preserved": True, "to_version": args.version,
                 "validator": "PASS",
             },
@@ -5844,6 +17360,14 @@ def safe_worker_report(metadata, installed, latest, status, validator, moment, d
     }
 
 
+def require_legacy_update_path_unowned(worker):
+    config = update_schedule_config(worker)
+    if config and config.get("status") in {"ENABLED", "PAUSED", "REMOVED"}:
+        raise ValueError(
+            "native update schedule owns update timing; legacy automatic-update is refused"
+        )
+
+
 def run_automatic_update(worker, release, manifest, moment_local):
     try:
         metadata = install_metadata(worker)
@@ -5854,6 +17378,11 @@ def run_automatic_update(worker, release, manifest, moment_local):
             "scheduled_check": "NOT_DUE", "schema": "ai-human.version-report/v1",
             "status": "MISSING", "validator": "FAIL", "worker_id": None,
         }
+    # A configured native schedule is the sole owner of update timing and v2
+    # occurrence receipts.  The historical monthly entry point must not run an
+    # update or replace its report, including when the native schedule is paused
+    # or has been explicitly removed.
+    require_legacy_update_path_unowned(worker)
     installed = str(metadata.get("installed_version", ""))
     worker_id = metadata.get("worker_id")
     if not worker_id or not SAFE_ID.fullmatch(str(worker_id)):
@@ -5938,6 +17467,8 @@ def run_automatic_update(worker, release, manifest, moment_local):
 def automatic_update(args):
     worker = safe_worker(args.worker)
     moment = parse_local(args.now_local)
+    # Check before --latest can make a network request.
+    require_legacy_update_path_unowned(worker)
     temp = None
     if args.latest:
         repository = install_metadata(worker)["repository"]
@@ -5957,6 +17488,1524 @@ def automatic_update(args):
     print("- latest version: " + str(report.get("latest_version") or "MISSING"))
     print("- validator: " + report["validator"])
     print("- reason: " + report["reason"])
+
+
+UPDATE_SCHEDULE_BACKUP_BASE_TARGETS = {
+    UPDATE_SCHEDULE_CONFIG_PATH, UPDATE_SCHEDULE_NATIVE_PATH,
+    UPDATE_LEGACY_MIGRATION_PATH, Path(".ai-human/install.json"),
+    Path(".ai-human/version-report.json"), Path("AUTOMATIONS.md"),
+}
+
+
+def update_schedule_worker_path_sha256(worker):
+    return hashlib.sha256(str(Path(worker).resolve()).encode("utf-8")).hexdigest()
+
+
+def expected_update_schedule_id(worker, metadata, existing=None):
+    if existing and existing.get("status") != "DISABLED":
+        return existing["schedule_id"]
+    seed = str(metadata.get("worker_id") or worker_identity_sha256(worker))
+    return "update-" + hashlib.sha256(
+        (seed + str(Path(worker).resolve())).encode("utf-8")
+    ).hexdigest()[:20]
+
+
+def update_schedule_snapshot_sha256(records, base_only=False):
+    selected = [
+        record for record in records
+        if not base_only
+        or safe_relative(record["path"], "update schedule snapshot path")
+        in UPDATE_SCHEDULE_BACKUP_BASE_TARGETS
+    ]
+    return canonical_json_sha256(selected)
+
+
+def current_update_schedule_base_records(worker):
+    records = []
+    for relative in sorted(
+        UPDATE_SCHEDULE_BACKUP_BASE_TARGETS, key=lambda item: item.as_posix()
+    ):
+        target = worker_target(worker, relative, "update schedule current state")
+        if target.exists() and not target.is_file():
+            raise ValueError("update schedule current state contains a non-file target")
+        records.append(
+            {
+                "existed": target.is_file(),
+                "path": relative.as_posix(),
+                "sha256": sha256(target) if target.is_file() else None,
+            }
+        )
+    return records
+
+
+def current_update_schedule_base_sha256(worker):
+    return update_schedule_snapshot_sha256(current_update_schedule_base_records(worker))
+
+
+def update_schedule_definition_inventory(worker, candidate_definition=None):
+    allowed = set()
+    current = update_schedule_config(worker)
+    if current and current.get("status") != "DISABLED":
+        allowed.add(update_schedule_definition_path(current))
+    if candidate_definition is not None:
+        candidate = safe_relative(
+            candidate_definition, "candidate update schedule definition"
+        )
+        if (
+            candidate.parent != UPDATE_SCHEDULE_DEFINITIONS_ROOT
+            or candidate.suffix not in {".plist", ".xml"}
+        ):
+            raise ValueError("candidate update schedule definition is outside its inventory")
+        safe_identity(candidate.stem, "candidate update schedule definition name")
+        allowed.add(candidate)
+    definitions = update_schedule_target(
+        worker, UPDATE_SCHEDULE_DEFINITIONS_ROOT,
+        "update schedule definitions directory",
+    )
+    if definitions.exists():
+        if not definitions.is_dir():
+            raise ValueError("update schedule definitions path is not a directory")
+        entries = list(definitions.iterdir())
+        if len(entries) > BATCH_CAP:
+            raise ValueError("update schedule definition inventory exceeds the cap of 25")
+        for entry in entries:
+            relative = entry.relative_to(worker)
+            checked = update_schedule_target(
+                worker, relative, "update schedule definition inventory"
+            )
+            if not checked.is_file() or relative not in allowed:
+                raise ValueError(
+                    "unexpected update schedule definition inventory: "
+                    + relative.as_posix()
+                )
+    if len(UPDATE_SCHEDULE_BACKUP_BASE_TARGETS | allowed) > BATCH_CAP:
+        raise ValueError("update schedule backup inventory exceeds the cap of 25")
+    return allowed
+
+
+def update_schedule_backup(worker, candidate_definition=None):
+    definitions = update_schedule_definition_inventory(worker, candidate_definition)
+    targets = UPDATE_SCHEDULE_BACKUP_BASE_TARGETS | definitions
+    root = update_schedule_target(
+        worker,
+        UPDATE_SCHEDULE_BACKUPS_ROOT / ("before-" + now_utc() + "-" + secrets.token_hex(4)),
+        "update schedule backup",
+    )
+    records = []
+    for relative in sorted(targets, key=lambda item: item.as_posix()):
+        source = worker_target(worker, relative, "update schedule backup target")
+        if source.exists() and not source.is_file():
+            raise ValueError(
+                "update schedule backup target is not a regular file: "
+                + relative.as_posix()
+            )
+        existed = source.is_file()
+        records.append(
+            {
+                "existed": existed,
+                "path": relative.as_posix(),
+                "sha256": sha256(source) if existed else None,
+            }
+        )
+        if existed:
+            destination = root / "files" / relative
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source, destination)
+    files_digest, files_count = tree_sha256(root / "files")
+    installed_manifest = worker_target(
+        worker, ".ai-human/release-manifest.json", "installed release manifest"
+    )
+    metadata = install_metadata(worker)
+    manifest = {
+        "created_utc": now_utc(),
+        "definition_paths": sorted(path.as_posix() for path in definitions),
+        "file_count": files_count,
+        "files": records,
+        "files_tree_sha256": files_digest,
+        "installed_release_manifest_sha256": sha256(installed_manifest),
+        "installed_version": metadata["installed_version"],
+        "schema": "ai-human.update-schedule-backup/v1",
+        "snapshot_sha256": update_schedule_snapshot_sha256(records),
+        "worker_identity_sha256": worker_identity_sha256(worker),
+        "worker_path_sha256": update_schedule_worker_path_sha256(worker),
+    }
+    manifest["record_sha256"] = governed_record_sha256(manifest)
+    atomic_json(root / "backup.json", manifest)
+    return root
+
+
+def validate_update_schedule_backup(worker, backup):
+    backup = update_schedule_target(
+        worker, Path(backup).relative_to(worker), "update schedule restore source"
+    )
+    manifest_path = release_file(
+        backup, "backup.json", "update schedule backup manifest"
+    )
+    manifest = read_json(manifest_path)
+    required = {
+        "created_utc", "definition_paths", "file_count", "files",
+        "files_tree_sha256", "installed_release_manifest_sha256",
+        "installed_version", "record_sha256", "schema", "snapshot_sha256",
+        "worker_identity_sha256", "worker_path_sha256",
+    }
+    require_exact_fields(manifest, required, "update schedule backup manifest")
+    if manifest.get("schema") != "ai-human.update-schedule-backup/v1":
+        raise ValueError("invalid update schedule backup schema")
+    if manifest["record_sha256"] != governed_record_sha256(manifest):
+        raise ValueError("update schedule backup manifest hash mismatch")
+    for field in (
+        "files_tree_sha256", "installed_release_manifest_sha256",
+        "record_sha256", "snapshot_sha256", "worker_identity_sha256",
+        "worker_path_sha256",
+    ):
+        if not SHA256_HEX.fullmatch(str(manifest[field])):
+            raise ValueError("update schedule backup has invalid " + field)
+    parse_recorded_utc(manifest["created_utc"], "update schedule backup created_utc")
+    if (
+        isinstance(manifest["file_count"], bool)
+        or not isinstance(manifest["file_count"], int)
+        or not 0 <= manifest["file_count"] <= BATCH_CAP
+    ):
+        raise ValueError("update schedule backup has invalid file count")
+    version_tuple(str(manifest["installed_version"]))
+    metadata = install_metadata(worker)
+    installed_manifest = worker_target(
+        worker, ".ai-human/release-manifest.json", "installed release manifest"
+    )
+    if (
+        manifest["worker_path_sha256"] != update_schedule_worker_path_sha256(worker)
+        or manifest["worker_identity_sha256"] != worker_identity_sha256(worker)
+        or manifest["installed_version"] != metadata["installed_version"]
+        or manifest["installed_release_manifest_sha256"] != sha256(installed_manifest)
+    ):
+        raise ValueError("update schedule backup belongs to a different worker or release")
+    definition_values = manifest["definition_paths"]
+    if not isinstance(definition_values, list) or len(definition_values) > 2:
+        raise ValueError("invalid update schedule backup definition inventory")
+    definitions = set()
+    for value in definition_values:
+        relative = safe_relative(value, "update schedule backup definition")
+        if (
+            relative.parent != UPDATE_SCHEDULE_DEFINITIONS_ROOT
+            or relative.suffix not in {".plist", ".xml"}
+        ):
+            raise ValueError("invalid update schedule backup definition inventory")
+        safe_identity(relative.stem, "update schedule backup definition name")
+        if relative in definitions:
+            raise ValueError("duplicate update schedule backup definition")
+        definitions.add(relative)
+    if definition_values != sorted(path.as_posix() for path in definitions):
+        raise ValueError("update schedule backup definitions are not canonical")
+    expected_targets = UPDATE_SCHEDULE_BACKUP_BASE_TARGETS | definitions
+    records = manifest.get("files")
+    if (
+        not isinstance(records, list)
+        or not records
+        or len(records) > BATCH_CAP
+        or len(records) != len(expected_targets)
+    ):
+        raise ValueError("invalid update schedule backup inventory")
+    seen = set()
+    expected_files = {"backup.json"}
+    for record in records:
+        if not isinstance(record, dict) or set(record) != {"existed", "path", "sha256"}:
+            raise ValueError("invalid update schedule backup record")
+        relative = safe_relative(record.get("path"), "update schedule backup target")
+        key = portable_key(relative)
+        if relative not in expected_targets:
+            raise ValueError("update schedule backup contains an unexpected target")
+        if key in seen:
+            raise ValueError("update schedule backup contains a duplicate target")
+        seen.add(key)
+        if not isinstance(record.get("existed"), bool):
+            raise ValueError("update schedule backup has an invalid existed flag")
+        worker_target(worker, relative, "update schedule backup target")
+        if record["existed"]:
+            source = release_file(
+                backup / "files", relative, "update schedule backup source"
+            )
+            if (
+                not SHA256_HEX.fullmatch(str(record.get("sha256") or ""))
+                or sha256(source) != record["sha256"]
+            ):
+                raise ValueError("update schedule backup hash mismatch: " + relative.as_posix())
+            expected_files.add("files/" + relative.as_posix())
+        elif record.get("sha256") is not None:
+            raise ValueError("absent update schedule backup target may not have a hash")
+    canonical_paths = [path.as_posix() for path in sorted(expected_targets, key=lambda item: item.as_posix())]
+    if [record["path"] for record in records] != canonical_paths:
+        raise ValueError("update schedule backup inventory is not canonical")
+    if manifest["snapshot_sha256"] != update_schedule_snapshot_sha256(records):
+        raise ValueError("update schedule backup snapshot hash mismatch")
+    actual_files = set()
+    for path in backup.rglob("*"):
+        if path.is_symlink():
+            raise ValueError("update schedule backup may not contain symbolic links")
+        if path.is_file():
+            actual_files.add(path.relative_to(backup).as_posix())
+    if actual_files != expected_files:
+        raise ValueError("update schedule backup contains unexpected or missing files")
+    files_digest, files_count = tree_sha256(backup / "files")
+    if (
+        files_digest != manifest["files_tree_sha256"]
+        or files_count != manifest["file_count"]
+        or files_count != len(expected_files) - 1
+    ):
+        raise ValueError("update schedule backup tree digest mismatch")
+    return backup, manifest, records
+
+
+def restore_update_schedule_backup(worker, backup):
+    backup, _manifest, records = validate_update_schedule_backup(worker, backup)
+    ordered = sorted(
+        records,
+        key=lambda record: record["path"] == UPDATE_SCHEDULE_CONFIG_PATH.as_posix(),
+    )
+    for record in ordered:
+        relative = safe_relative(record["path"], "update schedule backup target")
+        target = worker_target(worker, relative, "update schedule backup target")
+        if record["existed"]:
+            source = release_file(
+                backup / "files", relative, "update schedule backup source"
+            )
+            target.parent.mkdir(parents=True, exist_ok=True)
+            atomic_copy_file(source, target)
+        elif target.is_file() or target.is_symlink():
+            target.unlink()
+
+
+def begin_update_schedule_transaction(worker, operation, candidate, definition_relative):
+    path = worker_target(
+        worker, UPDATE_SCHEDULE_TRANSACTION_PATH, "update schedule transaction"
+    )
+    if path.exists():
+        raise ValueError("interrupted update-schedule transaction requires recovery")
+    backup = update_schedule_backup(worker, definition_relative)
+    backup_manifest = backup / "backup.json"
+    backup_value = read_json(backup_manifest)
+    metadata = install_metadata(worker)
+    value = {
+        "backup": backup.relative_to(worker).as_posix(),
+        "backup_manifest_sha256": sha256(backup_manifest),
+        "candidate": candidate,
+        "candidate_sha256": update_schedule_config_sha256(candidate),
+        "definition_path": (
+            Path(definition_relative).as_posix() if definition_relative is not None else None
+        ),
+        "installed_release_manifest_sha256": sha256(
+            worker_target(
+                worker, ".ai-human/release-manifest.json", "installed release manifest"
+            )
+        ),
+        "installed_version": metadata["installed_version"],
+        "local_plan": None,
+        "local_plan_sha256": None,
+        "operation": operation,
+        "phase": "PREPARED",
+        "pre_state_sha256": update_schedule_snapshot_sha256(
+            backup_value["files"], base_only=True
+        ),
+        "schema": "ai-human.update-schedule-transaction/v1",
+        "started_utc": now_utc(),
+        "worker_identity_sha256": worker_identity_sha256(worker),
+        "worker_path_sha256": update_schedule_worker_path_sha256(worker),
+    }
+    value["record_sha256"] = governed_record_sha256(value)
+    atomic_json(path, value)
+    return value
+
+
+def mark_update_schedule_transaction(worker, value, phase, local_plan=None):
+    updated = dict(value)
+    updated["phase"] = phase
+    updated["local_plan"] = local_plan
+    updated["local_plan_sha256"] = (
+        canonical_json_sha256(local_plan) if local_plan is not None else None
+    )
+    updated["record_sha256"] = governed_record_sha256(updated)
+    atomic_json(
+        worker_target(
+            worker, UPDATE_SCHEDULE_TRANSACTION_PATH, "update schedule transaction"
+        ),
+        updated,
+    )
+    return updated
+
+
+def validate_update_schedule_transaction(worker, value):
+    required = {
+        "backup", "backup_manifest_sha256", "candidate", "candidate_sha256",
+        "definition_path", "installed_release_manifest_sha256", "installed_version",
+        "local_plan", "local_plan_sha256", "operation", "phase",
+        "pre_state_sha256", "record_sha256", "schema", "started_utc",
+        "worker_identity_sha256", "worker_path_sha256",
+    }
+    require_exact_fields(value, required, "update schedule transaction")
+    if value.get("schema") != "ai-human.update-schedule-transaction/v1":
+        raise ValueError("unsupported update schedule transaction schema")
+    if value["operation"] not in {
+        "CONFIGURE", "LEGACY_DISABLE", "PAUSE", "RESUME", "REMOVE",
+    }:
+        raise ValueError("invalid update schedule transaction operation")
+    if value["phase"] not in {
+        "PREPARED", "NATIVE_MUTATION_STARTED", "NATIVE_APPLIED",
+        "LOCAL_APPLY_STARTED",
+    }:
+        raise ValueError("invalid update schedule transaction phase")
+    for field in (
+        "backup_manifest_sha256", "candidate_sha256",
+        "installed_release_manifest_sha256", "record_sha256",
+        "pre_state_sha256", "worker_identity_sha256", "worker_path_sha256",
+    ):
+        if not SHA256_HEX.fullmatch(str(value[field])):
+            raise ValueError("update schedule transaction has invalid " + field)
+    if value["record_sha256"] != governed_record_sha256(value):
+        raise ValueError("update schedule transaction record hash mismatch")
+    plan = value["local_plan"]
+    plan_phases = {"NATIVE_APPLIED", "LOCAL_APPLY_STARTED"}
+    if value["phase"] in plan_phases:
+        if (
+            not isinstance(plan, list)
+            or value["local_plan_sha256"] != canonical_json_sha256(plan)
+        ):
+            raise ValueError("update schedule transaction local plan is invalid")
+    elif plan is not None or value["local_plan_sha256"] is not None:
+        raise ValueError("update schedule transaction phase may not contain a local plan")
+    if (
+        value["operation"] == "LEGACY_DISABLE"
+        and value["phase"] not in {"PREPARED", "LOCAL_APPLY_STARTED"}
+    ) or (
+        value["operation"] != "LEGACY_DISABLE"
+        and value["phase"] == "LOCAL_APPLY_STARTED"
+    ):
+        raise ValueError("update schedule transaction phase contradicts operation")
+    parse_recorded_utc(value["started_utc"], "update schedule transaction started_utc")
+    candidate = validate_update_schedule_config(value["candidate"])
+    if value["candidate_sha256"] != update_schedule_config_sha256(candidate):
+        raise ValueError("update schedule transaction candidate hash mismatch")
+    metadata = install_metadata(worker)
+    current_config = update_schedule_config(worker)
+    installed_manifest = worker_target(
+        worker, ".ai-human/release-manifest.json", "installed release manifest"
+    )
+    if (
+        value["worker_path_sha256"] != update_schedule_worker_path_sha256(worker)
+        or value["worker_identity_sha256"] != worker_identity_sha256(worker)
+        or value["installed_version"] != metadata["installed_version"]
+        or value["installed_release_manifest_sha256"] != sha256(installed_manifest)
+        or candidate["owner"]
+        != clean(parameter_value(worker, "Human owner"), "update schedule owner")
+        or (
+            candidate.get("status") != "DISABLED"
+            and candidate["schedule_id"]
+            != expected_update_schedule_id(worker, metadata, current_config)
+        )
+    ):
+        raise ValueError("update schedule transaction belongs to a different worker or release")
+    if value["operation"] == "LEGACY_DISABLE":
+        if candidate["status"] != "DISABLED" or value["definition_path"] is not None:
+            raise ValueError("legacy disable transaction may not define a native task")
+    else:
+        required_status = {
+            "PAUSE": "PAUSED", "RESUME": "ENABLED", "REMOVE": "REMOVED",
+        }.get(value["operation"])
+        if required_status and candidate["status"] != required_status:
+            raise ValueError("update schedule transaction operation contradicts candidate")
+        definition = safe_relative(value["definition_path"], "update schedule definition")
+        if candidate["status"] == "DISABLED" or definition != update_schedule_definition_path(candidate):
+            raise ValueError("update schedule transaction definition differs from candidate")
+    backup = safe_relative(value["backup"], "update schedule transaction backup")
+    if not portable_key(backup).startswith(
+        portable_key(UPDATE_SCHEDULE_BACKUPS_ROOT) + "/"
+    ):
+        raise ValueError("update schedule transaction backup is outside the private backup area")
+    backup_path = update_schedule_target(
+        worker, backup, "update schedule transaction backup"
+    )
+    backup_manifest = release_file(
+        backup_path, "backup.json", "update schedule transaction backup manifest"
+    )
+    if sha256(backup_manifest) != value["backup_manifest_sha256"]:
+        raise ValueError("update schedule transaction backup manifest hash mismatch")
+    _backup, _backup_value, backup_records = validate_update_schedule_backup(
+        worker, backup_path
+    )
+    if value["pre_state_sha256"] != update_schedule_snapshot_sha256(
+        backup_records, base_only=True
+    ):
+        raise ValueError("update schedule transaction pre-state hash mismatch")
+    current_records = current_update_schedule_base_records(worker)
+    if value["phase"] in {"PREPARED", "NATIVE_MUTATION_STARTED"}:
+        if update_schedule_snapshot_sha256(current_records) != value["pre_state_sha256"]:
+            raise ValueError("update schedule transaction pre-state has drifted")
+    else:
+        if len(plan) != len(UPDATE_SCHEDULE_BACKUP_BASE_TARGETS):
+            raise ValueError("update schedule transaction local plan inventory is invalid")
+        old_by_path = {record["path"]: record for record in backup_records}
+        plan_by_path = {}
+        for record in plan:
+            if (
+                not isinstance(record, dict)
+                or set(record) != {"existed", "path", "sha256"}
+                or not isinstance(record["existed"], bool)
+            ):
+                raise ValueError("update schedule transaction local plan record is invalid")
+            relative = safe_relative(record["path"], "update schedule local plan target")
+            if relative not in UPDATE_SCHEDULE_BACKUP_BASE_TARGETS:
+                raise ValueError("update schedule transaction local plan target is invalid")
+            if record["existed"] != (record["sha256"] is not None) or (
+                record["sha256"] is not None
+                and not SHA256_HEX.fullmatch(str(record["sha256"]))
+            ):
+                raise ValueError("update schedule transaction local plan hash is invalid")
+            if record["path"] in plan_by_path:
+                raise ValueError("update schedule transaction local plan has duplicates")
+            plan_by_path[record["path"]] = record
+        if set(plan_by_path) != {
+            path.as_posix() for path in UPDATE_SCHEDULE_BACKUP_BASE_TARGETS
+        }:
+            raise ValueError("update schedule transaction local plan inventory is invalid")
+        config_plan = plan_by_path[UPDATE_SCHEDULE_CONFIG_PATH.as_posix()]
+        expected_config_bytes = (
+            json.dumps(candidate, indent=2, sort_keys=True) + "\n"
+        ).encode("utf-8")
+        if (
+            not config_plan["existed"]
+            or config_plan["sha256"]
+            != hashlib.sha256(expected_config_bytes).hexdigest()
+        ):
+            raise ValueError("update schedule transaction local plan config is invalid")
+        for current_record in current_records:
+            path = current_record["path"]
+            if current_record != old_by_path[path] and current_record != plan_by_path[path]:
+                raise ValueError(
+                    "update schedule transaction current state contains unrelated drift: "
+                    + path
+                )
+    return value, candidate
+
+
+def native_schedule_proof(config, definition_relative, definition_sha256, status, reason=None):
+    now_local = datetime.datetime.now(ZoneInfo(config["timezone"]))
+    next_run = None
+    if status in {"VERIFIED_ACTIVE", "VERIFIED_PAUSED"}:
+        next_run = next_update_occurrence(config, now_local).isoformat()
+    return {
+        "adapter": "launchd LaunchAgent" if config["platform"] == "MACOS" else "Windows Task Scheduler",
+        "config_sha256": update_schedule_config_sha256(config),
+        "definition_path": Path(definition_relative).as_posix(),
+        "definition_sha256": definition_sha256,
+        "external_id": native_update_external_id(config),
+        "native_timezone_id": config["native_timezone_id"],
+        "next_run_local": next_run,
+        "next_run_source": (
+            "INTERNAL_RULE_AFTER_NATIVE_DEFINITION_READBACK" if next_run else "NONE"
+        ),
+        "platform": config["platform"],
+        "reason": reason,
+        "schedule_id": config["schedule_id"],
+        "schema": "ai-human.native-update-schedule/v1",
+        "status": status,
+        "verified_utc": now_utc(),
+    }
+
+
+def encoded_json(value):
+    return (json.dumps(value, indent=2, sort_keys=True) + "\n").encode("utf-8")
+
+
+def prepare_update_schedule_local(
+    worker, config, native, last_run=None, legacy_record=None
+):
+    metadata_path = worker_target(worker, ".ai-human/install.json", "install metadata")
+    metadata = read_json(metadata_path)
+    metadata["automatic_updates"] = "ACTIVE" if config["status"] == "ENABLED" else "DISABLED"
+    metadata["timezone"] = config.get("timezone", metadata.get("timezone"))
+    report_path = worker_target(
+        worker, ".ai-human/version-report.json", "update version report"
+    )
+    report_content = report_path.read_bytes() if report_path.is_file() else None
+    if report_path.is_file():
+        current_config = update_schedule_config(worker)
+        report = read_update_version_report(worker, current_config, metadata)
+        if report.get("schema") == "ai-human.version-report/v2" and (
+            report["schedule_id"] != config.get("schedule_id")
+            or report["config_sha256"] != update_schedule_config_sha256(config)
+        ):
+            report_content = None
+    legacy_path = worker_target(
+        worker, UPDATE_LEGACY_MIGRATION_PATH, "legacy update schedule migration"
+    )
+    migration_content = (
+        encoded_json(legacy_record)
+        if legacy_record is not None
+        else legacy_path.read_bytes() if legacy_path.is_file() else None
+    )
+    contents = {
+        UPDATE_SCHEDULE_CONFIG_PATH: encoded_json(config),
+        UPDATE_SCHEDULE_NATIVE_PATH: encoded_json(native) if native is not None else None,
+        UPDATE_LEGACY_MIGRATION_PATH: migration_content,
+        Path(".ai-human/install.json"): encoded_json(metadata),
+        Path(".ai-human/version-report.json"): report_content,
+        Path("AUTOMATIONS.md"): render_update_automation(
+            worker, config, native, last_run=last_run
+        ).encode("utf-8"),
+    }
+    records = []
+    for relative in sorted(contents, key=lambda item: item.as_posix()):
+        target = worker_target(worker, relative, "update schedule local target")
+        if target.exists() and not target.is_file():
+            raise ValueError("update schedule local target is not a regular file")
+        content = contents[relative]
+        records.append(
+            {
+                "existed": content is not None,
+                "path": relative.as_posix(),
+                "sha256": (
+                    hashlib.sha256(content).hexdigest() if content is not None else None
+                ),
+            }
+        )
+    return contents, records
+
+
+def apply_update_schedule_local_target(target, content):
+    """Single injectable local commit step used by crash-recovery tests."""
+    if content is None:
+        target.unlink(missing_ok=True)
+    else:
+        atomic_text(target, content.decode("utf-8"))
+
+
+def commit_update_schedule_local(
+    worker, config, native, transaction, last_run=None, legacy_record=None
+):
+    contents, local_plan = prepare_update_schedule_local(
+        worker, config, native, last_run=last_run, legacy_record=legacy_record
+    )
+    phase = (
+        "LOCAL_APPLY_STARTED"
+        if transaction["operation"] == "LEGACY_DISABLE" else "NATIVE_APPLIED"
+    )
+    mark_update_schedule_transaction(
+        worker, transaction, phase, local_plan=local_plan
+    )
+    order = (
+        UPDATE_SCHEDULE_CONFIG_PATH,
+        UPDATE_SCHEDULE_NATIVE_PATH,
+        Path(".ai-human/install.json"),
+        Path("AUTOMATIONS.md"),
+        Path(".ai-human/version-report.json"),
+        UPDATE_LEGACY_MIGRATION_PATH,
+    )
+    for relative in order:
+        target = worker_target(worker, relative, "update schedule local target")
+        content = contents[relative]
+        apply_update_schedule_local_target(target, content)
+
+
+def recover_update_schedule_internal(worker):
+    transaction_path = worker_target(
+        worker, UPDATE_SCHEDULE_TRANSACTION_PATH, "update schedule transaction"
+    )
+    value, candidate = validate_update_schedule_transaction(
+        worker, read_json(transaction_path)
+    )
+    backup = update_schedule_target(
+        worker, value["backup"], "update schedule backup"
+    )
+    if value["operation"] == "LEGACY_DISABLE":
+        restore_update_schedule_backup(worker, backup)
+        ok, failures = validate_worker(worker, quiet=True, allow_transaction=True)
+        if not ok:
+            raise ValueError("recovered update schedule validation failed: " + "; ".join(failures))
+        transaction_path.unlink()
+        return backup
+    if value["phase"] == "PREPARED":
+        restore_update_schedule_backup(worker, backup)
+        ok, failures = validate_worker(worker, quiet=True, allow_transaction=True)
+        if not ok:
+            raise ValueError(
+                "recovered update schedule validation failed: " + "; ".join(failures)
+            )
+        transaction_path.unlink()
+        return backup
+    adapter = native_update_cleanup_adapter(worker, candidate)
+    candidate_definition = update_schedule_target(
+        worker, value["definition_path"], "candidate update schedule definition"
+    )
+    already_removed = False
+    if getattr(adapter, "cleanup_only", False):
+        already_removed = query_removed_native(adapter, candidate_definition) == {
+            "status": "REMOVED", "definition_sha256": None,
+        }
+        if not already_removed:
+            _root, _manifest, backup_records = validate_update_schedule_backup(worker, backup)
+            allowed_hashes = {
+                record["sha256"] for record in backup_records
+                if record["path"] == value["definition_path"] and record["existed"]
+            } | {hashlib.sha256(render_update_schedule_definition(worker, candidate)).hexdigest()}
+            digest = sha256(candidate_definition)
+            if digest not in allowed_hashes:
+                raise ValueError("native cleanup definition differs from the recovery transaction")
+            adapter.verify_cleanup_definition(candidate_definition, digest)
+    if not already_removed:
+        adapter.remove()
+    if query_removed_native(adapter, candidate_definition) != {
+        "status": "REMOVED", "definition_sha256": None,
+    }:
+        raise ValueError("candidate native update schedule removal did not verify")
+    restore_update_schedule_backup(worker, backup)
+    old_config = update_schedule_config(worker)
+    if old_config and old_config.get("status") in {"ENABLED", "PAUSED"}:
+        old_native = native_update_schedule(worker, config=old_config)
+        old_definition = update_schedule_target(
+            worker, old_native["definition_path"], "restored update schedule definition"
+        )
+        old_adapter = native_update_cleanup_adapter(worker, old_config)
+        if sha256(old_definition) != old_native["definition_sha256"]:
+            raise ValueError("restored native update definition differs from stored proof")
+        if getattr(old_adapter, "cleanup_only", False):
+            old_adapter.verify_cleanup_definition(old_definition, old_native["definition_sha256"])
+            if query_removed_native(old_adapter, old_definition) != {
+                "status": "REMOVED", "definition_sha256": None,
+            }:
+                raise ValueError("recovery safety pause lacks native absence proof")
+            if old_config["status"] == "ENABLED":
+                # Rebase the existing journal after restoring its exact before
+                # image. A crash during these writes remains recoverable against
+                # the same private backup; no unconfirmed-runtime activation occurs.
+                paused = dict(old_config)
+                paused.update(status="PAUSED", config_version=old_config["config_version"] + 1,
+                              updated_utc=now_utc())
+                value = dict(value)
+                value.update(operation="PAUSE", candidate=paused,
+                             candidate_sha256=update_schedule_config_sha256(paused),
+                             definition_path=old_native["definition_path"])
+                value = mark_update_schedule_transaction(worker, value, "NATIVE_MUTATION_STARTED")
+                paused_native = native_schedule_proof(
+                    paused, old_native["definition_path"], old_native["definition_sha256"],
+                    "VERIFIED_PAUSED",
+                )
+                commit_update_schedule_local(worker, paused, paused_native, value)
+                old_config = paused
+                old_adapter = native_update_cleanup_adapter(worker, paused)
+        else:
+            old_adapter.install(old_definition)
+            if old_config["status"] == "PAUSED":
+                old_adapter.pause()
+        observed = old_adapter.query(old_definition)
+        expected_status = "ACTIVE" if old_config["status"] == "ENABLED" else "PAUSED"
+        if observed != {
+            "status": expected_status,
+            "definition_sha256": old_native["definition_sha256"],
+        }:
+            raise ValueError("restored native update schedule did not verify")
+    ok, failures = validate_worker(worker, quiet=True, allow_transaction=True)
+    if not ok:
+        raise ValueError("recovered update schedule validation failed: " + "; ".join(failures))
+    transaction_path.unlink()
+    return backup
+
+
+def require_update_schedule_idle(worker):
+    if live_task(worker):
+        raise ValueError("update schedule changes require an idle worker")
+    if read_lease(worker, required=False):
+        raise ValueError("update schedule changes require no active writer lease")
+
+
+def update_schedule_legacy_disable(args):
+    worker = safe_worker(args.worker)
+    require_update_schedule_idle(worker)
+    metadata = install_metadata(worker)
+    existing = update_schedule_config(worker)
+    checked_scheduler = getattr(args, "checked_scheduler", None)
+    absence_evidence = getattr(args, "absence_evidence", None)
+    external_id = getattr(args, "external_id", None)
+    removal_evidence = getattr(args, "removal_evidence", None)
+    if checked_scheduler is not None or absence_evidence is not None:
+        if not isinstance(checked_scheduler, str) or not isinstance(absence_evidence, str):
+            raise ValueError("verified absence requires the checked scheduler and absence evidence")
+        if external_id is not None or removal_evidence is not None:
+            raise ValueError("choose either verified removal or verified absence")
+        observation = {
+            "schema": "ai-human.legacy-update-schedule-migration/v2",
+            "status": "VERIFIED_ABSENT_BY_OWNER_EVIDENCE",
+            "checked_scheduler": bounded_clean(checked_scheduler, "scheduler checked for this worker", 300),
+            "absence_evidence": bounded_clean(absence_evidence, "observed legacy schedule absence", 2000),
+        }
+    else:
+        if not isinstance(external_id, str) or not isinstance(removal_evidence, str):
+            raise ValueError("verified removal requires the external id and removal evidence")
+        observation = {
+            "schema": "ai-human.legacy-update-schedule-migration/v1",
+            "status": "VERIFIED_REMOVED_BY_OWNER_EVIDENCE",
+            "external_id": bounded_clean(external_id, "legacy external id", 300),
+            "removal_evidence": bounded_clean(removal_evidence, "legacy schedule removal evidence", 2000),
+        }
+    legacy_path = worker / UPDATE_LEGACY_MIGRATION_PATH
+    if (
+        metadata.get("automatic_updates") == "DISABLED"
+        and existing
+        and existing.get("status") == "DISABLED"
+        and legacy_path.is_file()
+    ):
+        saved = validate_update_legacy_migration(
+            read_json(legacy_path), metadata,
+            clean(parameter_value(worker, "Human owner"), "update schedule owner"),
+        )
+        print("AI-HUMAN LEGACY UPDATE SCHEDULE: ALREADY " + saved["status"].split("_BY_")[0].replace("_", " "))
+        return
+    if metadata.get("automatic_updates") != "ACTIVE":
+        raise ValueError("no active legacy automatic-update setting requires migration")
+    if existing and existing.get("status") != "DISABLED":
+        raise ValueError("use native schedule control for a configured update schedule")
+    if (worker / UPDATE_SCHEDULE_NATIVE_PATH).exists():
+        raise ValueError("legacy disable refuses an unexpected managed native proof")
+    owner = clean(parameter_value(worker, "Human owner"), "update schedule owner")
+    candidate = disabled_update_schedule(owner)
+    if existing:
+        candidate["created_utc"] = existing["created_utc"]
+    record = {
+        "approval_reference": clean(args.approval_reference, "approval reference"),
+        **observation,
+        "owner": owner,
+        "recorded_utc": now_utc(),
+        "worker_id": safe_identity(
+            str(metadata.get("worker_id") or ""), "legacy update schedule worker id"
+        ),
+    }
+    record["record_sha256"] = update_legacy_migration_sha256(record)
+    validate_update_legacy_migration(record, metadata, owner)
+    transaction = begin_update_schedule_transaction(
+        worker, "LEGACY_DISABLE", candidate, None
+    )
+    try:
+        commit_update_schedule_local(
+            worker, candidate, None, transaction, legacy_record=record
+        )
+        ok, failures = validate_worker(worker, quiet=True, allow_transaction=True)
+        if not ok:
+            raise ValueError("legacy schedule migration validation failed: " + "; ".join(failures))
+        (worker / UPDATE_SCHEDULE_TRANSACTION_PATH).unlink()
+    except Exception:
+        try:
+            recover_update_schedule_internal(worker)
+        except Exception:
+            pass
+        raise
+    print("AI-HUMAN LEGACY UPDATE SCHEDULE: " + observation["status"].split("_BY_")[0].replace("_", " "))
+    print("- native task created: NO")
+    print("- automatic updates: DISABLED")
+
+
+def update_schedule_configure(args):
+    worker = safe_worker(args.worker)
+    require_update_schedule_idle(worker)
+    existing = update_schedule_config(worker)
+    if args.command == "update-schedule-edit" and (
+        not existing or existing.get("status") in {"DISABLED", "REMOVED"}
+    ):
+        raise ValueError("configure an update schedule before editing it")
+    if (
+        args.command == "update-schedule-configure"
+        and existing
+        and existing.get("status") in {"ENABLED", "PAUSED"}
+    ):
+        raise ValueError("use update-schedule-edit for an existing schedule")
+    metadata = install_metadata(worker)
+    if (
+        metadata.get("automatic_updates") == "ACTIVE"
+        and (not existing or existing.get("status") == "DISABLED")
+    ):
+        raise ValueError(
+            "legacy ACTIVE configuration may have an external schedule; use "
+            "update-schedule-legacy-disable with owner removal or absence evidence first"
+        )
+    legacy_path = worker / UPDATE_LEGACY_MIGRATION_PATH
+    if legacy_path.is_file():
+        validate_update_legacy_migration(
+            read_json(legacy_path), metadata,
+            clean(parameter_value(worker, "Human owner"), "update schedule owner"),
+        )
+    timezone = validate_timezone(args.timezone)
+    if not args.confirm_native_timezone_matches_iana:
+        raise ValueError("explicit native/IANA time-zone equivalence confirmation is required")
+    if not LOCAL_CLOCK.fullmatch(args.local_time):
+        raise ValueError("update schedule local time must be HH:MM")
+    if args.cadence == "WEEKLY":
+        if not args.weekday or args.day_of_month is not None:
+            raise ValueError("WEEKLY requires --weekday and forbids --day-of-month")
+    elif not args.day_of_month or args.weekday:
+        raise ValueError("MONTHLY requires --day-of-month and forbids --weekday")
+    if args.day_of_month is not None and not 1 <= args.day_of_month <= 28:
+        raise ValueError("monthly update day must be between 1 and 28")
+    executable = Path(args.python_executable or sys.executable).expanduser().resolve()
+    if not executable.is_file():
+        raise ValueError("update schedule Python executable is unavailable")
+    timestamp = now_utc()
+    prior_version = existing.get("config_version", 0) if existing else 0
+    schedule_id = expected_update_schedule_id(worker, metadata, existing)
+    draft = {
+        "approval_reference": clean(args.approval_reference, "approval reference"),
+        "cadence": args.cadence,
+        "config_id": "native-update",
+        "config_version": prior_version + 1,
+        "created_utc": existing.get("created_utc", timestamp) if existing else timestamp,
+        "day_of_month": args.day_of_month,
+        "local_time": args.local_time,
+        "max_retry_attempts": args.max_retry_attempts,
+        "native_timezone_id": clean(args.native_timezone_id, "native time-zone id"),
+        "native_timezone_confirmed": True,
+        "not_before_local": "",
+        "owner": clean(parameter_value(worker, "Human owner"), "update schedule owner"),
+        "platform": args.platform,
+        "python_executable": str(executable),
+        "retry_policy": "OWNER_OR_NEXT_OCCURRENCE",
+        "rollout_lane": args.rollout_lane,
+        "schedule_id": schedule_id,
+        "schema": "ai-human.update-schedule-config/v1",
+        "status": (
+            existing["status"]
+            if args.command == "update-schedule-edit"
+            else "ENABLED"
+        ),
+        "timezone": timezone,
+        "updated_utc": timestamp,
+        "weekday": args.weekday,
+    }
+    now_local = datetime.datetime.now(ZoneInfo(timezone))
+    # validate fields that do not yet depend on not_before, then bind first future run.
+    draft["not_before_local"] = now_local.isoformat()
+    first_run = calculate_next_update_occurrence(draft, now_local)
+    draft["not_before_local"] = first_run.isoformat()
+    config = validate_update_schedule_config(draft)
+    verify_native_update_runtime(worker, executable, timezone)
+    definition_relative = update_schedule_definition_path(config)
+    definition_path = update_schedule_target(
+        worker, definition_relative, "native update schedule definition"
+    )
+    if existing and existing.get("status") in {"ENABLED", "PAUSED", "REMOVED"}:
+        verify_update_schedule_native_readback(worker, existing)
+    transaction = begin_update_schedule_transaction(
+        worker, "CONFIGURE", config, definition_relative
+    )
+    try:
+        definition = render_update_schedule_definition(worker, config)
+        atomic_text(definition_path, definition.decode("utf-8"))
+        adapter = native_update_adapter(worker, config)
+        if adapter.observed_timezone_id() != config["native_timezone_id"]:
+            raise ValueError("native operating-system time zone differs from owner confirmation")
+        if not existing or existing.get("status") == "DISABLED":
+            collision = query_removed_native(adapter, definition_path)
+            if collision != {"status": "REMOVED", "definition_sha256": None}:
+                raise ValueError(
+                    "native update schedule id already exists without managed ownership proof"
+                )
+        transaction = mark_update_schedule_transaction(
+            worker, transaction, "NATIVE_MUTATION_STARTED"
+        )
+        if config["status"] == "REMOVED":
+            adapter.remove()
+            observed_status = "REMOVED"
+            proof_status = "VERIFIED_REMOVED"
+        else:
+            adapter.install(definition_path)
+            if config["status"] == "PAUSED":
+                adapter.pause()
+                observed_status = "PAUSED"
+                proof_status = "VERIFIED_PAUSED"
+            else:
+                observed_status = "ACTIVE"
+                proof_status = "VERIFIED_ACTIVE"
+        observed = (
+            query_removed_native(adapter, definition_path)
+            if observed_status == "REMOVED" else adapter.query(definition_path)
+        )
+        expected_observed = {
+            "status": observed_status,
+            "definition_sha256": (
+                None if observed_status == "REMOVED" else sha256(definition_path)
+            ),
+        }
+        if observed != expected_observed:
+            raise ValueError("native update schedule registration did not verify")
+        if config["platform"] == "MACOS" and observed_status == "ACTIVE":
+            adapter.verify_activation_launch(definition_path)
+        native = native_schedule_proof(
+            config, definition_relative, sha256(definition_path), proof_status
+        )
+        commit_update_schedule_local(worker, config, native, transaction)
+        ok, failures = validate_worker(worker, quiet=True, allow_transaction=True)
+        if not ok:
+            raise ValueError("configured update schedule validation failed: " + "; ".join(failures))
+        (worker / UPDATE_SCHEDULE_TRANSACTION_PATH).unlink()
+    except Exception:
+        try:
+            recover_update_schedule_internal(worker)
+        except Exception:
+            pass
+        raise
+    print("AI-HUMAN UPDATE SCHEDULE: " + proof_status)
+    print("- cadence: " + config["cadence"])
+    print("- next due (computed after native definition readback): " + native["next_run_local"])
+    print("- time zone: " + config["timezone"])
+    print("- native adapter: " + native["adapter"])
+
+
+def update_schedule_control(args):
+    worker = safe_worker(args.worker)
+    require_update_schedule_idle(worker)
+    config = update_schedule_config(worker, required=True)
+    if config["status"] == "DISABLED":
+        raise ValueError("update schedule has not been configured")
+    if worker_mode(worker) == MODE_SUSPENDED and args.action == "RESUME":
+        raise ValueError("resume the AI-human system before resuming its update schedule")
+    native = native_update_schedule(worker, required=True, config=config)
+    definition_relative = safe_relative(native["definition_path"], "native definition")
+    definition_path = update_schedule_target(
+        worker, definition_relative, "native update schedule definition"
+    )
+    next_status = {"PAUSE": "PAUSED", "RESUME": "ENABLED", "REMOVE": "REMOVED"}[args.action]
+    adapter_factory = (
+        native_update_cleanup_adapter if args.action in {"PAUSE", "REMOVE"}
+        else native_update_adapter
+    )
+    adapter = adapter_factory(worker, config)
+    cleanup_only = getattr(adapter, "cleanup_only", False)
+    if not cleanup_only and adapter.observed_timezone_id() != config["native_timezone_id"]:
+        raise ValueError("native operating-system time zone differs from owner confirmation")
+    if cleanup_only:
+        adapter.verify_cleanup_definition(definition_path, native["definition_sha256"])
+    if config["status"] == next_status:
+        observed_status = {
+            "ENABLED": "ACTIVE", "PAUSED": "PAUSED", "REMOVED": "REMOVED",
+        }[config["status"]]
+        expected_digest = None if observed_status == "REMOVED" else native["definition_sha256"]
+        if sha256(definition_path) != native["definition_sha256"]:
+            raise ValueError("native update definition differs from stored proof")
+        observed = (
+            query_removed_native(adapter, definition_path)
+            if observed_status == "REMOVED" else adapter.query(definition_path)
+        )
+        if observed != {
+            "status": observed_status, "definition_sha256": expected_digest,
+        }:
+            raise ValueError("idempotent update schedule control could not verify native state")
+        print("AI-HUMAN UPDATE SCHEDULE: ALREADY VERIFIED " + observed_status)
+        return
+    allowed = {
+        "PAUSE": {"ENABLED"}, "RESUME": {"PAUSED"},
+        "REMOVE": {"ENABLED", "PAUSED"},
+    }
+    if config["status"] not in allowed[args.action]:
+        raise ValueError(
+            "invalid update schedule transition: " + config["status"] + " -> " + args.action
+        )
+    current_observed = {"ENABLED": "ACTIVE", "PAUSED": "PAUSED"}[config["status"]]
+    if (
+        sha256(definition_path) != native["definition_sha256"]
+        or (not cleanup_only and adapter.query(definition_path) != {
+            "status": current_observed,
+            "definition_sha256": native["definition_sha256"],
+        })
+    ):
+        raise ValueError("native update schedule drifted before control transition")
+    updated = dict(config)
+    updated.update(
+        {
+            "approval_reference": clean(args.approval_reference, "approval reference"),
+            "config_version": config["config_version"] + 1,
+            "status": next_status,
+            "updated_utc": now_utc(),
+        }
+    )
+    if args.action == "RESUME":
+        now_local = datetime.datetime.now(ZoneInfo(updated["timezone"]))
+        updated["not_before_local"] = next_update_occurrence(updated, now_local).isoformat()
+    updated = validate_update_schedule_config(updated)
+    if args.action == "RESUME":
+        verify_native_update_runtime(worker, updated["python_executable"], updated["timezone"])
+    transaction = begin_update_schedule_transaction(
+        worker, args.action, updated, definition_relative
+    )
+    try:
+        adapter = adapter_factory(worker, updated)
+        cleanup_only = getattr(adapter, "cleanup_only", False)
+        if cleanup_only:
+            adapter.verify_cleanup_definition(definition_path, native["definition_sha256"])
+        if not cleanup_only and adapter.observed_timezone_id() != updated["native_timezone_id"]:
+            raise ValueError("native operating-system time zone differs from owner confirmation")
+        transaction = mark_update_schedule_transaction(
+            worker, transaction, "NATIVE_MUTATION_STARTED"
+        )
+        if args.action == "PAUSE":
+            adapter.pause()
+            observed_status = "PAUSED"
+            proof_status = "VERIFIED_PAUSED"
+        elif args.action == "REMOVE":
+            adapter.remove()
+            observed_status = "REMOVED"
+            proof_status = "VERIFIED_REMOVED"
+        else:
+            definition = render_update_schedule_definition(worker, updated)
+            atomic_text(definition_path, definition.decode("utf-8"))
+            adapter.resume(definition_path)
+            observed_status = "ACTIVE"
+            proof_status = "VERIFIED_ACTIVE"
+        observed = (
+            query_removed_native(adapter, definition_path)
+            if observed_status == "REMOVED" else adapter.query(definition_path)
+        )
+        expected_digest = None if observed_status == "REMOVED" else sha256(definition_path)
+        if observed != {"status": observed_status, "definition_sha256": expected_digest}:
+            raise ValueError("native update schedule " + args.action.casefold() + " did not verify")
+        if updated["platform"] == "MACOS" and observed_status == "ACTIVE":
+            adapter.verify_activation_launch(definition_path)
+        proof = native_schedule_proof(
+            updated, definition_relative, sha256(definition_path), proof_status
+        )
+        commit_update_schedule_local(worker, updated, proof, transaction)
+        ok, failures = validate_worker(worker, quiet=True, allow_transaction=True)
+        if not ok:
+            raise ValueError("update schedule control validation failed: " + "; ".join(failures))
+        (worker / UPDATE_SCHEDULE_TRANSACTION_PATH).unlink()
+    except Exception:
+        try:
+            recover_update_schedule_internal(worker)
+        except Exception:
+            pass
+        raise
+    print("AI-HUMAN UPDATE SCHEDULE: " + proof_status)
+
+
+def recover_update_schedule(args):
+    worker = safe_worker(args.worker)
+    require_update_schedule_idle(worker)
+    backup = recover_update_schedule_internal(worker)
+    print("AI-HUMAN UPDATE SCHEDULE RECOVERY: PASS")
+    print("- restored prior verified state from: " + str(backup))
+
+
+def update_schedule_show(args):
+    worker = safe_worker(args.worker)
+    config = update_schedule_config(worker)
+    print("AI-HUMAN UPDATE SCHEDULE")
+    if not config:
+        state = "LEGACY_EXTERNAL_CONFIGURATION" if install_metadata(worker).get("automatic_updates") == "ACTIVE" else "OFF"
+        print("- status: " + state)
+        print("- native task created by this release: NO")
+        return
+    print("- status: " + config["status"])
+    if config["status"] == "DISABLED":
+        print("- cadence: NOT CHOSEN")
+        if getattr(args, "verify_native", False):
+            print("- managed native task: NONE CONFIGURED")
+        return
+    native = native_update_schedule(worker, required=True, config=config)
+    print("- cadence: " + config["cadence"])
+    print("- local time: " + config["local_time"])
+    print("- time zone: " + config["timezone"])
+    print("- stored native proof: " + native["status"])
+    print("- next due (computed): " + str(native["next_run_local"] or "NONE"))
+    if getattr(args, "verify_native", False):
+        _native, _definition, _adapter, expected_status = (
+            verify_update_schedule_native_readback(worker, config)
+        )
+        print("- current native readback: VERIFIED " + expected_status)
+
+
+def validate_update_pilot_approval(value, manifest=None):
+    required = {
+        "approval_reference", "approved_by", "approved_utc", "fleet_state_sha256",
+        "pilot_proof_sha256", "release_manifest_sha256", "release_version", "schema",
+        "status",
+    }
+    require_exact_fields(value, required, "update pilot approval")
+    if value.get("schema") != "ai-human.update-pilot-approval/v1" or value.get("status") != "VERIFIED":
+        raise ValueError("unsupported or inactive update pilot approval")
+    for field in ("fleet_state_sha256", "pilot_proof_sha256", "release_manifest_sha256"):
+        if not SHA256_HEX.fullmatch(str(value[field])):
+            raise ValueError("update pilot approval has invalid " + field)
+    version_tuple(value["release_version"])
+    parse_recorded_utc(value["approved_utc"], "pilot approval approved_utc")
+    bounded_clean(value["approved_by"], "pilot approval approver", 300)
+    bounded_clean(value["approval_reference"], "pilot approval reference", 1000)
+    if manifest:
+        digest = canonical_json_sha256(manifest)
+        if value["release_version"] != manifest["version"] or value["release_manifest_sha256"] != digest:
+            raise ValueError("pilot approval does not bind this exact release")
+    return value
+
+
+def validate_passing_update_pilot_fleet_state(fleet, manifest):
+    if fleet.get("schema") != "ai-human.fleet-state/v1" or fleet.get("pilot_status") != "PASS":
+        raise ValueError("pilot approval requires a passing fleet state")
+    pilot_results = fleet.get("pilot_results")
+    if not isinstance(pilot_results, list) or not pilot_results:
+        raise ValueError("pilot approval requires non-empty pilot results")
+    worker_ids = set()
+    for item in pilot_results:
+        report = item.get("report") if isinstance(item, dict) else None
+        if not isinstance(item, dict) or set(item) != {
+            "lane", "phase", "report", "worker_id",
+        }:
+            raise ValueError("pilot approval has an invalid worker result envelope")
+        if (
+            not isinstance(report, dict)
+            or item.get("phase") != "pilot"
+            or item.get("lane") != "daily-email-triage"
+            or report.get("status") not in {"CURRENT", "UPDATED"}
+            or report.get("validator") != "PASS"
+        ):
+            raise ValueError("pilot approval requires a passing Daily Email Triage pilot")
+        validate_legacy_version_report(report)
+        worker_id = safe_identity(str(item["worker_id"]), "pilot worker id")
+        if worker_id in worker_ids or report.get("worker_id") != worker_id:
+            raise ValueError("pilot approval worker evidence is duplicated or mismatched")
+        worker_ids.add(worker_id)
+        if (
+            report.get("scheduled_check") != "DUE"
+            or report.get("reason") != "CHECK_COMPLETE"
+            or report.get("installed_version") != manifest["version"]
+            or report.get("latest_version") != manifest["version"]
+            or not re.fullmatch(r"\d{4}-\d{2}", str(report.get("checked_month") or ""))
+            or report.get("last_check_utc") is None
+        ):
+            raise ValueError("pilot approval report does not prove the exact release run")
+        parse_recorded_utc(report["last_check_utc"], "pilot report last_check_utc")
+    pilot_digest = canonical_json_sha256(pilot_results)
+    if fleet.get("pilot_proof_sha256") != pilot_digest:
+        raise ValueError("fleet pilot proof digest does not match its results")
+    manifest_digest = canonical_json_sha256(manifest)
+    if (
+        fleet.get("pilot_release_version") != manifest["version"]
+        or fleet.get("release_proof_sha256") != manifest_digest
+    ):
+        raise ValueError("fleet pilot does not bind the exact release")
+    return pilot_digest, manifest_digest
+
+
+def update_pilot_approve(args):
+    worker = safe_worker(args.worker)
+    require_update_schedule_idle(worker)
+    fleet_path = Path(args.fleet_state).expanduser().resolve()
+    fleet = read_json(fleet_path)
+    _release, manifest = load_release(args.source)
+    pilot_digest, manifest_digest = validate_passing_update_pilot_fleet_state(
+        fleet, manifest
+    )
+    value = {
+        "approval_reference": clean(args.approval_reference, "approval reference"),
+        "approved_by": clean(args.approved_by, "pilot approver"),
+        "approved_utc": now_utc(),
+        "fleet_state_sha256": sha256(fleet_path),
+        "pilot_proof_sha256": pilot_digest,
+        "release_manifest_sha256": manifest_digest,
+        "release_version": manifest["version"],
+        "schema": "ai-human.update-pilot-approval/v1",
+        "status": "VERIFIED",
+    }
+    validate_update_pilot_approval(value, manifest)
+    atomic_json(worker / UPDATE_PILOT_APPROVAL_PATH, value)
+    print("AI-HUMAN UPDATE PILOT APPROVAL: VERIFIED")
+    print("- release: " + manifest["version"])
+
+
+def validate_legacy_version_report(value):
+    required = {
+        "checked_month", "installed_version", "last_check_utc", "latest_version",
+        "reason", "scheduled_check", "schema", "status", "validator", "worker_id",
+    }
+    require_exact_fields(value, required, "legacy version report")
+    if value.get("schema") != "ai-human.version-report/v1":
+        raise ValueError("unsupported legacy version report schema")
+    if value["scheduled_check"] not in {"DUE", "NOT_DUE"}:
+        raise ValueError("legacy version report has invalid schedule state")
+    if value["validator"] not in {"PASS", "FAIL", "NOT_RUN"}:
+        raise ValueError("legacy version report has invalid validator state")
+    bounded_clean(str(value["status"]), "legacy version report status", 100)
+    bounded_clean(str(value["reason"]), "legacy version report reason", 1000)
+    return value
+
+
+def valid_update_occurrence(config, occurrence):
+    validate_moment_in_timezone(occurrence, config["timezone"], "update occurrence")
+    not_before = parse_offset_datetime(config["not_before_local"], "update schedule not-before")
+    if occurrence < not_before:
+        return False
+    if config["cadence"] == "WEEKLY":
+        if occurrence.weekday() != UPDATE_WEEKDAYS[config["weekday"]]:
+            return False
+    elif occurrence.day != config["day_of_month"]:
+        return False
+    expected = local_schedule_candidate(config, occurrence.date())
+    return expected.isoformat() == occurrence.isoformat()
+
+
+def validate_native_version_report(value, config=None, metadata=None):
+    required = {
+        "attempt_number", "attempted_utc", "config_sha256", "installed_version",
+        "latest_version", "nominal_run_local", "occurrence_key", "reason",
+        "retry_pending", "schedule_id", "schema", "status", "validator", "worker_id",
+    }
+    require_exact_fields(value, required, "native version report")
+    if value.get("schema") != "ai-human.version-report/v2":
+        raise ValueError("unsupported native version report schema")
+    if (
+        isinstance(value["attempt_number"], bool)
+        or not isinstance(value["attempt_number"], int)
+        or value["attempt_number"] < 1
+    ):
+        raise ValueError("native version report attempt number is invalid")
+    parse_recorded_utc(value["attempted_utc"], "native version report attempted_utc")
+    if not SHA256_HEX.fullmatch(str(value["config_sha256"])):
+        raise ValueError("native version report config hash is invalid")
+    safe_identity(str(value["schedule_id"]), "native version report schedule id")
+    safe_identity(str(value["worker_id"]), "native version report worker id")
+    version_tuple(str(value["installed_version"]))
+    if value["latest_version"] is not None:
+        version_tuple(str(value["latest_version"]))
+    if value["status"] not in {"CURRENT", "UPDATED", "DEFERRED", "FAILED"}:
+        raise ValueError("native version report status is invalid")
+    if value["validator"] != ("FAIL" if value["status"] == "FAILED" else "PASS"):
+        raise ValueError("native version report validator contradicts its status")
+    if (
+        not isinstance(value["retry_pending"], bool)
+        or value["retry_pending"] != (value["status"] in {"DEFERRED", "FAILED"})
+    ):
+        raise ValueError("native version report retry state contradicts its status")
+    reason = bounded_clean(str(value["reason"]), "native version report reason", 200)
+    if not re.fullmatch(r"[A-Z][A-Z0-9_]*", reason):
+        raise ValueError("native version report reason must be a stable code")
+    occurrence = parse_offset_datetime(
+        value["occurrence_key"], "native version report occurrence"
+    )
+    nominal = parse_offset_datetime(
+        value["nominal_run_local"], "native version report nominal run"
+    )
+    if nominal.isoformat() != occurrence.isoformat():
+        raise ValueError("native version report occurrence fields differ")
+    if config:
+        if (
+            value["schedule_id"] != config["schedule_id"]
+            or value["config_sha256"] != update_schedule_config_sha256(config)
+        ):
+            raise ValueError("native version report does not bind the current schedule")
+        if value["attempt_number"] > config["max_retry_attempts"] + 1:
+            raise ValueError("native version report exceeds the configured retry bound")
+        if not valid_update_occurrence(config, occurrence):
+            raise ValueError("native version report occurrence is not on the current schedule")
+    if metadata and value["worker_id"] != metadata.get("worker_id"):
+        raise ValueError("native version report belongs to a different worker")
+    return value
+
+
+def read_update_version_report(worker, config=None, metadata=None):
+    path = worker / ".ai-human/version-report.json"
+    if not path.is_file():
+        return None
+    value = read_json(path)
+    if value.get("schema") == "ai-human.version-report/v1":
+        return validate_legacy_version_report(value)
+    if value.get("schema") == "ai-human.version-report/v2":
+        if not config or config.get("status") == "DISABLED":
+            raise ValueError("native version report requires a configured native schedule")
+        return validate_native_version_report(value, config, metadata)
+    raise ValueError("unsupported update version report schema")
+
+
+def write_native_version_report(worker, config, occurrence, status, reason, installed, latest=None):
+    prior_path = worker / ".ai-human/version-report.json"
+    attempt = 1
+    if prior_path.is_file():
+        prior = read_update_version_report(worker, config, install_metadata(worker))
+        if (
+            prior.get("schema") == "ai-human.version-report/v2"
+            and prior["occurrence_key"] == occurrence.isoformat()
+        ):
+            attempt = prior["attempt_number"] + 1
+    value = {
+        "attempt_number": attempt,
+        "attempted_utc": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "config_sha256": update_schedule_config_sha256(config),
+        "installed_version": installed,
+        "latest_version": latest,
+        "nominal_run_local": occurrence.isoformat(),
+        "occurrence_key": occurrence.isoformat(),
+        "reason": reason,
+        "retry_pending": status in {"DEFERRED", "FAILED"},
+        "schedule_id": config["schedule_id"],
+        "schema": "ai-human.version-report/v2",
+        "status": status,
+        "validator": "FAIL" if status == "FAILED" else "PASS",
+        "worker_id": install_metadata(worker).get("worker_id"),
+    }
+    validate_native_version_report(value, config, install_metadata(worker))
+    write_version_report(worker, value)
+    return value
+
+
+def scheduled_occurrence_already_closed(worker, config, occurrence):
+    prior = read_update_version_report(worker, config, install_metadata(worker))
+    if not prior or prior.get("schema") != "ai-human.version-report/v2":
+        return False
+    return (
+        prior.get("schedule_id") == config["schedule_id"]
+        and prior.get("config_sha256") == update_schedule_config_sha256(config)
+        and prior.get("occurrence_key") == occurrence.isoformat()
+        and prior.get("status") in {"CURRENT", "UPDATED"}
+    )
+
+
+def pilot_approval_allows(worker, manifest):
+    path = worker / UPDATE_PILOT_APPROVAL_PATH
+    if not path.is_file():
+        return False
+    try:
+        validate_update_pilot_approval(read_json(path), manifest)
+        return True
+    except Exception:
+        return False
+
+
+def update_schedule_tick_internal(worker, schedule_id, expected_config_hash, force_retry=False, now_local=None):
+    config = update_schedule_config(worker, required=True)
+    if config.get("status") != "ENABLED":
+        return {"status": "NOT_DUE", "reason": "SCHEDULE_NOT_ACTIVE"}
+    if config["schedule_id"] != schedule_id or update_schedule_config_sha256(config) != expected_config_hash:
+        raise ValueError("native runner is stale or targets the wrong schedule")
+    native = native_update_schedule(worker, required=True, config=config)
+    definition = update_schedule_target(
+        worker, native["definition_path"], "native update schedule definition"
+    )
+    adapter = native_update_adapter(worker, config)
+    if adapter.observed_timezone_id() != config["native_timezone_id"]:
+        raise ValueError("native operating-system time zone differs from owner confirmation")
+    observed = adapter.query(definition)
+    if (
+        sha256(definition) != native["definition_sha256"]
+        or observed != {
+            "status": "ACTIVE", "definition_sha256": native["definition_sha256"],
+        }
+    ):
+        raise ValueError("native update schedule is not the verified active definition")
+    now_local = now_local or datetime.datetime.now(ZoneInfo(config["timezone"]))
+    validate_moment_in_timezone(now_local, config["timezone"], "native update tick time")
+    occurrence = latest_due_update_occurrence(config, now_local)
+    prior = read_update_version_report(worker, config, install_metadata(worker))
+    if force_retry:
+        if (
+            not prior
+            or prior.get("schema") != "ai-human.version-report/v2"
+            or prior.get("retry_pending") is not True
+        ):
+            raise ValueError("no failed or deferred scheduled update is awaiting retry")
+        prior_occurrence = parse_offset_datetime(prior["occurrence_key"], "retry occurrence")
+        if occurrence is None or occurrence.isoformat() != prior_occurrence.isoformat():
+            raise ValueError("scheduled update retry is not for the current due occurrence")
+        if prior["attempt_number"] - 1 >= config["max_retry_attempts"]:
+            raise ValueError("scheduled update retry limit reached for this occurrence")
+        occurrence = prior_occurrence
+    if occurrence is None or scheduled_occurrence_already_closed(worker, config, occurrence):
+        return {"status": "NOT_DUE", "reason": "NO_OPEN_OCCURRENCE"}
+    if (
+        not force_retry
+        and prior
+        and prior.get("schema") == "ai-human.version-report/v2"
+        and prior["occurrence_key"] == occurrence.isoformat()
+        and prior["retry_pending"] is True
+    ):
+        return {
+            "status": "NOT_DUE",
+            "reason": "RETRY_REQUIRES_OWNER_OR_NEXT_OCCURRENCE",
+        }
+    metadata = install_metadata(worker)
+    installed = metadata["installed_version"]
+    if worker_mode(worker) == MODE_SUSPENDED:
+        return write_native_version_report(
+            worker, config, occurrence, "DEFERRED", "SYSTEM_SUSPENDED", installed
+        )
+    if live_task(worker):
+        return write_native_version_report(
+            worker, config, occurrence, "DEFERRED", "LIVE_TASK", installed
+        )
+    if read_lease(worker, required=False):
+        return write_native_version_report(
+            worker, config, occurrence, "DEFERRED", "ACTIVE_WRITER", installed
+        )
+    temporary = None
+    try:
+        temporary, release, manifest = download_release(metadata["repository"], require_immutable=True)
+        latest = manifest["version"]
+        if (
+            version_tuple(latest) > version_tuple(installed)
+            and config["rollout_lane"] == "GENERAL"
+            and not pilot_approval_allows(worker, manifest)
+        ):
+            return write_native_version_report(
+                worker, config, occurrence, "DEFERRED", "PILOT_APPROVAL_REQUIRED",
+                installed, latest,
+            )
+        result = apply_update(
+            worker, release, manifest, automatic=True, quiet=True
+        )
+        status = result["status"]
+        current = install_metadata(worker)["installed_version"]
+        mapped = "UPDATED" if status == "UPDATED" else "CURRENT" if status == "CURRENT" else "DEFERRED"
+        return write_native_version_report(
+            worker, config, occurrence, mapped, result.get("reason", "CHECK_COMPLETE"),
+            current, latest,
+        )
+    except Exception:
+        return write_native_version_report(
+            worker, config, occurrence, "FAILED", "RELEASE_CHECK_OR_UPDATE_FAILED",
+            installed, None,
+        )
+    finally:
+        if temporary:
+            temporary.cleanup()
+
+
+def is_macos_registration_probe(worker, args):
+    """Recognize only a read-only tick for the exact in-progress activation."""
+    path = worker_target(worker, UPDATE_SCHEDULE_TRANSACTION_PATH, "update schedule transaction")
+    if not path.is_file():
+        return False
+    transaction = read_json(path)
+    validate_update_schedule_transaction(worker, transaction)
+    config = transaction["candidate"]
+    return (
+        transaction["operation"] in {"CONFIGURE", "RESUME"}
+        and transaction["phase"] == "NATIVE_MUTATION_STARTED"
+        and config["platform"] == "MACOS" and config["status"] == "ENABLED"
+        and config["schedule_id"] == args.schedule_id
+        and transaction["candidate_sha256"] == args.config_sha256
+    )
+
+
+def update_schedule_tick(args):
+    worker = safe_worker(args.worker)
+    result = update_schedule_tick_internal(
+        worker, args.schedule_id, args.config_sha256
+    )
+    # Scheduled CURRENT and NOT_DUE paths are intentionally quiet. Native schedulers
+    # retain local reports; only action-required or changed states reach their logs.
+    if result["status"] not in {"CURRENT", "NOT_DUE"}:
+        print("AI-HUMAN SCHEDULED UPDATE: " + result["status"])
+        print("- reason: " + result["reason"])
+
+
+def update_schedule_retry(args):
+    worker = safe_worker(args.worker)
+    config = update_schedule_config(worker, required=True)
+    result = update_schedule_tick_internal(
+        worker, config["schedule_id"], update_schedule_config_sha256(config),
+        force_retry=True,
+    )
+    print("AI-HUMAN UPDATE SCHEDULE RETRY: " + result["status"])
+    print("- reason: " + result["reason"])
 
 
 def load_fleet(path):
@@ -6016,6 +19065,10 @@ def fleet_update(args):
     batch_id, timezone, records = load_fleet(args.fleet)
     moment = parse_local(args.now_local)
     validate_moment_in_timezone(moment, timezone, "fleet update local time")
+    # Refuse the legacy fleet timer before --latest can touch the network.  A
+    # mixed fleet is not split implicitly because cadence is an owner choice.
+    for record in records:
+        require_legacy_update_path_unowned(safe_worker(record["path"]))
     temporary = None
     if args.latest:
         temporary, release, manifest = download_release(args.repository)
@@ -6153,6 +19206,25 @@ def external_improvement_schedule_still_exists(schedule):
     )
 
 
+def require_update_schedule_quiet_for_suspension(worker):
+    config = update_schedule_config(worker)
+    if not config or config["status"] == "DISABLED":
+        if install_metadata(worker).get("automatic_updates") == "ACTIVE":
+            raise ValueError(
+                "check the legacy scheduler before suspension; record verified removal "
+                "or verified absence with update-schedule-legacy-disable"
+            )
+    elif config["status"] == "ENABLED":
+        raise ValueError("pause or remove and verify the native update schedule before suspension")
+
+
+def external_update_schedule_still_exists(worker):
+    config = update_schedule_config(worker)
+    if not config or config.get("status") == "DISABLED":
+        return install_metadata(worker).get("automatic_updates") == "ACTIVE"
+    return config.get("status") in {"ENABLED", "PAUSED"}
+
+
 def suspend(args):
     worker = safe_worker(args.worker)
     current = worker_mode(worker)
@@ -6163,6 +19235,10 @@ def suspend(args):
         raise ValueError(
             "remove and visibly verify the external personal-improvement schedule before suspension"
         )
+    require_update_schedule_quiet_for_suspension(worker)
+    update_config = update_schedule_config(worker)
+    if update_config and update_config.get("status") in {"PAUSED", "REMOVED"}:
+        verify_update_schedule_native_readback(worker, update_config)
     if current == MODE_SUSPENDED:
         print("AI-HUMAN SUSPEND: PASS")
         print("- mode: SUSPENDED")
@@ -6341,6 +19417,13 @@ def uninstall(args):
         raise ValueError(
             "remove and visibly verify the external personal-improvement schedule before uninstalling"
         )
+    if external_update_schedule_still_exists(worker):
+        raise ValueError(
+            "remove and verify the native update schedule before uninstalling"
+        )
+    update_config = update_schedule_config(worker)
+    if update_config and update_config.get("status") == "REMOVED":
+        verify_update_schedule_native_readback(worker, update_config)
     if live_task(worker) and not args.at_checkpoint:
         raise ValueError("live task exists; reach a checkpoint before uninstalling")
     metadata = install_metadata(worker)
@@ -6503,6 +19586,10 @@ def component_receipt(target):
         raise ValueError("invalid component id in install receipt")
     if receipt.get("component_type") not in {"skill", "reference-pack"}:
         raise ValueError("invalid component type in install receipt")
+    if "payload_proof" in receipt:
+        proof = verify_tree_proof(target, receipt["payload_proof"], exclude=(COMPONENT_RECEIPT,))
+        if proof["tree_sha256"] != receipt.get("source_tree_sha256"):
+            raise ValueError("component receipt summary differs from its payload proof")
     return receipt
 
 
@@ -6565,6 +19652,7 @@ def install_component_tree(release, release_manifest, record, target, upgrade=Fa
                 "repository": release_manifest["repository"],
                 "schema": "ai-human.component-install/v1",
                 "source_tree_sha256": expected_digest,
+                "payload_proof": tree_proof(temporary, exclude=(COMPONENT_RECEIPT,)),
             },
         )
         if target.exists():
@@ -6739,11 +19827,14 @@ def parser():
     rollback_p.add_argument("worker")
     rollback_p.add_argument("--version", required=True)
     rollback_p.add_argument("--source")
+    rollback_p.add_argument("--source-manifest-sha256", help="SHA-256 of the edition manifest from the approved release record")
+    rollback_p.add_argument("--at-checkpoint", action="store_true")
     rollback_p.set_defaults(handler=rollback)
 
     recover_lifecycle_p = sub.add_parser("recover-lifecycle")
     recover_lifecycle_p.add_argument("worker")
     recover_lifecycle_p.add_argument("--source")
+    recover_lifecycle_p.add_argument("--source-manifest-sha256", help="SHA-256 of the edition manifest from the approved release record")
     recover_lifecycle_p.set_defaults(handler=recover_lifecycle)
     prepare_downgrade_p = sub.add_parser("prepare-downgrade")
     prepare_downgrade_p.add_argument("worker")
@@ -6752,6 +19843,10 @@ def parser():
     restore_downgrade_p = sub.add_parser("restore-downgrade")
     restore_downgrade_p.add_argument("worker")
     restore_downgrade_p.set_defaults(handler=restore_downgrade)
+    recover_downgrade_p = sub.add_parser("recover-downgrade")
+    recover_downgrade_p.add_argument("worker")
+    recover_downgrade_p.add_argument("--mode", choices=("RESUME", "RESTORE_PREVIOUS"), required=True)
+    recover_downgrade_p.set_defaults(handler=recover_downgrade)
     uninstall_p = sub.add_parser("uninstall")
     uninstall_p.add_argument("worker")
     uninstall_p.add_argument("--at-checkpoint", action="store_true")
@@ -7003,6 +20098,71 @@ def parser():
     autonomy_skill_p.add_argument("--pilot", action="store_true")
     autonomy_skill_p.set_defaults(handler=autonomy_skill_install)
 
+    def add_update_schedule_arguments(command):
+        command.add_argument("worker")
+        command.add_argument("--cadence", choices=sorted(UPDATE_SCHEDULE_CADENCES), required=True)
+        command.add_argument("--local-time", required=True)
+        command.add_argument("--max-retry-attempts", type=int, required=True)
+        command.add_argument("--timezone", required=True)
+        command.add_argument("--native-timezone-id", required=True)
+        command.add_argument("--confirm-native-timezone-matches-iana", action="store_true")
+        command.add_argument("--platform", choices=sorted(UPDATE_SCHEDULE_PLATFORMS), required=True)
+        command.add_argument("--weekday", choices=sorted(UPDATE_WEEKDAYS))
+        command.add_argument("--day-of-month", type=int)
+        command.add_argument("--rollout-lane", choices=("PILOT", "GENERAL"), required=True)
+        command.add_argument("--approval-reference", required=True)
+        command.add_argument("--python-executable")
+        command.set_defaults(handler=update_schedule_configure)
+
+    update_schedule_configure_p = sub.add_parser("update-schedule-configure")
+    add_update_schedule_arguments(update_schedule_configure_p)
+    update_schedule_edit_p = sub.add_parser("update-schedule-edit")
+    add_update_schedule_arguments(update_schedule_edit_p)
+
+    update_schedule_legacy_p = sub.add_parser("update-schedule-legacy-disable")
+    update_schedule_legacy_p.add_argument("worker")
+    update_schedule_legacy_p.add_argument("--approval-reference", required=True)
+    location = update_schedule_legacy_p.add_mutually_exclusive_group(required=True)
+    location.add_argument("--external-id")
+    location.add_argument("--checked-scheduler")
+    proof = update_schedule_legacy_p.add_mutually_exclusive_group(required=True)
+    proof.add_argument("--removal-evidence")
+    proof.add_argument("--absence-evidence")
+    update_schedule_legacy_p.set_defaults(handler=update_schedule_legacy_disable)
+
+    update_schedule_control_p = sub.add_parser("update-schedule-control")
+    update_schedule_control_p.add_argument("worker")
+    update_schedule_control_p.add_argument("action", choices=("PAUSE", "RESUME", "REMOVE"))
+    update_schedule_control_p.add_argument("--approval-reference", required=True)
+    update_schedule_control_p.set_defaults(handler=update_schedule_control)
+
+    update_schedule_show_p = sub.add_parser("update-schedule-show")
+    update_schedule_show_p.add_argument("worker")
+    update_schedule_show_p.add_argument("--verify-native", action="store_true")
+    update_schedule_show_p.set_defaults(handler=update_schedule_show)
+
+    update_schedule_tick_p = sub.add_parser("update-schedule-tick")
+    update_schedule_tick_p.add_argument("worker")
+    update_schedule_tick_p.add_argument("--schedule-id", required=True)
+    update_schedule_tick_p.add_argument("--config-sha256", required=True)
+    update_schedule_tick_p.set_defaults(handler=update_schedule_tick)
+
+    update_schedule_retry_p = sub.add_parser("update-schedule-retry")
+    update_schedule_retry_p.add_argument("worker")
+    update_schedule_retry_p.set_defaults(handler=update_schedule_retry)
+
+    recover_update_schedule_p = sub.add_parser("recover-update-schedule")
+    recover_update_schedule_p.add_argument("worker")
+    recover_update_schedule_p.set_defaults(handler=recover_update_schedule)
+
+    update_pilot_approve_p = sub.add_parser("update-pilot-approve")
+    update_pilot_approve_p.add_argument("worker")
+    update_pilot_approve_p.add_argument("--fleet-state", required=True)
+    update_pilot_approve_p.add_argument("--source", required=True)
+    update_pilot_approve_p.add_argument("--approved-by", required=True)
+    update_pilot_approve_p.add_argument("--approval-reference", required=True)
+    update_pilot_approve_p.set_defaults(handler=update_pilot_approve)
+
     automatic_p = sub.add_parser("automatic-update")
     automatic_p.add_argument("worker")
     automatic_source = automatic_p.add_mutually_exclusive_group(required=True)
@@ -7026,6 +20186,394 @@ def parser():
     )
     fleet_p.set_defaults(handler=fleet_update)
 
+    governor_configure_p = sub.add_parser("governor-configure")
+    governor_configure_p.add_argument("worker")
+    governor_configure_p.add_argument("--session-id", required=True)
+    governor_configure_p.add_argument("--expected-state-hash", required=True)
+    governor_configure_p.add_argument("--policy", required=True)
+    governor_configure_p.set_defaults(handler=governor_configure)
+
+    governor_plan_p = sub.add_parser("governor-plan")
+    governor_plan_p.add_argument("worker")
+    governor_plan_p.add_argument("--session-id", required=True)
+    governor_plan_p.add_argument("--expected-state-hash", required=True)
+    governor_plan_p.add_argument("--request", required=True)
+    governor_plan_p.set_defaults(handler=governor_plan)
+
+    governor_record_p = sub.add_parser("governor-record")
+    governor_record_p.add_argument("worker")
+    governor_record_p.add_argument("--session-id", required=True)
+    governor_record_p.add_argument("--expected-state-hash", required=True)
+    governor_record_p.add_argument("--outcome", required=True)
+    governor_record_p.set_defaults(handler=governor_record)
+
+    governor_show_p = sub.add_parser("governor-show")
+    governor_show_p.add_argument("worker")
+    governor_show_p.set_defaults(handler=governor_show)
+
+    continuity_configure_p = sub.add_parser("continuity-configure")
+    continuity_configure_p.add_argument("worker")
+    continuity_configure_p.add_argument("--session-id", required=True)
+    continuity_configure_p.add_argument("--expected-state-hash", required=True)
+    continuity_configure_p.add_argument("--policy", required=True)
+    continuity_configure_p.set_defaults(handler=continuity_configure)
+
+    context_check_p = sub.add_parser("context-check")
+    context_check_p.add_argument("worker")
+    context_check_p.add_argument("--session-id", required=True)
+    context_check_p.add_argument("--expected-state-hash", required=True)
+    context_check_p.add_argument("--observation", required=True)
+    context_check_p.set_defaults(handler=context_check)
+
+    continuity_recover_p = sub.add_parser("continuity-recover")
+    continuity_recover_p.add_argument("worker")
+    continuity_recover_p.add_argument("--session-id", required=True)
+    continuity_recover_p.add_argument("--expected-state-hash", required=True)
+    continuity_recover_p.add_argument("--reason", required=True)
+    continuity_recover_p.set_defaults(handler=continuity_recover)
+
+    handoff_create_p = sub.add_parser("handoff-create")
+    handoff_create_p.add_argument("worker")
+    handoff_create_p.add_argument("--session-id", required=True)
+    handoff_create_p.add_argument("--expected-state-hash", required=True)
+    handoff_create_p.add_argument("--request", required=True)
+    handoff_create_p.set_defaults(handler=handoff_create)
+
+    handoff_consume_p = sub.add_parser("handoff-consume")
+    handoff_consume_p.add_argument("worker")
+    handoff_consume_p.add_argument("--session-id", required=True)
+    handoff_consume_p.add_argument("--expected-state-hash", required=True)
+    handoff_consume_p.add_argument("--packet", required=True)
+    handoff_consume_p.add_argument("--expected-packet-sha256", required=True)
+    handoff_consume_p.set_defaults(handler=handoff_consume)
+
+    continuity_show_p = sub.add_parser("continuity-show")
+    continuity_show_p.add_argument("worker")
+    continuity_show_p.set_defaults(handler=continuity_show)
+
+    resource_configure_p = sub.add_parser("resource-configure")
+    resource_configure_p.add_argument("worker")
+    resource_configure_p.add_argument("--session-id", required=True)
+    resource_configure_p.add_argument("--expected-state-hash", required=True)
+    resource_configure_p.add_argument("--policy", required=True)
+    resource_configure_p.set_defaults(handler=resource_configure)
+
+    resource_snapshot_p = sub.add_parser("resource-snapshot")
+    resource_snapshot_p.add_argument("worker")
+    resource_snapshot_p.add_argument("--session-id", required=True)
+    resource_snapshot_p.add_argument("--expected-state-hash", required=True)
+    resource_snapshot_p.add_argument("--observation")
+    resource_snapshot_p.set_defaults(handler=resource_snapshot)
+
+    resource_plan_p = sub.add_parser("resource-plan")
+    resource_plan_p.add_argument("worker")
+    resource_plan_p.add_argument("--session-id", required=True)
+    resource_plan_p.add_argument("--expected-state-hash", required=True)
+    resource_plan_p.set_defaults(handler=resource_plan)
+
+    resource_record_p = sub.add_parser("resource-record")
+    resource_record_p.add_argument("worker")
+    resource_record_p.add_argument("--session-id", required=True)
+    resource_record_p.add_argument("--expected-state-hash", required=True)
+    resource_record_p.add_argument("--outcome", required=True)
+    resource_record_p.set_defaults(handler=resource_record)
+
+    resource_show_p = sub.add_parser("resource-show")
+    resource_show_p.add_argument("worker")
+    resource_show_p.set_defaults(handler=resource_show)
+
+    for command, handler in (
+        ("work-map-consent", work_map_consent), ("work-map-record", work_map_record),
+        ("radar-configure", radar_configure), ("radar-verify", radar_verify),
+        ("radar-run", radar_run),
+    ):
+        command_p = sub.add_parser(command)
+        command_p.add_argument("worker")
+        command_p.add_argument("--session-id", required=True)
+        command_p.add_argument("--expected-state-hash", required=True)
+        command_p.add_argument("--request", required=True)
+        if command == "radar-run":
+            command_p.add_argument("--scheduled", action="store_true")
+        command_p.set_defaults(handler=handler)
+
+    for command in ("work-map-show", "work-map-export", "work-map-discover"):
+        command_p = sub.add_parser(command)
+        command_p.add_argument("worker")
+        command_p.add_argument("--owner", required=True)
+        if command == "work-map-discover":
+            command_p.add_argument("--source", action="append")
+        command_p.set_defaults(handler=work_map_discover if command == "work-map-discover" else work_map_show)
+
+    map_control_p = sub.add_parser("work-map-control")
+    map_control_p.add_argument("worker")
+    map_control_p.add_argument("action", choices=("CONFIRM", "REVOKE", "EXCLUDE", "FORGET", "PRUNE"))
+    map_control_p.add_argument("--session-id", required=True)
+    map_control_p.add_argument("--expected-state-hash", required=True)
+    map_control_p.add_argument("--approval-reference")
+    map_control_p.add_argument("--item")
+    map_control_p.set_defaults(handler=work_map_control)
+
+    map_recover_p = sub.add_parser("work-map-recover")
+    map_recover_p.add_argument("worker")
+    map_recover_p.add_argument("--session-id", required=True)
+    map_recover_p.add_argument("--expected-state-hash", required=True)
+    map_recover_p.set_defaults(handler=work_map_recover)
+
+    radar_decide_p = sub.add_parser("radar-decide")
+    radar_decide_p.add_argument("worker")
+    radar_decide_p.add_argument("--session-id", required=True)
+    radar_decide_p.add_argument("--expected-state-hash", required=True)
+    radar_decide_p.add_argument("--item", required=True)
+    radar_decide_p.add_argument("--choice", choices=("PROPOSE", "LATER", "REJECT"), required=True)
+    radar_decide_p.add_argument("--until-utc")
+    radar_decide_p.set_defaults(handler=radar_decide)
+
+    exchange_init_p = sub.add_parser("exchange-init")
+    exchange_init_p.add_argument("--exchange", required=True)
+    exchange_init_p.add_argument("--config", required=True)
+    exchange_init_p.add_argument("--owner", required=True)
+    exchange_init_p.set_defaults(handler=exchange_init)
+
+    exchange_join_p = sub.add_parser("exchange-join")
+    exchange_join_p.add_argument("worker")
+    exchange_join_p.add_argument("--exchange", required=True)
+    exchange_join_p.add_argument("--session-id", required=True)
+    exchange_join_p.add_argument("--expected-state-hash", required=True)
+    exchange_join_p.add_argument("--entry", required=True)
+    exchange_join_p.set_defaults(handler=exchange_join)
+
+    exchange_refresh_p = sub.add_parser("exchange-directory-refresh")
+    exchange_refresh_p.add_argument("worker")
+    exchange_refresh_p.add_argument("--exchange", required=True)
+    exchange_refresh_p.add_argument("--session-id", required=True)
+    exchange_refresh_p.add_argument("--expected-state-hash", required=True)
+    exchange_refresh_p.add_argument("--entry", required=True)
+    exchange_refresh_p.set_defaults(handler=exchange_directory_refresh)
+
+    exchange_leave_p = sub.add_parser("exchange-leave")
+    exchange_leave_p.add_argument("worker")
+    exchange_leave_p.add_argument("--exchange", required=True)
+    exchange_leave_p.add_argument("--session-id", required=True)
+    exchange_leave_p.add_argument("--expected-state-hash", required=True)
+    exchange_leave_p.set_defaults(handler=exchange_leave)
+
+    exchange_local_recover_p = sub.add_parser("exchange-local-recover")
+    exchange_local_recover_p.add_argument("worker")
+    exchange_local_recover_p.add_argument("--exchange", required=True)
+    exchange_local_recover_p.add_argument("--session-id", required=True)
+    exchange_local_recover_p.add_argument("--expected-state-hash", required=True)
+    exchange_local_recover_p.set_defaults(handler=exchange_local_recover)
+
+    exchange_policy_p = sub.add_parser("exchange-policy-add")
+    exchange_policy_p.add_argument("--exchange", required=True)
+    exchange_policy_p.add_argument("--owner", required=True)
+    exchange_policy_p.add_argument("--policy", required=True)
+    exchange_policy_p.set_defaults(handler=exchange_policy_add)
+
+    exchange_revoke_p = sub.add_parser("exchange-policy-revoke")
+    exchange_revoke_p.add_argument("policy_id")
+    exchange_revoke_p.add_argument("--exchange", required=True)
+    exchange_revoke_p.add_argument("--owner", required=True)
+    exchange_revoke_p.add_argument("--approval-reference", required=True)
+    exchange_revoke_p.add_argument("--reason", required=True)
+    exchange_revoke_p.set_defaults(handler=exchange_policy_revoke)
+
+    exchange_mission_p = sub.add_parser("exchange-mission-create")
+    exchange_mission_p.add_argument("worker")
+    exchange_mission_p.add_argument("--exchange", required=True)
+    exchange_mission_p.add_argument("--session-id", required=True)
+    exchange_mission_p.add_argument("--expected-state-hash", required=True)
+    exchange_mission_p.add_argument("--mission", required=True)
+    exchange_mission_p.set_defaults(handler=exchange_mission_create)
+
+    exchange_send_p = sub.add_parser("exchange-send")
+    exchange_send_p.add_argument("worker")
+    exchange_send_p.add_argument("--exchange", required=True)
+    exchange_send_p.add_argument("--session-id", required=True)
+    exchange_send_p.add_argument("--expected-state-hash", required=True)
+    exchange_send_p.add_argument("--request", required=True)
+    exchange_send_p.set_defaults(handler=exchange_send)
+
+    exchange_ack_p = sub.add_parser("exchange-ack")
+    exchange_ack_p.add_argument("worker")
+    exchange_ack_p.add_argument("message_id")
+    exchange_ack_p.add_argument("--exchange", required=True)
+    exchange_ack_p.add_argument("--session-id", required=True)
+    exchange_ack_p.add_argument("--expected-state-hash", required=True)
+    exchange_ack_p.set_defaults(handler=exchange_ack)
+
+    exchange_decide_p = sub.add_parser("exchange-decide")
+    exchange_decide_p.add_argument("worker")
+    exchange_decide_p.add_argument("message_id")
+    exchange_decide_p.add_argument("decision", choices=("ACCEPT", "REJECT"))
+    exchange_decide_p.add_argument("--exchange", required=True)
+    exchange_decide_p.add_argument("--session-id", required=True)
+    exchange_decide_p.add_argument("--expected-state-hash", required=True)
+    exchange_decide_p.add_argument("--reason", required=True)
+    exchange_decide_p.set_defaults(handler=exchange_decide)
+
+    exchange_result_p = sub.add_parser("exchange-result")
+    exchange_result_p.add_argument("worker")
+    exchange_result_p.add_argument("--exchange", required=True)
+    exchange_result_p.add_argument("--session-id", required=True)
+    exchange_result_p.add_argument("--expected-state-hash", required=True)
+    exchange_result_p.add_argument("--result", required=True)
+    exchange_result_p.set_defaults(handler=exchange_result)
+
+    exchange_integrate_p = sub.add_parser("exchange-integrate")
+    exchange_integrate_p.add_argument("worker")
+    exchange_integrate_p.add_argument("--exchange", required=True)
+    exchange_integrate_p.add_argument("--session-id", required=True)
+    exchange_integrate_p.add_argument("--expected-state-hash", required=True)
+    exchange_integrate_p.add_argument("--integration", required=True)
+    exchange_integrate_p.set_defaults(handler=exchange_integrate)
+
+    exchange_show_p = sub.add_parser("exchange-show")
+    exchange_show_p.add_argument("worker")
+    exchange_show_p.add_argument("--exchange", required=True)
+    exchange_show_p.set_defaults(handler=exchange_show)
+
+    exchange_audit_p = sub.add_parser("exchange-audit")
+    exchange_audit_p.add_argument("--exchange", required=True)
+    exchange_audit_p.set_defaults(handler=exchange_audit)
+
+    exchange_recover_p = sub.add_parser("exchange-recover")
+    exchange_recover_p.add_argument("--exchange", required=True)
+    exchange_recover_p.add_argument("--owner", required=True)
+    exchange_recover_p.set_defaults(handler=exchange_recover)
+
+    exchange_control_p = sub.add_parser("exchange-control")
+    exchange_control_p.add_argument("action", choices=("PAUSE", "RESUME", "ARCHIVE"))
+    exchange_control_p.add_argument("--exchange", required=True)
+    exchange_control_p.add_argument("--owner", required=True)
+    exchange_control_p.add_argument("--reason", required=True)
+    exchange_control_p.set_defaults(handler=exchange_control_command)
+
+    exchange_directory_p = sub.add_parser("exchange-directory-status")
+    exchange_directory_p.add_argument("worker_id")
+    exchange_directory_p.add_argument("status", choices=("ACTIVE", "PAUSED", "RETIRED"))
+    exchange_directory_p.add_argument("--exchange", required=True)
+    exchange_directory_p.add_argument("--owner", required=True)
+    exchange_directory_p.add_argument("--reason", required=True)
+    exchange_directory_p.set_defaults(handler=exchange_directory_status)
+
+    exchange_export_p = sub.add_parser("exchange-export")
+    exchange_export_p.add_argument("--exchange", required=True)
+    exchange_export_p.add_argument("--owner", required=True)
+    exchange_export_p.add_argument("--output", required=True)
+    exchange_export_p.set_defaults(handler=exchange_export)
+
+    memory_configure_p = sub.add_parser("memory-configure")
+    memory_configure_p.add_argument("worker")
+    memory_configure_p.add_argument("action", choices=("ENABLE", "PAUSE", "RESUME", "REVOKE"))
+    memory_configure_p.add_argument("--session-id", required=True)
+    memory_configure_p.add_argument("--expected-state-hash", required=True)
+    memory_configure_p.add_argument("--request")
+    memory_configure_p.set_defaults(handler=memory_configure)
+
+    memory_record_p = sub.add_parser("memory-record")
+    memory_record_p.add_argument("worker")
+    memory_record_p.add_argument("--session-id", required=True)
+    memory_record_p.add_argument("--expected-state-hash", required=True)
+    memory_record_p.add_argument("--request", required=True)
+    memory_record_p.add_argument("--source-file", required=True)
+    memory_record_p.set_defaults(handler=memory_record)
+
+    memory_control_p = sub.add_parser("memory-control")
+    memory_control_p.add_argument("worker")
+    memory_control_p.add_argument("action", choices=("RETRACT", "DISPUTE", "FORGET", "PRUNE"))
+    memory_control_p.add_argument("--item")
+    memory_control_p.add_argument("--session-id", required=True)
+    memory_control_p.add_argument("--expected-state-hash", required=True)
+    memory_control_p.set_defaults(handler=memory_control)
+
+    memory_rebuild_p = sub.add_parser("memory-rebuild")
+    memory_rebuild_p.add_argument("worker")
+    memory_rebuild_p.add_argument("--session-id", required=True)
+    memory_rebuild_p.add_argument("--expected-state-hash", required=True)
+    memory_rebuild_p.set_defaults(handler=memory_rebuild)
+
+    memory_query_p = sub.add_parser("memory-query")
+    memory_query_p.add_argument("worker")
+    memory_query_p.add_argument("--owner", required=True)
+    memory_query_p.add_argument("--kind", choices=sorted(MEMORY_KINDS))
+    memory_query_p.add_argument("--scope", choices=sorted(MEMORY_SCOPES))
+    memory_query_p.add_argument("--subject")
+    memory_query_p.set_defaults(handler=memory_query)
+
+    memory_show_p = sub.add_parser("memory-show")
+    memory_show_p.add_argument("worker")
+    memory_show_p.add_argument("--owner", required=True)
+    memory_show_p.set_defaults(handler=memory_show)
+
+    chief_configure_p = sub.add_parser("chief-configure")
+    chief_configure_p.add_argument("worker")
+    chief_configure_p.add_argument("action", choices=("ENABLE", "PAUSE", "RESUME", "REVOKE"))
+    chief_configure_p.add_argument("--session-id", required=True)
+    chief_configure_p.add_argument("--expected-state-hash", required=True)
+    chief_configure_p.add_argument("--request")
+    chief_configure_p.set_defaults(handler=chief_configure)
+
+    portfolio_snapshot_p = sub.add_parser("portfolio-snapshot")
+    portfolio_snapshot_p.add_argument("worker")
+    portfolio_snapshot_p.add_argument("--request", required=True)
+    portfolio_snapshot_p.add_argument("--evidence-file", required=True)
+    portfolio_snapshot_p.add_argument("--session-id", required=True)
+    portfolio_snapshot_p.add_argument("--expected-state-hash", required=True)
+    portfolio_snapshot_p.set_defaults(handler=portfolio_snapshot)
+
+    portfolio_export_p = sub.add_parser("portfolio-export-artifact")
+    portfolio_export_p.add_argument("worker")
+    portfolio_export_p.add_argument("--snapshot-sha256", required=True)
+    portfolio_export_p.add_argument("--output", required=True)
+    portfolio_export_p.add_argument("--session-id", required=True)
+    portfolio_export_p.add_argument("--expected-state-hash", required=True)
+    portfolio_export_p.set_defaults(handler=portfolio_export_artifact)
+
+    chief_portfolio_p = sub.add_parser("chief-portfolio-upsert")
+    chief_portfolio_p.add_argument("worker")
+    chief_portfolio_p.add_argument("--session-id", required=True)
+    chief_portfolio_p.add_argument("--expected-state-hash", required=True)
+    chief_portfolio_p.add_argument("--snapshot", required=True)
+    chief_portfolio_p.add_argument("--source-worker", required=True)
+    chief_portfolio_p.set_defaults(handler=chief_portfolio_upsert)
+
+    chief_import_p = sub.add_parser("chief-portfolio-import-exchange")
+    chief_import_p.add_argument("worker")
+    chief_import_p.add_argument("--session-id", required=True)
+    chief_import_p.add_argument("--expected-state-hash", required=True)
+    chief_import_p.add_argument("--exchange", required=True)
+    chief_import_p.add_argument("--message-id", required=True)
+    chief_import_p.add_argument("--source-worker", required=True)
+    chief_import_p.set_defaults(handler=chief_portfolio_import_exchange)
+
+    chief_portfolio_control_p = sub.add_parser("chief-portfolio-control")
+    chief_portfolio_control_p.add_argument("worker")
+    chief_portfolio_control_p.add_argument("action", choices=("REVOKE", "ALLOW", "FORGET"))
+    chief_portfolio_control_p.add_argument("--item", required=True)
+    chief_portfolio_control_p.add_argument("--approval-reference")
+    chief_portfolio_control_p.add_argument("--session-id", required=True)
+    chief_portfolio_control_p.add_argument("--expected-state-hash", required=True)
+    chief_portfolio_control_p.set_defaults(handler=chief_portfolio_control)
+
+    chief_brief_p = sub.add_parser("chief-brief")
+    chief_brief_p.add_argument("worker")
+    chief_brief_p.add_argument("--session-id", required=True)
+    chief_brief_p.add_argument("--expected-state-hash", required=True)
+    chief_brief_p.add_argument("--handoff-bindings")
+    chief_brief_p.set_defaults(handler=chief_brief)
+
+    chief_show_p = sub.add_parser("chief-show")
+    chief_show_p.add_argument("worker")
+    chief_show_p.add_argument("--owner", required=True)
+    chief_show_p.set_defaults(handler=chief_show)
+
+    h53_recover_p = sub.add_parser("h53-recover")
+    h53_recover_p.add_argument("worker")
+    h53_recover_p.add_argument("--session-id", required=True)
+    h53_recover_p.add_argument("--expected-state-hash", required=True)
+    h53_recover_p.set_defaults(handler=h53_recover)
+
     batch_plan_p = sub.add_parser("batch-plan")
     batch_plan_p.add_argument("kind", choices=BATCH_KINDS)
     batch_plan_p.add_argument("--units", type=int, required=True)
@@ -7035,6 +20583,12 @@ def parser():
     components_p = sub.add_parser("components")
     add_component_source_options(components_p)
     components_p.set_defaults(handler=list_components)
+
+    tree_proof_p = sub.add_parser("tree-proof")
+    tree_proof_p.add_argument("root")
+    tree_proof_p.add_argument("--exclude", action="append", default=[])
+    tree_proof_p.add_argument("--verify")
+    tree_proof_p.set_defaults(handler=show_tree_proof)
 
     install_skill_p = sub.add_parser("install-skill")
     install_skill_p.add_argument("component")
@@ -7076,13 +20630,18 @@ def main():
         worker = None
         if hasattr(args, "worker") and args.command != "install":
             worker = safe_worker(args.worker)
+            if args.command not in {"recover-downgrade", "session-status", "validate"} and downgrade_transaction_path(worker).exists():
+                raise ValueError("interrupted downgrade transaction detected; run recover-downgrade first")
             if args.command == "suspend":
+                if map_external_schedule_exists(work_map(worker, required=False)):
+                    raise ValueError("remove and visibly verify the external radar schedule before suspension")
                 schedule = improvement_schedule(worker)
                 if external_improvement_schedule_still_exists(schedule):
                     raise ValueError(
                         "remove and visibly verify the external personal-improvement "
                         "schedule before suspension"
                     )
+                require_update_schedule_quiet_for_suspension(worker)
                 # STOP is preemptive: latch it outside the cooperative command mutex,
                 # then wait briefly to finish the durable mode transition.
                 write_autonomy_fault_latch(
@@ -7092,6 +20651,14 @@ def main():
                 worker, wait_seconds=30 if args.command == "suspend" else 0
             )
         with operation:
+            if worker is not None and args.command not in {"recover-downgrade", "session-status", "validate"} and downgrade_transaction_path(worker).exists():
+                raise ValueError("interrupted downgrade transaction detected; run recover-downgrade first")
+            if worker is not None and args.command in {"suspend", "uninstall", "rollback", "prepare-downgrade"} and map_external_schedule_exists(work_map(worker, required=False)):
+                raise ValueError("remove and visibly verify the external radar schedule before suspension, uninstall, rollback or downgrade")
+            if worker is not None and args.command not in {"work-map-recover", "session-status", "validate"} and worker_target(worker, WORK_MAP_TX_PATH, "map transaction").exists():
+                raise ValueError("interrupted work-map transaction detected; run work-map-recover first")
+            if worker is not None and args.command not in {"h53-recover", "session-status", "validate"} and worker_target(worker, H53_TX_PATH, "H-53 transaction").exists():
+                raise ValueError("interrupted H-53 transaction detected; run h53-recover first")
             if (
                 worker is not None
                 and args.command != "recover-lifecycle"
@@ -7099,6 +20666,25 @@ def main():
             ):
                 raise ValueError(
                     "interrupted lifecycle transaction detected; run recover-lifecycle first"
+                )
+            if (
+                worker is not None
+                and exchange_mutation_file(worker).exists()
+                and args.command not in EXCHANGE_MUTATION_COMMANDS
+                and args.command != "validate"
+            ):
+                raise ValueError(
+                    "interrupted Worker Exchange mutation detected; run exchange-local-recover "
+                    "or retry the exact exchange command"
+                )
+            if (
+                worker is not None
+                and args.command != "recover-update-schedule"
+                and (worker / UPDATE_SCHEDULE_TRANSACTION_PATH).exists()
+            ):
+                raise ValueError(
+                    "interrupted update-schedule transaction detected; "
+                    "run recover-update-schedule first"
                 )
             if args.command == "validate":
                 ok, _ = validate_worker(worker)
@@ -7109,9 +20695,22 @@ def main():
                         "AI-human system is suspended; resume it before managed work, "
                         "or uninstall it to remove the system"
                     )
+            if worker is not None and args.command in CONTEXT_NEW_WORK_COMMANDS:
+                latch = context_checkpoint_latch(worker)
+                if latch:
+                    raise ValueError(
+                        "context checkpoint required; do not start new work before a "
+                        "verified handoff is consumed"
+                    )
             args.handler(args)
         return 0
     except Exception as exc:
+        if isinstance(exc, WorkerOperationBusy) and args.command == "update-schedule-tick" and sys.platform == "darwin":
+            try:
+                if is_macos_registration_probe(worker, args):
+                    return 0
+            except (ValueError, OSError, KeyError) as invalid:
+                exc = invalid
         print("AI-HUMAN " + args.command.upper() + ": FAIL - " + str(exc), file=sys.stderr)
         return 1
 

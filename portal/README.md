@@ -33,3 +33,9 @@ npm run build
 7. Merge only the approved change to the production branch. Vercel then updates the stable portal URL.
 
 Do not edit only the website label when the downloadable file also changed. A change is complete only when the source, generated artifact, download manifest and portal agree.
+
+## Mac-only v2.5.0 publication
+
+Before publication, verify the default GitHub release is v2.4.0 and record its identity. Freeze the two v2.5.0 edition ZIPs, their sidecars and the refreshed download manifest together. Keep the private preview and its downloads local until the owner approves the exact release and website.
+
+When publishing the approved Mac release, explicitly set `make_latest` to the string `"false"` on the GitHub release. Read back both `/releases/latest` (v2.4.0) and `/releases/tags/v2.5.0` (approved publisher and six checked assets). Stop distribution if either readback differs. Verify both Windows buttons still deliver the approved v2.4.0 ZIPs and both Mac buttons deliver the approved v2.5.0 ZIPs. Compare SHA-256 against the frozen packet before announcing. The Mac update notice must identify the exact signed commit for manual installation. Keep automatic updates ineligible for this release.

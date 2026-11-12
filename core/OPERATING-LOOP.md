@@ -50,6 +50,18 @@ Never split, truncate or report partial success for one artifact merely because 
 contains more entries than the batch cap. If those entries will be materialized as
 separate external records or individually executed, checkpoint at the cap.
 
+When `.ai-human/governor/policy.json` exists, the agent runtime acquires the worker
+lease and uses `governor-plan` with an `ai-human.work-governor-request/v1` file. Every
+required capacity signal is explicit: confirmed values cite evidence; unavailable
+values say `UNKNOWN`. The agent performs only the returned batch sizes. It then calls
+`governor-record` with the actual completed count, status and evidence before requesting
+another plan. A `HALT` receipt authorizes no execution. A legacy worker without a
+governor uses its installed cap only as a conservative fallback and never raises it.
+
+The policy is a separate owner action through `governor-configure`; ordinary planning
+cannot alter it. A fatal rollback or state-divergence outcome remains halted until the
+owner approves the next policy version.
+
 ## Continue inside the current approval when
 
 - the live task, desired result and next action are explicit;

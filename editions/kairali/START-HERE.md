@@ -7,8 +7,8 @@ skill.
 
 ## Install in five visible steps
 
-1. On the website, select **Download the Kairali employee edition**.
-   **DONE WHEN:** the ZIP appears in Downloads.
+1. On the website, find the **Kairali employee edition** and select the download labeled for your computer.
+   **DONE WHEN:** Downloads shows the ZIP for the version beside that button. During the Mac-only release, Mac uses v2.5.0 and Windows uses v2.4.0. If your download differs, return to the website and use the button for your computer.
 2. Open Downloads. On Mac, double-click the ZIP. On Windows, right-click the ZIP,
    select **Extract All**, then select **Extract**.
    **DONE WHEN:** a folder named `KAIRALI-EMPLOYEE-EDITION` appears.
@@ -67,12 +67,10 @@ verified `SUSPENDED`.
 
 Open the existing employee worker in Codex, start a new chat and paste `CHECK FOR
 KAIRALI UPDATE`. Use the complete checked prompt in
-`workspace/packages/kairali/UPDATE-WORKFLOW.md`. The check changes nothing. If the
-worker is configured v2.0.0 through v2.3.0 and idle, say `UPDATE NOW` to apply v2.4.0
-with a backup, managed-file-only update and validation. A pre-v2 worker first completes
+`workspace/packages/kairali/UPDATE-WORKFLOW.md`. The check changes nothing. Tell the helper whether you use Mac or Windows. For the Mac-only v2.5.0 release, give it the approved Mac release notice. Ask it to verify the signed tag, its exact commit and the approved checksum of the Kairali employee edition ZIP. Ask the helper to use the workspace folder inside that edition after checking it matches your worker’s repository. For an approved update, use the updater bundled inside that verified edition so it makes the worker recovery snapshot. Windows uses the common v2.4.0 release. If the helper confirms an eligible update and the worker is idle, say `UPDATE NOW`. It backs up, updates managed files and validates. A pre-v2 worker first completes
 the guided exact-scope Gate 0 migration.
 
-**DONE WHEN:** the installed version is `2.4.0`, validation is `PASS`, employee state
+**DONE WHEN:** the installed version matches the approved version for your computer, validation is `PASS`, employee state
 is preserved and a recovery location is shown.
 
 ## Optional personal improvement review

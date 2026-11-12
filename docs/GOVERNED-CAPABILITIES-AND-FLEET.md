@@ -1,9 +1,6 @@
 # Governed capabilities and fleet updates
 
-This document describes the v2 control plane, introduced in v2.0.0 and retained in the
-current owner-approved v2.4.0 release. v2.0.1 is held after a post-publication
-concurrency finding. v2.4.0 is backward-compatible from configured v2.0.0 through
-v2.3.0; a pre-v2 worker still needs the exact-scope setup migration.
+This control plane was introduced in v2.0.0. During the Mac rollout, Mac uses v2.5.0 and Windows uses the common v2.4.0 release. The held v2.0.1 release is excluded. Configured stable workers from v2.0.0 can use the manual update path. A pre-v2 worker first completes the exact-scope setup migration.
 Automatic update selection remains disabled. The v2.4.0 manifests are
 `APPROVED_BY_OWNER` / `RELEASED`; unapproved pre-release builds use `LOCAL_BUILD_ONLY`,
 and the lifecycle refuses to install them.
@@ -75,9 +72,16 @@ supervisor must match the worker configuration and every declared proof test mus
 before worker activation or company-reuse approval. Company-reuse approval still does
 not publish or distribute the capability; that needs a separately approved release.
 
-## Monthly update control plane
+## Legacy monthly update control plane and native migration
 
-Each configured worker is due for one read-only check on the first calendar day at
+This section describes the retained legacy external-scheduler path, not the new-install
+default. Optional native schedules are off by default and require the owner's explicit
+weekly/monthly rule; see `core/UPDATE-SCHEDULER.md`. Once a native schedule exists,
+even paused or removed, the legacy automatic/fleet entry points refuse for that worker
+before downloading a release. Verify removal of an old external schedule before native
+configuration; never create duplicate update runners.
+
+Each legacy configured worker is due for one read-only check on the first calendar day at
 10:00 AM in its confirmed IANA time zone. The approved scheduler adapter supplies that
 worker-local offset-aware timestamp; the lifecycle command does not infer it from its
 host machine. The report contains only worker ID, installed version, latest version,

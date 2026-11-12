@@ -14,7 +14,7 @@ export type DownloadGroup = {
 
 export const downloadGroups: DownloadGroup[] = [
   {
-    title: "Choose one edition",
+    title: "v2.4.0 editions for Mac and Windows",
     description: "Do not mix them. Kairali staff use the employee edition. Everyone else uses the company-neutral reusable edition.",
     featured: true,
     items: [

@@ -8,12 +8,22 @@
   },
   "managed_files": [
     {
-      "sha256": "4e131c63dffa09d20543958c9ba32a481ba3977ebf833b5e8c92019c36f9e7d0",
+      "sha256": "10cae3dd14f67b257b0d2955a2c7f33dcff2782bdade822df1fec05eb48dfa27",
+      "source": "core/CHIEF-OF-STAFF-AND-MEMORY.md",
+      "target": ".ai-human/system/CHIEF-OF-STAFF-AND-MEMORY.md"
+    },
+    {
+      "sha256": "3bfb08796f1ba55df04d36875a38fe33c5eff21b715b18efd49186c8529bb8c0",
+      "source": "core/PERSONAL-CONTEXT-RADAR.md",
+      "target": ".ai-human/system/PERSONAL-CONTEXT-RADAR.md"
+    },
+    {
+      "sha256": "5993ea1004b7f4038f72582e98c252ca08e70a8f6c4add25a960d19e9b73f1b6",
       "source": "core/AI-HUMAN.md",
       "target": ".ai-human/system/AI-HUMAN.md"
     },
     {
-      "sha256": "6a2d5638c5bbf41c25703823e8cc4d6aa9c4791747461aee520004fe21e9f381",
+      "sha256": "ecf351077e34bdf618cd9115ce487aace0b2091b9e973e489e8e6630e2fbfe65",
       "source": "core/AGENT-RULES.md",
       "target": ".ai-human/system/AGENT-RULES.md"
     },
@@ -33,9 +43,34 @@
       "target": ".ai-human/system/QUARTERLY-IMPROVEMENT.md"
     },
     {
-      "sha256": "730b41d7bf757464cc555c16fbe919b6031912376643334085d952e05fa61027",
+      "sha256": "785f85feb8e0c6fc6885e0d48987df25ba52d946e70a683d607dcb652917b66f",
       "source": "core/OPERATING-LOOP.md",
       "target": ".ai-human/system/OPERATING-LOOP.md"
+    },
+    {
+      "sha256": "7ba2db30478db29eafcb2be979ff1b1e919e2c7297d5296c0b45acbf55b2ae24",
+      "source": "core/WORK-GOVERNOR.md",
+      "target": ".ai-human/system/WORK-GOVERNOR.md"
+    },
+    {
+      "sha256": "bb02d2fd37b3e8b9c1c641481b8861dc644266c9d4b1994c13b8bfbe73f57e57",
+      "source": "core/CONTEXT-CONTINUITY.md",
+      "target": ".ai-human/system/CONTEXT-CONTINUITY.md"
+    },
+    {
+      "sha256": "67430f49ed898156a09753497cdf3aea90abfb36545b272a0f826bc3ca393ad2",
+      "source": "core/RESOURCE-STEWARD.md",
+      "target": ".ai-human/system/RESOURCE-STEWARD.md"
+    },
+    {
+      "sha256": "c2a8015c7c9ea1be26f8e106dcbd87b91182d47e81c4826b0c858feafc826119",
+      "source": "core/WORKER-EXCHANGE.md",
+      "target": ".ai-human/system/WORKER-EXCHANGE.md"
+    },
+    {
+      "sha256": "9a9f3d306c592ac3a8395b7ada43252669ed52c69d3fa102324b89577878eda1",
+      "source": "core/UPDATE-SCHEDULER.md",
+      "target": ".ai-human/system/UPDATE-SCHEDULER.md"
     },
     {
       "sha256": "f5c1dcda603c3d3bc6a239470f7e0a7044f00b097c94ee99b52bf49dc1cdf972",
@@ -43,12 +78,12 @@
       "target": ".ai-human/system/GATES-SHARED.md"
     },
     {
-      "sha256": "d8e1f73ab955f6697f2d4b7bcd6abc5a454c19214bf81642f9d47d3baf78b013",
+      "sha256": "9b7bc96a6bf2e1291c6c312e4616fb7bec7250e6211216b62c32e1656d8aa018",
       "source": "core/SESSION-START.md",
       "target": ".ai-human/system/SESSION-START.md"
     },
     {
-      "sha256": "01ce7615ea9899c68ea8291dbe03ecaefa61e86db31e402c77a3634e47192e07",
+      "sha256": "703565be5428c27943dc000eef42495343f1b6431f927bceeffaeb871e7d5781",
       "source": "core/SESSION-END.md",
       "target": ".ai-human/system/SESSION-END.md"
     },
@@ -58,12 +93,12 @@
       "target": ".ai-human/system/TOOLBOX-TEMPLATE.md"
     },
     {
-      "sha256": "2ad7b0c3f0ede58c3165b7a8a5479e890a758d39bfe8683eaef50ce6afad7232",
+      "sha256": "732f64d874f90788c0199b0c19bfd9b3b6436e140114e53e462832532d74c61c",
       "source": "core/VERSION",
       "target": ".ai-human/VERSION"
     },
     {
-      "sha256": "ed84d52a11e7522480556300f32f97dbc86eee168cf89e16e8addd5421e5384f",
+      "sha256": "ba6e0b7da3c8838594a1185100e3a4eabcfd86700ceab8ededcba63887ae500e",
       "source": "scripts/ai_human.py",
       "target": ".ai-human/bin/ai_human.py"
     }
@@ -94,6 +129,14 @@
     ".ai-human/capabilities/",
     ".ai-human/improvement/",
     ".ai-human/autonomy/",
+    ".ai-human/governor/",
+    ".ai-human/continuity/",
+    ".ai-human/resources/",
+    ".ai-human/personal/",
+    ".ai-human/exchange/",
+    ".ai-human/update-schedule/",
+    ".ai-human/memory/",
+    ".ai-human/chief/",
     ".ai-human/backups/",
     ".ai-human/downgrade-exports/",
     ".ai-human/version-report.json",
@@ -104,5 +147,5 @@
   "release_status": "RELEASED",
   "repository": "kairali-digital/ai-human-workspace",
   "schema": "ai-human.workspace-release/v1",
-  "version": "2.4.0"
+  "version": "2.5.0"
 }

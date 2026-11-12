@@ -5,8 +5,8 @@ It contains only the reusable workspace, lifecycle controls and generic starter 
 
 ## Install in five visible steps
 
-1. On the website, select **Download the reusable edition**.
-   **DONE WHEN:** the ZIP appears in Downloads.
+1. On the website, find the **reusable edition** and select the download labeled for your computer.
+   **DONE WHEN:** Downloads shows the ZIP for the version beside that button. During the Mac-only release, Mac uses v2.5.0 and Windows uses v2.4.0. If your download differs, return to the website and use the button for your computer.
 2. Open Downloads. On Mac, double-click the ZIP. On Windows, right-click the ZIP,
    select **Extract All**, then select **Extract**.
    **DONE WHEN:** a folder named `AI-HUMAN-REUSABLE-EDITION` appears.
@@ -65,7 +65,7 @@ Open the existing working folder in Codex, start a new chat and paste this exact
 CHECK FOR AI-HUMAN UPDATE
 
 Read .ai-human/VERSION and .ai-human/system/SESSION-START.md in this project.
-Check only the latest approved semantic-version release from this worker's configured repository.
+Check my computer and this worker's approved release source. If I have an approved Mac-only release notice, verify its signed tag and exact commit. From that commit select the reusable edition ZIP and verify its approved SHA-256. Use the workspace folder in that ZIP only when its release manifest matches my installed worker’s repository. Preserve that repository setting. For an approved update, use the updater bundled inside that verified edition so it makes the worker recovery snapshot. A worker configured for local sources uses this verified local edition. On Windows, use the common release. If no release source is configured, ask me for the approved source before continuing.
 Do not change any file yet.
 
 Tell me my installed version, the latest approved version, the plain-language changes, whether a live task means the update must wait, exactly which managed files may change and which company/user files stay preserved.
@@ -74,11 +74,10 @@ If an update is available, wait for me to say UPDATE NOW. Never ask me to use Te
 ```
 
 If the check says the worker is compatible and idle, paste `UPDATE NOW`. The helper
-backs up, verifies the release, updates only managed files and validates. A configured
-v2.0.0 through v2.3.0 worker can take v2.4.0 directly. A pre-v2 worker first needs the
+backs up, verifies the release, updates only managed files and validates. During the Mac-only release, the eligible versions are v2.5.0 for Mac and v2.4.0 for Windows. A pre-v2 worker first needs the
 guided exact-scope Gate 0 migration.
 
-**DONE WHEN:** the installed version is `2.4.0`, validation is `PASS`, preserved state
+**DONE WHEN:** the installed version matches the approved version for your computer, validation is `PASS`, preserved state
 is confirmed and a recovery location is shown.
 
 ## Optional personal improvement review

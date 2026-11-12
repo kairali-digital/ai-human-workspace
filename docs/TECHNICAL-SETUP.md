@@ -211,6 +211,42 @@ batches no larger than 25. `assignment-intake` likewise preserves a complete bac
 without authorizing its execution; use `item-execution` when the listed work is being
 performed.
 
+## Deterministic receipt proof
+
+The read-only `tree-proof ROOT` command emits an `ai-human.tree-proof/v1` JSON
+inventory. Its algorithm is `sha256-posix-path-nul-raw-sha256-lf/v1`: sort exact
+case-sensitive POSIX relative paths, then hash each UTF-8 path, one NUL byte, the
+32 raw SHA-256 bytes of that file, and one LF byte. The proof also records each
+file hash, the file count, scope and exact excluded file names. Timestamps, absolute
+paths, file modes and empty directories are not payload bytes. Symbolic links fail.
+
+For a skill payload, use `tree-proof ROOT --exclude INSTALL-RECEIPT.json`. Preserve
+the JSON output as a new proof, then read it back with
+`tree-proof ROOT --exclude INSTALL-RECEIPT.json --verify PROOF.json`. Keep the proof
+outside the payload or in the explicitly excluded receipt. Verification requires the
+same caller-declared exclusions; it never trusts the receipt to choose its own scope.
+The exclusion names an exact root-relative file, not every file with that basename.
+
+New workspace install metadata records `managed_payload_proof` and its captured
+`managed_payload_proof_version` for exactly the manifest-listed managed targets.
+Update and rollback receipts record the installed
+payload proof and a complete pre-operation backup proof. Component receipts record a
+whole payload proof excluding only `.ai-human-component.json`. Private worker state
+and receipt files are outside the managed payload inventory. Legacy receipt schemas
+remain readable; an actual update adds the new proof without rewriting old backups
+or historical receipts. These are operation snapshots: older updater versions can
+retain an old snapshot as an unknown metadata field. Verify a snapshot only against
+its corresponding payload; live worker validation continues to use the installed
+release manifest. A proof is reproducible integrity evidence, not a signature,
+approval, or substitute for a trusted immutable release source.
+
+The historical v2.3 system-skill receipt used a different encoding: SHA-256 of sorted
+`shasum` text lines (`<64 hex digest>  ./<relative path>` followed by LF). Its two
+recorded hashes are reproducible with that encoding, but not with the canonical raw
+digest encoding above. The defect was an unlabeled algorithm and missing exclusion
+contract, not observed payload drift. Preserve those historical receipts and attach
+new canonical proof separately; never relabel or replace the old digest.
+
 ## Contribution flow
 
 Use one task branch. A local-only build runs

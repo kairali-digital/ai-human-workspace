@@ -51,6 +51,30 @@ One session owns the writer lease. Cursor, register, today, ledger, evidence and
 capability records change only through an expected-state commit. A conflicting writer
 or stale hash stops instead of overwriting newer state.
 
+The private work governor keeps its owner-versioned policy, exact signal request,
+decision and outcome receipts under `.ai-human/governor/`. Its configured ceiling can
+never exceed the worker policy or product safety ceiling. Runtime evidence may promote
+a proven scope from pilot to steady operation; missing or unhealthy evidence can only
+reduce capacity or halt it. Updates never manage or replace this private state.
+
+Context decisions, resume packets and acknowledgements live in private continuity
+state. A full-context session stops new work, finishes only a safe atomic step, binds a
+packet to the exact worker/task/state/files and releases its lease only after validation.
+The next session checks a separately supplied packet digest and acknowledges once.
+
+Resource snapshots keep host-reported RAM, swap, pressure, process and browser signals
+separate. Missing data remains `UNKNOWN`; non-zero swap alone is not current pressure.
+Only an approved host adapter may act on a fully safe tab-discard candidate, and every
+claimed improvement requires a later host snapshot. No force-quit path is provided.
+
+The optional Worker Exchange is a transport-owned local post room, not shared writable
+memory. Direct, Chief-mediated and mission-room messages use stable worker identities,
+exact route policy, immutable envelopes, bounded conversations and explicit delivery,
+acknowledgement, acceptance and result receipts. Message content never transfers
+permission. Each recipient writes only its own private exchange state while holding
+its writer lease. Follow `WORKER-EXCHANGE.md`; no exchange capability exists until an
+owner configures a relay and the worker records an exact join proof.
+
 Process stays proportional to effect. A read-only answer creates no task state. A clear
 user request for ordinary reversible local work uses standing worker-local permissions
 and deterministic task start/close commands, which auto-name the task when needed and
@@ -75,6 +99,18 @@ activates a capability by itself. The brief keeps decision history and records o
 owner-supplied time measurements. Scheduler availability, the visible Scheduled card,
 exact prompt fingerprint and next run are verified separately from local configuration.
 
+Personal context discovery and the Opportunity Radar start OFF. Follow
+`PERSONAL-CONTEXT-RADAR.md` for explicit identity/source consent, private map review,
+correction, forgetting, retention and separately verified suggestion-only schedules.
+USER_GLOBAL scope remains at its designated owner; it never grants cross-worker reads.
+
+Layered memory and the read-only Chief of Staff start OFF. Follow
+`CHIEF-OF-STAFF-AND-MEMORY.md`: records require provenance, bitemporal validity,
+freshness, sensitivity, access and an owning source. Global truth is curated rather
+than copied. The Chief receives only target-bound portfolio metadata and addressed
+exchange results; it cannot read private worker state, cross-write, self-approve or
+perform external effects. No material change produces no brief.
+
 ## Isolation
 
 Every user, specialist or project uses a separate worker folder. Shared facts have
@@ -88,11 +124,12 @@ profile process; it does not supply universal company gates.
 
 ## Update boundary
 
-The shared system checks only a validated semantic-version release. Its monthly check
-runs on the first calendar day at 10:00 AM using the offset-aware worker-local time
-explicitly supplied by the approved scheduler adapter; it never guesses from the host
-machine clock. An automatic update is allowed only when explicitly active, idle,
-released, owner-approved, hash-verified and backward-compatible. Every path journals,
+The shared system checks only a validated semantic-version release. A native schedule
+is off by default and follows `UPDATE-SCHEDULER.md`: the owner must explicitly choose
+weekly or monthly cadence, day, exact local time, confirmed IANA/native host time zone
+and rollout lane. An automatic update is allowed only when explicitly active, due,
+idle, released, owner-approved, hash-verified and backward-compatible; general rollout
+also requires exact-release Daily Email Triage pilot approval. Every path journals,
 backs up, validates and reports. Interrupted work fails closed until recovery verifies
 the applied release or restores a trusted tagged source.
 Company, role, user state and user settings are never managed by the release.

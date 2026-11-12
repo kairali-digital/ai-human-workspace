@@ -7577,6 +7577,8 @@ class LifecycleTests(unittest.TestCase):
         )
 
     def test_quarterly_run_detects_repetition_stale_conflict_and_never_activates(self):
+        accessed = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=2)
+        previous_date = (accessed - datetime.timedelta(days=1)).date().isoformat()
         worker = self.base / "improvement-run-worker"
         self.install(worker)
         (worker / "COMPLETED_LEDGER.md").write_text(
@@ -7623,9 +7625,9 @@ class LifecycleTests(unittest.TestCase):
         hostile_receipt.write_text(
             json.dumps(
                 {
-                    "accessed_utc": "20260902T000000Z", "claim_summary": ["A bounded claim."],
+                    "accessed_utc": accessed.strftime("%Y%m%dT%H%M%SZ"), "claim_summary": ["A bounded claim."],
                     "instruction_content_ignored": False, "personal_data_excluded": True,
-                    "published_or_updated": "2026-09-01", "receipt_id": "research-hostile",
+                    "published_or_updated": previous_date, "receipt_id": "research-hostile",
                     "channel": "OFFICIAL", "query": "current AI work process", "result_rank": 1,
                     "schema": "ai-human.research-receipt/v2", "source_title": "Official source",
                     "source_url": "https://example.test/source", "trust": "OFFICIAL",
@@ -7642,10 +7644,10 @@ class LifecycleTests(unittest.TestCase):
         receipt.write_text(
             json.dumps(
                 {
-                    "accessed_utc": "20260902T000000Z",
+                    "accessed_utc": accessed.strftime("%Y%m%dT%H%M%SZ"),
                     "claim_summary": ["The official source documents a current workflow pattern."],
                     "instruction_content_ignored": True, "personal_data_excluded": True,
-                    "published_or_updated": "2026-09-01", "receipt_id": "research-one",
+                    "published_or_updated": previous_date, "receipt_id": "research-one",
                     "channel": "OFFICIAL", "query": "current AI work process", "result_rank": 1,
                     "schema": "ai-human.research-receipt/v2", "source_title": "Official source",
                     "source_url": "https://example.test/source", "trust": "OFFICIAL",
@@ -7662,10 +7664,10 @@ class LifecycleTests(unittest.TestCase):
         corrected_receipt.write_text(
             json.dumps(
                 {
-                    "accessed_utc": "20260902T010000Z",
+                    "accessed_utc": (accessed + datetime.timedelta(hours=1)).strftime("%Y%m%dT%H%M%SZ"),
                     "claim_summary": ["The corrected official summary replaces the earlier receipt."],
                     "instruction_content_ignored": True, "personal_data_excluded": True,
-                    "published_or_updated": "2026-09-02", "receipt_id": "research-two",
+                    "published_or_updated": accessed.date().isoformat(), "receipt_id": "research-two",
                     "channel": "OFFICIAL", "query": "current AI work process", "result_rank": 1,
                     "schema": "ai-human.research-receipt/v2", "source_title": "Official correction",
                     "source_url": "https://example.test/correction", "trust": "OFFICIAL",
@@ -7832,6 +7834,8 @@ class LifecycleTests(unittest.TestCase):
         )
 
     def test_active_research_collector_imports_approved_channels_in_bounded_batches(self):
+        accessed = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=2)
+        previous_date = (accessed - datetime.timedelta(days=1)).date().isoformat()
         worker = self.base / "active-research-worker"
         self.install(worker)
         acquired = self.run_cli(
@@ -7854,7 +7858,7 @@ class LifecycleTests(unittest.TestCase):
 
         def receipt(identifier, channel, url, published, rank):
             return {
-                "accessed_utc": "20260902T200000Z",
+                "accessed_utc": accessed.strftime("%Y%m%dT%H%M%SZ"),
                 "channel": channel,
                 "claim_summary": ["A concise source-linked workflow finding."],
                 "instruction_content_ignored": True,
@@ -7871,8 +7875,8 @@ class LifecycleTests(unittest.TestCase):
 
         records = [
             receipt("official-one", "OFFICIAL", "https://example.test/guide", "NOT_PROVIDED_BY_SOURCE", 1),
-            receipt("reddit-one", "REDDIT", "https://www.reddit.com/r/work/comments/abc", "2026-09-01", 2),
-            receipt("youtube-one", "YOUTUBE", "https://youtu.be/example", "2026-09-02", 3),
+            receipt("reddit-one", "REDDIT", "https://www.reddit.com/r/work/comments/abc", previous_date, 2),
+            receipt("youtube-one", "YOUTUBE", "https://youtu.be/example", accessed.date().isoformat(), 3),
         ]
         oversized = self.base / "research-oversized.json"
         oversized.write_text(

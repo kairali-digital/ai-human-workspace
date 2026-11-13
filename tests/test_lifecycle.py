@@ -97,6 +97,9 @@ def approve_test_release(release, automatic=False):
     manifest["approval_status"] = "APPROVED_BY_OWNER"
     manifest["release_status"] = "RELEASED"
     manifest["automatic_update_eligible"] = automatic
+    # Shared lifecycle fixtures exercise the common runtime on every CI host.
+    manifest["schema"] = "ai-human.workspace-release/v1"
+    manifest.pop("supported_platforms", None)
     manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     component_path = release / "component-manifest.json"
     components = json.loads(component_path.read_text(encoding="utf-8"))
@@ -687,7 +690,7 @@ class LifecycleTests(unittest.TestCase):
         new_release = self.base / "map-release-next"
         shutil.copytree(self.release, new_release)
         refresh_release(new_release, "9.0.0")
-        self.run_cli("update", worker, "--source", new_release, "--at-checkpoint")
+        self.run_cli("update", worker, "--source", new_release, "--source-manifest-sha256", sha256(new_release / "release-manifest.json"), "--at-checkpoint")
         self.assertEqual(before, sha256(worker / AI_HUMAN.WORK_MAP_PATH))
         self.run_cli("validate", worker)
 
@@ -872,7 +875,7 @@ class LifecycleTests(unittest.TestCase):
         AI_HUMAN.atomic_json(manifest_path, original_manifest)
         self.run_cli("rollback", worker, "--version", "2.3.0", "--source", older,
                      "--source-manifest-sha256", sha256(older / "release-manifest.json"))
-        self.run_cli("update", worker, "--source", self.release, "--at-checkpoint")
+        self.run_cli("update", worker, "--source", self.release, "--source-manifest-sha256", sha256(self.release / "release-manifest.json"), "--at-checkpoint")
         self.run_cli("restore-downgrade", worker)
         self.assertEqual(original_map, (worker / AI_HUMAN.WORK_MAP_PATH).read_bytes())
         self.run_cli("validate", worker)
@@ -1477,6 +1480,14 @@ class LifecycleTests(unittest.TestCase):
 
     def build_release_proof(self, release=None):
         release = release or self.release
+        # Release validation exercises the shipping platform declaration.
+        manifest_path = release / "release-manifest.json"
+        manifest = AI_HUMAN.read_json(manifest_path)
+        product = AI_HUMAN.read_json(ROOT / "release-manifest.json")
+        manifest["schema"] = product["schema"]
+        if "supported_platforms" in product:
+            manifest["supported_platforms"] = product["supported_platforms"]
+        AI_HUMAN.atomic_json(manifest_path, manifest)
         result = subprocess.run(
             [sys.executable, str(ROOT / "scripts/build_release.py"), str(release)],
             cwd=ROOT, text=True, capture_output=True, check=False,
@@ -2004,7 +2015,7 @@ class LifecycleTests(unittest.TestCase):
             AI_HUMAN.parse_local(None)
         result = self.run_cli(
             "automatic-update", self.base / "missing-worker-local-time",
-            "--source", self.release, expect=2,
+            "--source", self.release, "--source-manifest-sha256", sha256(self.release / "release-manifest.json"), expect=2,
         )
         self.assertIn("--now-local", result.stderr)
 
@@ -2102,7 +2113,7 @@ class LifecycleTests(unittest.TestCase):
         new_release = self.base / "proof-new-release"
         shutil.copytree(self.release, new_release)
         refresh_release(new_release, TEST_UPGRADE_VERSION)
-        self.run_cli("update", worker, "--source", new_release, "--at-checkpoint")
+        self.run_cli("update", worker, "--source", new_release, "--source-manifest-sha256", sha256(new_release / "release-manifest.json"), "--at-checkpoint")
         receipt = AI_HUMAN.read_json(worker / ".ai-human/update-receipt.json")
         AI_HUMAN.verify_tree_proof(Path(receipt["backup"]), receipt["backup_proof"])
         AI_HUMAN.verify_tree_proof(worker, receipt["installed_payload_proof"], targets=installed["managed_targets"])
@@ -2136,7 +2147,7 @@ class LifecycleTests(unittest.TestCase):
         next_release = self.base / "snapshot-upgrade"
         shutil.copytree(self.release, next_release)
         refresh_release(next_release, TEST_UPGRADE_VERSION)
-        self.run_cli("update", worker, "--source", next_release)
+        self.run_cli("update", worker, "--source", next_release, "--source-manifest-sha256", sha256(next_release / "release-manifest.json"))
         receipt = AI_HUMAN.read_json(worker / ".ai-human/update-receipt.json")
         backup = Path(receipt["backup"])
         AI_HUMAN.verify_tree_proof(backup, receipt["backup_proof"])
@@ -2159,13 +2170,83 @@ class LifecycleTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             AI_HUMAN.verify_tree_proof(backup, receipt["backup_proof"])
 
+    def test_forward_update_refuses_unapproved_local_sources_before_writes(self):
+        worker = self.base / "forward-trust"
+        self.install(worker)
+        source = self.base / "next-release"
+        shutil.copytree(self.release, source)
+        refresh_release(source, TEST_UPGRADE_VERSION)
+        digest = sha256(source / "release-manifest.json")
+        before = AI_HUMAN.tree_proof(worker)
+        command = ("update", worker, "--source", source)
+        for options in [(), ("--source-manifest-sha256", "0" * 64)]:
+            rejected = self.run_cli(*command, *options, expect=1)
+            self.assertIn("independently approved", rejected.stderr)
+            self.assertEqual(before, AI_HUMAN.tree_proof(worker))
+        self.run_cli(*command, "--source-manifest-sha256", digest)
+        self.assertEqual(AI_HUMAN.install_metadata(worker)["installed_version"], TEST_UPGRADE_VERSION)
+
+    def test_reusable_edition_refuses_remote_release_and_schedule_before_external_io(self):
+        records = AI_HUMAN.read_json(ROOT / "portal/content/mac-edition-integrity.json")
+        archive_name, = [name for name in records if "REUSABLE" in name]
+        archive = ROOT / "portal/public/downloads" / archive_name
+        with zipfile.ZipFile(archive) as package:
+            path, = [name for name in package.namelist() if name.endswith("/workspace/scripts/ai_human.py")]
+            runtime_path = self.base / "reusable.py"
+            runtime_path.write_bytes(package.read(path))
+        spec = importlib.util.spec_from_file_location("packaged_reusable", runtime_path)
+        runtime = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(runtime)
+        self.assertEqual(runtime.DEFAULT_REPOSITORY, records[archive_name]["repository"])
+        worker = self.base / "company-test-worker"
+        self.install(worker)
+        args = SimpleNamespace(worker=worker, action="RESUME")
+        with mock.patch.object(runtime.urllib.request, "urlopen") as network:
+            for repo in (runtime.DEFAULT_REPOSITORY, AI_HUMAN.DEFAULT_REPOSITORY, "other/example"):
+                for version in (None, "2.4.0"):
+                    with self.assertRaisesRegex(ValueError, "verified local release source"):
+                        runtime.download_release(repo, version)
+            for operation in (lambda: runtime.update_schedule_configure(args),
+                              lambda: runtime.update_schedule_control(args),
+                              lambda: runtime.update_schedule_tick_internal(worker, "unused", "unused")):
+                with self.assertRaisesRegex(ValueError, "verified local release source"):
+                    operation()
+            with self.assertRaisesRegex(ValueError, "pinned release repository"):
+                AI_HUMAN.github_release("other/example")
+            network.assert_not_called()
+
+    def test_platform_scoped_edition_integrity_and_host_selection(self):
+        records = AI_HUMAN.read_json(ROOT / "portal/content/mac-edition-integrity.json")
+        self.assertEqual(len(records), 2)
+        observed = set()
+        for name, record in records.items():
+            archive = ROOT / "portal/public/downloads" / name
+            self.assertEqual(sha256(archive), record["archive_sha256"])
+            with zipfile.ZipFile(archive) as package:
+                member, = [p for p in package.namelist() if p.endswith("/workspace/release-manifest.json")]
+                raw = package.read(member)
+            self.assertEqual(hashlib.sha256(raw).hexdigest(), record["manifest_sha256"])
+            manifest = json.loads(raw)
+            self.assertEqual(manifest["repository"], record["repository"])
+            observed.add(record["repository"])
+            self.assertEqual(manifest["schema"], "ai-human.workspace-release/platform-v2")
+            for host in ("darwin", "win32", "linux"):
+                with self.subTest(edition=name, host=host), mock.patch.object(sys, "platform", host):
+                    if host == "darwin":
+                        AI_HUMAN.require_release_platform(manifest)
+                    else:
+                        with self.assertRaisesRegex(ValueError, "macOS only"):
+                            AI_HUMAN.require_release_platform(manifest)
+                    AI_HUMAN.require_release_platform({"schema": "ai-human.workspace-release/v1"})
+        self.assertEqual(observed, {"standalone-local/ai-human-workspace", "kairali-digital/ai-human-workspace"})
+
     def test_local_rollback_and_recovery_require_matching_edition_and_digest(self):
         worker = self.base / "edition-worker"
         self.install(worker)
         newer = self.base / "new-release"
         shutil.copytree(self.release, newer)
         refresh_release(newer, TEST_UPGRADE_VERSION)
-        self.run_cli("update", worker, "--source", newer)
+        self.run_cli("update", worker, "--source", newer, "--source-manifest-sha256", sha256(newer / "release-manifest.json"))
         wrong = self.base / "different-edition"
         shutil.copytree(self.release, wrong)
         manifest_file = wrong / "release-manifest.json"
@@ -2755,7 +2836,7 @@ class LifecycleTests(unittest.TestCase):
             for path in (worker / ".ai-human/governor").rglob("*.json")
         }
         refresh_release(self.release, TEST_UPGRADE_VERSION)
-        updated = self.run_cli("update", worker, "--source", self.release, "--at-checkpoint")
+        updated = self.run_cli("update", worker, "--source", self.release, "--source-manifest-sha256", sha256(self.release / "release-manifest.json"), "--at-checkpoint")
         self.assertIn("AI-HUMAN UPDATE: PASS", updated.stdout)
         after = {
             path.relative_to(worker).as_posix(): sha256(path)
@@ -3513,7 +3594,7 @@ class LifecycleTests(unittest.TestCase):
         refresh_release(new_release, TEST_UPGRADE_VERSION)
         self.assertIn(
             "AI-HUMAN UPDATE: PASS",
-            self.run_cli("update", worker, "--source", new_release, "--at-checkpoint").stdout,
+            self.run_cli("update", worker, "--source", new_release, "--source-manifest-sha256", sha256(new_release / "release-manifest.json"), "--at-checkpoint").stdout,
         )
         after_update = {
             path.relative_to(worker).as_posix(): sha256(path)
@@ -5367,7 +5448,7 @@ class LifecycleTests(unittest.TestCase):
         self.assertIn(
             "AI-HUMAN UPDATE: PASS",
             self.run_cli(
-                "update", worker["path"], "--source", new_release, "--at-checkpoint"
+                "update", worker["path"], "--source", new_release, "--source-manifest-sha256", sha256(new_release / "release-manifest.json"), "--at-checkpoint"
             ).stdout,
         )
         after_update = {
@@ -5538,7 +5619,7 @@ class LifecycleTests(unittest.TestCase):
         )
 
         before_defer_version = (worker / ".ai-human/VERSION").read_text(encoding="utf-8")
-        deferred = self.run_cli("update", worker, "--source", new_release)
+        deferred = self.run_cli("update", worker, "--source", new_release, "--source-manifest-sha256", sha256(new_release / "release-manifest.json"))
         self.assertIn("AI-HUMAN UPDATE: DEFERRED", deferred.stdout)
         self.assertEqual(
             (worker / ".ai-human/VERSION").read_text(encoding="utf-8"),
@@ -5547,7 +5628,7 @@ class LifecycleTests(unittest.TestCase):
         self.assertIn("CORE-UPDATE-" + TEST_UPGRADE_VERSION, register.read_text(encoding="utf-8"))
 
         before_update_state = state_hashes(worker)
-        updated = self.run_cli("update", worker, "--source", new_release, "--at-checkpoint")
+        updated = self.run_cli("update", worker, "--source", new_release, "--source-manifest-sha256", sha256(new_release / "release-manifest.json"), "--at-checkpoint")
         self.assertIn("AI-HUMAN UPDATE: PASS", updated.stdout)
         self.assertEqual(
             (worker / ".ai-human/VERSION").read_text(encoding="utf-8").strip(),
@@ -5590,7 +5671,7 @@ class LifecycleTests(unittest.TestCase):
             (worker / ".ai-human/system/AGENT-RULES.md").read_text(encoding="utf-8"),
         )
 
-        repeated = self.run_cli("update", worker, "--source", new_release, "--at-checkpoint")
+        repeated = self.run_cli("update", worker, "--source", new_release, "--source-manifest-sha256", sha256(new_release / "release-manifest.json"), "--at-checkpoint")
         self.assertIn("AI-HUMAN UPDATE: PASS", repeated.stdout)
         self.assertEqual(
             (worker / ".ai-human/VERSION").read_text(encoding="utf-8").strip(),
@@ -5896,7 +5977,7 @@ class LifecycleTests(unittest.TestCase):
             encoding="utf-8",
         )
         rejected = self.run_cli(
-            "update", worker, "--source", foreign, "--at-checkpoint", expect=1,
+            "update", worker, "--source", foreign, "--source-manifest-sha256", sha256(foreign / "release-manifest.json"), "--at-checkpoint", expect=1,
         )
         self.assertIn("pinned installed repository", rejected.stderr)
         self.assertEqual(sha256(worker / ".ai-human/bin/ai_human.py"), before_runtime)
@@ -6433,6 +6514,12 @@ class LifecycleTests(unittest.TestCase):
                 AI_HUMAN.safe_extract(archive, extracted)
                 source = extracted / edition_root / "workspace"
                 worker = self.base / worker_name
+                if sys.platform != "darwin" and manifest.get("supported_platforms") == ["darwin"]:
+                    rejection = self.run_cli("install", worker, "--source", source,
+                                             *self.required_install_arguments(), expect=1)
+                    self.assertIn("macOS only", rejection.stderr)
+                    self.assertFalse((worker / ".ai-human").exists())
+                    continue
                 if manifest["release_status"] == "LOCAL_BUILD_ONLY":
                     rejected = self.run_cli(
                         "install", worker, "--source", source,
@@ -6869,7 +6956,7 @@ class LifecycleTests(unittest.TestCase):
             json.dumps(migration_manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"
         )
         result = self.run_cli(
-            "automatic-update", worker, "--source", migration_release,
+            "automatic-update", worker, "--source", migration_release, "--source-manifest-sha256", sha256(migration_release / "release-manifest.json"),
             "--now-local", "2026-09-01T10:00:00+05:30",
         )
         self.assertIn("AUTOMATIC UPDATE: DEFERRED", result.stdout)
@@ -7193,7 +7280,7 @@ class LifecycleTests(unittest.TestCase):
         self.install(idle, automatic=True, worker_id="email-pilot-001")
         before_state = state_hashes(idle)
         updated = self.run_cli(
-            "automatic-update", idle, "--source", new_release,
+            "automatic-update", idle, "--source", new_release, "--source-manifest-sha256", sha256(new_release / "release-manifest.json"),
             "--now-local", "2026-09-01T10:00:00+05:30",
         )
         self.assertIn("AUTOMATIC UPDATE: UPDATED", updated.stdout)
@@ -7207,7 +7294,7 @@ class LifecycleTests(unittest.TestCase):
         self.assertEqual(updated_metadata["supervisor_id"], "Supervisor One")
         self.assertEqual(updated_metadata["automatic_updates"], "ACTIVE")
         repeated = self.run_cli(
-            "automatic-update", idle, "--source", new_release,
+            "automatic-update", idle, "--source", new_release, "--source-manifest-sha256", sha256(new_release / "release-manifest.json"),
             "--now-local", "2026-09-01T10:01:00+05:30",
         )
         self.assertIn("AUTOMATIC UPDATE: CURRENT", repeated.stdout)
@@ -7219,7 +7306,7 @@ class LifecycleTests(unittest.TestCase):
         (busy / "OPEN_REGISTER.md").write_text("# OPEN REGISTER\n\n| ID | Task |\n|---|---|\n| EMAIL-1 | triage |\n", encoding="utf-8")
         (busy / "TODAY.md").write_text("# TODAY\n\n| ID | Task |\n|---|---|\n| EMAIL-1 | triage |\n", encoding="utf-8")
         deferred = self.run_cli(
-            "automatic-update", busy, "--source", new_release,
+            "automatic-update", busy, "--source", new_release, "--source-manifest-sha256", sha256(new_release / "release-manifest.json"),
             "--now-local", "2026-09-01T10:00:00+05:30",
         )
         self.assertIn("AUTOMATIC UPDATE: DEFERRED", deferred.stdout)
@@ -7242,7 +7329,7 @@ class LifecycleTests(unittest.TestCase):
         before = preserved_work_hashes(suspended)
 
         direct = self.run_cli(
-            "automatic-update", suspended, "--source", new_release,
+            "automatic-update", suspended, "--source", new_release, "--source-manifest-sha256", sha256(new_release / "release-manifest.json"),
             "--now-local", "2026-09-01T10:00:00+05:30",
         )
         self.assertIn("AUTOMATIC UPDATE: DEFERRED", direct.stdout)
@@ -7272,7 +7359,7 @@ class LifecycleTests(unittest.TestCase):
         state = self.base / "suspended-fleet-state.json"
         fleet_result = self.run_cli(
             "fleet-update", "--fleet", fleet, "--fleet-state", state,
-            "--source", new_release, "--now-local", "2026-09-01T10:00:00+05:30",
+            "--source", new_release, "--source-manifest-sha256", sha256(new_release / "release-manifest.json"), "--now-local", "2026-09-01T10:00:00+05:30",
         )
         self.assertIn("suspended-001: DEFERRED — SYSTEM_SUSPENDED", fleet_result.stdout)
         self.assertIn("Daily Email Triage pilot: NOT_VERIFIED", fleet_result.stdout)
@@ -7316,7 +7403,7 @@ class LifecycleTests(unittest.TestCase):
         state = self.base / "fleet-state.json"
         result = self.run_cli(
             "fleet-update", "--fleet", fleet, "--fleet-state", state,
-            "--source", new_release, "--now-local", "2026-09-01T10:00:00+05:30",
+            "--source", new_release, "--source-manifest-sha256", sha256(new_release / "release-manifest.json"), "--now-local", "2026-09-01T10:00:00+05:30",
         )
         self.assertIn("Daily Email Triage pilot: PASS", result.stdout)
         self.assertIn("general-001: MISMATCH", result.stdout)
@@ -7454,7 +7541,7 @@ class LifecycleTests(unittest.TestCase):
             self.skipTest("symbolic links are unavailable: " + str(error))
 
         result = self.run_cli(
-            "update", worker, "--source", new_release, "--at-checkpoint", expect=1,
+            "update", worker, "--source", new_release, "--source-manifest-sha256", sha256(new_release / "release-manifest.json"), "--at-checkpoint", expect=1,
         )
         self.assertIn("symbolic link", result.stderr)
         self.assertEqual((outside_system / "AGENT-RULES.md").read_bytes(), before)
@@ -8126,7 +8213,7 @@ class LifecycleTests(unittest.TestCase):
         rules = new_release / "core/AGENT-RULES.md"
         rules.write_text(rules.read_text(encoding="utf-8") + "\nImprovement update marker.\n", encoding="utf-8")
         refresh_release(new_release, "9.0.0")
-        self.run_cli("update", worker, "--source", new_release, "--at-checkpoint")
+        self.run_cli("update", worker, "--source", new_release, "--source-manifest-sha256", sha256(new_release / "release-manifest.json"), "--at-checkpoint")
         self.assertEqual(sha256(worker / ".ai-human/improvement/config.json"), before)
         self.assertEqual(self.run_cli("validate", worker).returncode, 0)
 
@@ -8254,7 +8341,7 @@ class LifecycleTests(unittest.TestCase):
             json.dumps(metadata, indent=2, sort_keys=True) + "\n", encoding="utf-8"
         )
         self.assertEqual(self.run_cli("validate", worker).returncode, 0)
-        updated = self.run_cli("update", worker, "--source", self.release, "--at-checkpoint")
+        updated = self.run_cli("update", worker, "--source", self.release, "--source-manifest-sha256", sha256(self.release / "release-manifest.json"), "--at-checkpoint")
         self.assertIn("AI-HUMAN UPDATE: PASS", updated.stdout)
         self.assertEqual(self.run_cli("validate", worker).returncode, 0)
 
@@ -8600,7 +8687,7 @@ class LifecycleTests(unittest.TestCase):
         )
         self.run_cli(
             "fleet-update", "--fleet", fleet, "--fleet-state", state_path,
-            "--source", self.release, "--now-local", "2026-10-01T10:00:00+05:30",
+            "--source", self.release, "--source-manifest-sha256", sha256(self.release / "release-manifest.json"), "--now-local", "2026-10-01T10:00:00+05:30",
         )
         state = json.loads(state_path.read_text(encoding="utf-8"))
         self.assertEqual(state["pilot_status"], "NOT_VERIFIED")
@@ -9975,7 +10062,7 @@ class LifecycleTests(unittest.TestCase):
         upgrade = self.base / "h53-upgrade"
         shutil.copytree(self.release, upgrade)
         refresh_release(upgrade, TEST_UPGRADE_VERSION)
-        self.run_cli("update", worker, "--source", upgrade, "--at-checkpoint")
+        self.run_cli("update", worker, "--source", upgrade, "--source-manifest-sha256", sha256(upgrade / "release-manifest.json"), "--at-checkpoint")
         self.assertEqual(sha256(worker / AI_HUMAN.MEMORY_STORE_PATH), before)
         self.run_cli("prepare-downgrade", worker, "--target-version", "2.3.0")
         self.assertFalse((worker / AI_HUMAN.MEMORY_ROOT).exists())
@@ -10023,7 +10110,7 @@ class LifecycleTests(unittest.TestCase):
         self.assertIn("v2.5.0 or later", denied.stderr)
         self.assertEqual(before, {p.relative_to(worker).as_posix(): sha256(p) for p in worker.rglob("*") if p.is_file()})
         self.assertEqual(memory_before, AI_HUMAN.tree_sha256(archive / "memory"))
-        self.run_cli("update", worker, "--source", self.release, "--at-checkpoint")
+        self.run_cli("update", worker, "--source", self.release, "--source-manifest-sha256", sha256(self.release / "release-manifest.json"), "--at-checkpoint")
         self.run_cli("restore-downgrade", worker)
         self.assertEqual(memory_before, AI_HUMAN.tree_sha256(worker / AI_HUMAN.MEMORY_ROOT))
         self.assertEqual(compatible_before, AI_HUMAN.tree_sha256(worker / AI_HUMAN.IMPROVEMENT_ROOT))
@@ -10037,7 +10124,7 @@ class LifecycleTests(unittest.TestCase):
                 upgraded = self.base / ("updated-checkpoint-" + active)
                 shutil.copytree(self.release, upgraded)
                 refresh_release(upgraded, TEST_UPGRADE_VERSION)
-                self.run_cli("update", worker, "--source", upgraded)
+                self.run_cli("update", worker, "--source", upgraded, "--source-manifest-sha256", sha256(upgraded / "release-manifest.json"))
                 if active == "task":
                     self.run_cli("task-start", worker, "--task-id", "ROLLBACK-GUARD-001",
                                  "--title", "Verify rollback checkpoint refusal")
@@ -10168,7 +10255,7 @@ class LifecycleTests(unittest.TestCase):
         self.assertEqual(before, {p.relative_to(worker).as_posix(): sha256(p) for p in worker.rglob("*") if p.is_file()})
         self.assertFalse(AI_HUMAN.downgrade_transaction_path(worker).exists())
         self.assertFalse((worker / ".ai-human/downgrade-exports").exists())
-        self.run_cli("update", worker, "--source", current, "--at-checkpoint")
+        self.run_cli("update", worker, "--source", current, "--source-manifest-sha256", sha256(current / "release-manifest.json"), "--at-checkpoint")
         self.run_cli("prepare-downgrade", worker, "--target-version", "2.4.0")
         self.run_cli("restore-downgrade", worker)
         self.run_cli("validate", worker)

@@ -98,7 +98,7 @@
       "target": ".ai-human/VERSION"
     },
     {
-      "sha256": "ba6e0b7da3c8838594a1185100e3a4eabcfd86700ceab8ededcba63887ae500e",
+      "sha256": "52a731232f7ee81300aa628464de03cf6bcbb7c32525f98bc224d0ec9ceddcf9",
       "source": "scripts/ai_human.py",
       "target": ".ai-human/bin/ai_human.py"
     }
@@ -146,6 +146,9 @@
   ],
   "release_status": "RELEASED",
   "repository": "kairali-digital/ai-human-workspace",
-  "schema": "ai-human.workspace-release/v1",
+  "schema": "ai-human.workspace-release/platform-v2",
+  "supported_platforms": [
+    "darwin"
+  ],
   "version": "2.5.0"
 }

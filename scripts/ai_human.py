@@ -785,7 +785,7 @@ def atomic_json_sha256(value):
     ).hexdigest()
 
 
-def atomic_copy_file(source, target):
+def atomic_copy_file(source, target, *, expected_sha256=None):
     source = Path(source)
     target = Path(target)
     target.parent.mkdir(parents=True, exist_ok=True)
@@ -797,6 +797,8 @@ def atomic_copy_file(source, target):
             shutil.copyfileobj(input_stream, output_stream)
             output_stream.flush()
             os.fsync(output_stream.fileno())
+        if expected_sha256 is not None and sha256(Path(temp_name)) != expected_sha256:
+            raise ValueError("managed file differs from approved release digest")
         os.replace(temp_name, target)
     finally:
         if os.path.exists(temp_name):
@@ -12738,14 +12740,27 @@ def release_root_from_script():
     raise ValueError("install must run from a checked-out or extracted release")
 
 
+COMMON_RELEASE_SCHEMA = "ai-human.workspace-release/v1"
+PLATFORM_RELEASE_SCHEMA = "ai-human.workspace-release/platform-v2"
+
+
+def require_release_platform(manifest):
+    schema = manifest.get("schema")
+    if schema == COMMON_RELEASE_SCHEMA and "supported_platforms" not in manifest:
+        return
+    if schema != PLATFORM_RELEASE_SCHEMA or manifest.get("supported_platforms") != ["darwin"]:
+        raise ValueError("unsupported release manifest schema or platform declaration")
+    if sys.platform != "darwin":
+        raise ValueError("this edition is for macOS only; use the common release on this platform")
+
+
 def load_release(root):
     root = Path(root).expanduser().resolve()
     manifest_path = root / "release-manifest.json"
     if not manifest_path.is_file():
         raise ValueError("release manifest missing: " + str(manifest_path))
     manifest = read_json(manifest_path)
-    if manifest.get("schema") != "ai-human.workspace-release/v1":
-        raise ValueError("unsupported release manifest schema")
+    require_release_platform(manifest)
     version_tuple(manifest.get("version", ""))
     if release_status(manifest) != RELEASED:
         raise ValueError("release is a local candidate and cannot be installed")
@@ -12908,7 +12923,7 @@ def copy_release_files(worker, release, manifest):
         source = release_file(release, record["source"])
         target = worker_target(worker, record["target"], "managed worker target")
         target.parent.mkdir(parents=True, exist_ok=True)
-        atomic_copy_file(source, target)
+        atomic_copy_file(source, target, expected_sha256=record["sha256"])
 
 
 def parse_table_rows(path):
@@ -13223,8 +13238,10 @@ def validate_worker(worker, quiet=False, allow_transaction=False):
     if mode == MODE_SUSPENDED and metadata.get("automatic_updates") != "DISABLED":
         failures.append("suspended worker must have automatic updates disabled")
     if manifest:
-        if manifest.get("schema") != "ai-human.workspace-release/v1":
-            failures.append("unsupported installed release manifest schema")
+        try:
+            require_release_platform(manifest)
+        except ValueError as exc:
+            failures.append(str(exc))
         if manifest.get("approval_status") != "APPROVED_BY_OWNER":
             failures.append("installed release is not owner-approved")
         if release_status(manifest) != RELEASED:
@@ -16169,7 +16186,7 @@ def lifecycle_manifest_digest(manifest):
 
 def verify_lifecycle_source(release, manifest, repository, known_digest, args):
     if manifest.get("repository") != repository:
-        raise ValueError("source repository differs from the worker's pinned repository")
+        raise ValueError("source repository differs from the worker's pinned installed repository")
     if known_digest and lifecycle_manifest_digest(manifest) != known_digest:
         raise ValueError("source manifest differs from the recorded release digest")
     approved = getattr(args, "source_manifest_sha256", None)
@@ -16297,6 +16314,7 @@ def apply_update(
 ):
     worker = Path(worker).resolve()
     release = Path(release).resolve()
+    require_release_platform(manifest)
     require_no_autonomy_effect(worker, "managed-core update")
     worker_ok, worker_failures = validate_worker(worker, quiet=True)
     if not worker_ok:
@@ -16456,18 +16474,18 @@ def safe_extract(archive, destination):
                 shutil.copyfileobj(source, output)
 
 
-def release_publisher(repository):
-    return (
-        DEFAULT_RELEASE_PUBLISHER
-        if repository == DEFAULT_REPOSITORY
-        else repository.split("/", 1)[0]
-    )
+def require_remote_release_source(repository):
+    if DEFAULT_REPOSITORY == "standalone-local/ai-human-workspace":
+        raise ValueError("this reusable edition requires a verified local release source")
+    if repository != DEFAULT_REPOSITORY:
+        raise ValueError("remote updates require the pinned release repository")
 
 
 def github_release(repository, requested_version=None, *, require_immutable=False):
     if not isinstance(repository, str) or not GITHUB_REPOSITORY.fullmatch(repository):
         raise ValueError("release repository must be an exact GitHub owner/name")
-    expected_owner = release_publisher(repository)
+    require_remote_release_source(repository)
+    expected_owner = DEFAULT_RELEASE_PUBLISHER
     endpoint = "/releases/latest"
     if requested_version is not None:
         version_tuple(requested_version)
@@ -16544,6 +16562,12 @@ def download_release(repository, requested_version=None, *, require_immutable=Fa
     return temp, release, manifest
 
 
+def pinned_local_update_source(args, repository):
+    release, manifest = load_release(args.source)
+    verify_lifecycle_source(release, manifest, repository, None, args)
+    return release, manifest
+
+
 def update(args):
     worker = safe_worker(args.worker)
     if args.latest:
@@ -16556,7 +16580,7 @@ def update(args):
     else:
         if not args.source:
             raise ValueError("provide --source or --latest")
-        release, manifest = load_release(args.source)
+        release, manifest = pinned_local_update_source(args, install_metadata(worker)["repository"])
         apply_update(worker, release, manifest, args.at_checkpoint)
 
 
@@ -17476,7 +17500,7 @@ def automatic_update(args):
     else:
         if not args.source:
             raise ValueError("provide --source or --latest")
-        release, manifest = load_release(args.source)
+        release, manifest = pinned_local_update_source(args, install_metadata(worker)["repository"])
     try:
         report = run_automatic_update(worker, release, manifest, moment)
     finally:
@@ -18302,6 +18326,7 @@ def update_schedule_legacy_disable(args):
 
 def update_schedule_configure(args):
     worker = safe_worker(args.worker)
+    require_remote_release_source(install_metadata(worker)["repository"])
     require_update_schedule_idle(worker)
     existing = update_schedule_config(worker)
     if args.command == "update-schedule-edit" and (
@@ -18456,6 +18481,8 @@ def update_schedule_configure(args):
 
 def update_schedule_control(args):
     worker = safe_worker(args.worker)
+    if args.action == "RESUME":
+        require_remote_release_source(install_metadata(worker)["repository"])
     require_update_schedule_idle(worker)
     config = update_schedule_config(worker, required=True)
     if config["status"] == "DISABLED":
@@ -18871,6 +18898,7 @@ def pilot_approval_allows(worker, manifest):
 
 
 def update_schedule_tick_internal(worker, schedule_id, expected_config_hash, force_retry=False, now_local=None):
+    require_remote_release_source(install_metadata(worker)["repository"])
     config = update_schedule_config(worker, required=True)
     if config.get("status") != "ENABLED":
         return {"status": "NOT_DUE", "reason": "SCHEDULE_NOT_ACTIVE"}
@@ -19073,7 +19101,7 @@ def fleet_update(args):
     if args.latest:
         temporary, release, manifest = download_release(args.repository)
     else:
-        release, manifest = load_release(args.source)
+        release, manifest = pinned_local_update_source(args, args.repository)
     if manifest.get("repository") != DEFAULT_REPOSITORY:
         if temporary:
             temporary.cleanup()
@@ -19819,8 +19847,10 @@ def parser():
         item.set_defaults(handler=handler)
     update_p = sub.add_parser("update")
     update_p.add_argument("worker")
-    update_p.add_argument("--source")
-    update_p.add_argument("--latest", action="store_true")
+    update_source = update_p.add_mutually_exclusive_group(required=True)
+    update_source.add_argument("--source")
+    update_source.add_argument("--latest", action="store_true")
+    update_p.add_argument("--source-manifest-sha256", help="Approved SHA-256 of this edition manifest for --source")
     update_p.add_argument("--at-checkpoint", action="store_true")
     update_p.set_defaults(handler=update)
     rollback_p = sub.add_parser("rollback")
@@ -20168,6 +20198,7 @@ def parser():
     automatic_source = automatic_p.add_mutually_exclusive_group(required=True)
     automatic_source.add_argument("--source")
     automatic_source.add_argument("--latest", action="store_true")
+    automatic_p.add_argument("--source-manifest-sha256", help="Approved SHA-256 of this edition manifest for --source")
     automatic_p.add_argument(
         "--now-local", required=True,
         help="offset-aware worker-local date-time supplied by the approved scheduler",
@@ -20179,6 +20210,7 @@ def parser():
     fleet_source = fleet_p.add_mutually_exclusive_group(required=True)
     fleet_source.add_argument("--source")
     fleet_source.add_argument("--latest", action="store_true")
+    fleet_p.add_argument("--source-manifest-sha256", help="Approved SHA-256 of this edition manifest for --source")
     fleet_p.add_argument("--repository", default=DEFAULT_REPOSITORY)
     fleet_p.add_argument(
         "--now-local", required=True,
@@ -20626,6 +20658,18 @@ def main():
     try:
         if args.command == "install" and not 1 <= args.batch_cap <= BATCH_CAP:
             raise ValueError("batch cap must be between 1 and " + str(BATCH_CAP))
+        if args.command in {"update", "automatic-update", "fleet-update"}:
+            if args.source:
+                # Reject an unapproved edition before even opening the worker lock.
+                # The handler rechecks under the lock before applying the source.
+                root = Path(args.source).expanduser().resolve()
+                manifest = read_json(release_file(root, "release-manifest.json"))
+                require_release_platform(manifest)
+                repository = (args.repository if args.command == "fleet-update"
+                              else install_metadata(safe_worker(args.worker))["repository"])
+                verify_lifecycle_source(root, manifest, repository, None, args)
+            elif args.source_manifest_sha256 is not None:
+                raise ValueError("--source-manifest-sha256 requires --source")
         operation = contextlib.nullcontext()
         worker = None
         if hasattr(args, "worker") and args.command != "install":

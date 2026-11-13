@@ -4,6 +4,8 @@ Mac users can use this version after the owner issues the matching release notic
 
 On the download page, select your edition and the version labeled for your computer. Open the existing worker and ask its Setup Helper to compare the signed v2.5.0 source commit and release checksums with the notice. Ask Setup Helper to match the employee or reusable edition ZIP to your installed worker, check the ZIP against the approved hash, and use the updater inside that ZIP’s workspace folder. Ask the helper to show the installed version, a passing validation result and the recovery location after the update.
 
+Setup Helper reads the edition ZIP and manifest checksums from the approved signed commit, verifies the ZIP before running it, and supplies the approved manifest checksum to the updater. The Mac edition requires macOS.
+
 ## Included optional capabilities
 
 - Adaptive work planning keeps the hard ceiling at 25 actions and lowers it for risk,

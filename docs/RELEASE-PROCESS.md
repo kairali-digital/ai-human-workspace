@@ -50,3 +50,5 @@ The portal application dependency graph excludes the Vercel deployment CLI and r
 from the shipped application graph.
 
 Only the repository owner or delegated maintainer publishes a release.
+
+For the Mac-only v2.5.0 release, verify that the common latest release is v2.4.0 before publication. Set GitHub’s make_latest field to the string false when creating the Mac release. Read back the version tag and the common latest endpoint. Both must show their intended versions before enabling the Mac download.

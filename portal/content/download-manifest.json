@@ -73,12 +73,12 @@
     },
     {
       "name": "AI-HUMAN-v250-REUSABLE-EDITION-PUBLIC-KIT.zip",
-      "sha256": "d7fc6279af4b38f28d8dacdd1bf53f5765bd98e228e1596c38501252c5a86efd",
-      "size": 265578
+      "sha256": "1b79aea3421a91772ff870b703cb32f9f38a3048d1c9c386367b72cacc15cfa2",
+      "size": 266401
     },
     {
       "name": "AI-HUMAN-v250-REUSABLE-EDITION-PUBLIC-KIT.zip.sha256",
-      "sha256": "92eb1b6d17289342b17365639c7e39211b38d3d4043791f27e0925a3b2930aef",
+      "sha256": "a96f2cb651bf4272ea2a14413d80607b4f06ac3f90d2f1733f3e3f947c36d105",
       "size": 112
     },
     {
@@ -183,12 +183,12 @@
     },
     {
       "name": "KAIRALI-AI-HUMAN-v250-EMPLOYEE-EDITION-PUBLIC-KIT.zip",
-      "sha256": "5f9f7472ba02858cebe248cbc0eab7be639d816e8bf4d8f94da57aab6466fbdf",
-      "size": 25590344
+      "sha256": "f3d86a295a79f3cd3b91cfce7bef03b38a66dee216d5c0032eae1f5dd0bc6eb8",
+      "size": 25591232
     },
     {
       "name": "KAIRALI-AI-HUMAN-v250-EMPLOYEE-EDITION-PUBLIC-KIT.zip.sha256",
-      "sha256": "6eb1ddd7a653a872c6179b32824c17e565ca14a9bbbdab207d22e48ba78835c9",
+      "sha256": "1fb83fc4d790ab95f632b39334f6f34d8270b79113b3072bc9d66027f74071b5",
       "size": 120
     },
     {
@@ -223,8 +223,8 @@
     },
     {
       "name": "KAIRALI-MAC-v250-UPDATE-WORKFLOW.md",
-      "sha256": "127399ef312aaff06044ab92da185facf89330114848a97221c411e4fdbb4856",
-      "size": 7299
+      "sha256": "6b1c651f27beac3335b99e4a57a6871684f32e47c5e64caba971fbcd96c9de2a",
+      "size": 7530
     },
     {
       "name": "KAIRALI-MANAGED-UPDATE-WORKFLOW.md",

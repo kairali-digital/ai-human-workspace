@@ -150,7 +150,14 @@ pre-transaction release. A deliberate rollback also reads the named trusted rele
 mutable backup bytes cannot redefine an old version.
 
 For the first Mac v2.5 update, Setup Helper uses the updater bundled in the verified
-edition ZIP. Its timestamped backup contains a private `worker-state` folder. Its
+edition ZIP. Read the ZIP and manifest SHA-256 values from the matching row of
+`portal/content/mac-edition-integrity.json` at the independently verified signed commit.
+Verify the entire ZIP before extracting or executing its updater. Pass the signed
+row’s manifest digest as `--source-manifest-sha256` with local `update --source`.
+The same pin is required for local automatic-update and fleet-update commands.
+The reusable edition accepts verified local sources only. Remote discovery, remote rollback
+and native update scheduling require the company edition and its pinned release repository.
+Its timestamped backup contains a private `worker-state` folder. Its
 manifest names the saved top-level operating records, the confirmed Gate profile when
 present, their SHA-256 hashes, the installed version and the configured worker ID when
 available. The receipt binds the whole backup and records the post-update state digest.

@@ -189,6 +189,22 @@ def main():
         (DOWNLOADS / "KAIRALI-MAC-v250-UPDATE-WORKFLOW.md").write_bytes(file_bytes(guide))
     reusable = build_reusable()
     kairali = build_kairali()
+    if VERSION == "2.5.0":
+        editions = {}
+        for name, prefix, archive_hash in (
+            (REUSABLE_NAME, REUSABLE_ROOT, reusable),
+            (KAIRALI_NAME, KAIRALI_ROOT, kairali),
+        ):
+            with zipfile.ZipFile(DOWNLOADS / name) as archive:
+                manifest = archive.read(prefix + "/workspace/release-manifest.json")
+            editions[name] = {
+                "archive_sha256": archive_hash,
+                "manifest_sha256": digest(manifest),
+                "repository": json.loads(manifest)["repository"],
+            }
+        record = ROOT / "portal/content/mac-edition-integrity.json"
+        record.write_text(json.dumps(editions, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
     all_names = {
         "AI-HUMAN-" + VERSION_TOKEN + "-REUSABLE-EDITION-LOCAL-CANDIDATE.zip",
         "AI-HUMAN-" + VERSION_TOKEN + "-REUSABLE-EDITION-PUBLIC-KIT.zip",

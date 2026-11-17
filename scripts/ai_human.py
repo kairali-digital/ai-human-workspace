@@ -12748,10 +12748,12 @@ def require_release_platform(manifest):
     schema = manifest.get("schema")
     if schema == COMMON_RELEASE_SCHEMA and "supported_platforms" not in manifest:
         return
-    if schema != PLATFORM_RELEASE_SCHEMA or manifest.get("supported_platforms") != ["darwin"]:
+    if schema != PLATFORM_RELEASE_SCHEMA or manifest.get("supported_platforms") not in (["darwin"], ["win32"]):
         raise ValueError("unsupported release manifest schema or platform declaration")
-    if sys.platform != "darwin":
-        raise ValueError("this edition is for macOS only; use the common release on this platform")
+    supported = manifest["supported_platforms"][0]
+    if sys.platform != supported:
+        label = "macOS" if supported == "darwin" else "Windows"
+        raise ValueError("this edition is for " + label + " only; use the common release on this platform")
 
 
 def load_release(root):

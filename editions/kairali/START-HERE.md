@@ -1,3 +1,7 @@
+> PRIVATE WINDOWS 2.5 QA CANDIDATE — DO NOT INSTALL OR DISTRIBUTE.
+> This is not a Windows release approval. Installation is blocked by LOCAL_BUILD_ONLY.
+> Stable Windows remains v2.4.0. The Mac release instructions below are retained for comparison, not Windows authorization.
+
 # Kairali Employee Edition — start here
 
 This edition is only for Kairali employees and approved facilitators. It includes the

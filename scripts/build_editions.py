@@ -202,7 +202,8 @@ def main():
                 "manifest_sha256": digest(manifest),
                 "repository": json.loads(manifest)["repository"],
             }
-        record = ROOT / "portal/content/mac-edition-integrity.json"
+        platform_name = "windows" if read_json(ROOT / "release-manifest.json").get("supported_platforms") == ["win32"] else "mac"
+        record = ROOT / ("portal/content/" + platform_name + "-edition-integrity.json")
         record.write_text(json.dumps(editions, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
     all_names = {

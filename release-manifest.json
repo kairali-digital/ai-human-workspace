@@ -1,5 +1,5 @@
 {
-  "approval_status": "APPROVED_BY_OWNER",
+  "approval_status": "LOCAL_BUILD_ONLY",
   "automatic_update_eligible": false,
   "compatibility": {
     "classification": "BACKWARD_COMPATIBLE",
@@ -98,7 +98,7 @@
       "target": ".ai-human/VERSION"
     },
     {
-      "sha256": "52a731232f7ee81300aa628464de03cf6bcbb7c32525f98bc224d0ec9ceddcf9",
+      "sha256": "0b270069b660728ac45a1194e7ceb4b4b05e301c966c65a1cc355b85ef60933b",
       "source": "scripts/ai_human.py",
       "target": ".ai-human/bin/ai_human.py"
     }
@@ -144,11 +144,11 @@
     "browser sessions",
     "personal files"
   ],
-  "release_status": "RELEASED",
+  "release_status": "LOCAL_BUILD_ONLY",
   "repository": "kairali-digital/ai-human-workspace",
   "schema": "ai-human.workspace-release/platform-v2",
   "supported_platforms": [
-    "darwin"
+    "win32"
   ],
   "version": "2.5.0"
 }

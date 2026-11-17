@@ -1486,7 +1486,9 @@ class LifecycleTests(unittest.TestCase):
         product = AI_HUMAN.read_json(ROOT / "release-manifest.json")
         manifest["schema"] = product["schema"]
         if "supported_platforms" in product:
-            manifest["supported_platforms"] = product["supported_platforms"]
+            manifest["supported_platforms"] = (["darwin"] if manifest.get("release_status") == "RELEASED"
+                                               and product["supported_platforms"] == ["win32"]
+                                               else product["supported_platforms"])
         AI_HUMAN.atomic_json(manifest_path, manifest)
         result = subprocess.run(
             [sys.executable, str(ROOT / "scripts/build_release.py"), str(release)],
@@ -2187,7 +2189,9 @@ class LifecycleTests(unittest.TestCase):
         self.assertEqual(AI_HUMAN.install_metadata(worker)["installed_version"], TEST_UPGRADE_VERSION)
 
     def test_reusable_edition_refuses_remote_release_and_schedule_before_external_io(self):
-        records = AI_HUMAN.read_json(ROOT / "portal/content/mac-edition-integrity.json")
+        platform = AI_HUMAN.read_json(ROOT / "release-manifest.json")["supported_platforms"][0]
+        platform_name = "windows" if platform == "win32" else "mac"
+        records = AI_HUMAN.read_json(ROOT / ("portal/content/" + platform_name + "-edition-integrity.json"))
         archive_name, = [name for name in records if "REUSABLE" in name]
         archive = ROOT / "portal/public/downloads" / archive_name
         with zipfile.ZipFile(archive) as package:
@@ -2216,7 +2220,9 @@ class LifecycleTests(unittest.TestCase):
             network.assert_not_called()
 
     def test_platform_scoped_edition_integrity_and_host_selection(self):
-        records = AI_HUMAN.read_json(ROOT / "portal/content/mac-edition-integrity.json")
+        platform = AI_HUMAN.read_json(ROOT / "release-manifest.json")["supported_platforms"][0]
+        platform_name = "windows" if platform == "win32" else "mac"
+        records = AI_HUMAN.read_json(ROOT / ("portal/content/" + platform_name + "-edition-integrity.json"))
         self.assertEqual(len(records), 2)
         observed = set()
         for name, record in records.items():
@@ -2232,13 +2238,25 @@ class LifecycleTests(unittest.TestCase):
             self.assertEqual(manifest["schema"], "ai-human.workspace-release/platform-v2")
             for host in ("darwin", "win32", "linux"):
                 with self.subTest(edition=name, host=host), mock.patch.object(sys, "platform", host):
-                    if host == "darwin":
+                    if host == platform:
                         AI_HUMAN.require_release_platform(manifest)
                     else:
-                        with self.assertRaisesRegex(ValueError, "macOS only"):
+                        with self.assertRaisesRegex(ValueError, "(?:macOS|Windows) only"):
                             AI_HUMAN.require_release_platform(manifest)
                     AI_HUMAN.require_release_platform({"schema": "ai-human.workspace-release/v1"})
         self.assertEqual(observed, {"standalone-local/ai-human-workspace", "kairali-digital/ai-human-workspace"})
+
+    def test_platform_declaration_refuses_unknown_or_combined_hosts(self):
+        for declaration in ([], ["linux"], ["darwin", "win32"], "win32", None):
+            with self.subTest(declaration=declaration), self.assertRaises(ValueError):
+                AI_HUMAN.require_release_platform({"schema": AI_HUMAN.PLATFORM_RELEASE_SCHEMA,
+                                                  "supported_platforms": declaration})
+        for platform, label in (("darwin", "macOS"), ("win32", "Windows")):
+            manifest = {"schema": AI_HUMAN.PLATFORM_RELEASE_SCHEMA, "supported_platforms": [platform]}
+            with mock.patch.object(sys, "platform", platform):
+                AI_HUMAN.require_release_platform(manifest)
+            with mock.patch.object(sys, "platform", "linux"), self.assertRaisesRegex(ValueError, label + " only"):
+                AI_HUMAN.require_release_platform(manifest)
 
     def test_local_rollback_and_recovery_require_matching_edition_and_digest(self):
         worker = self.base / "edition-worker"
@@ -6514,10 +6532,10 @@ class LifecycleTests(unittest.TestCase):
                 AI_HUMAN.safe_extract(archive, extracted)
                 source = extracted / edition_root / "workspace"
                 worker = self.base / worker_name
-                if sys.platform != "darwin" and manifest.get("supported_platforms") == ["darwin"]:
+                if manifest.get("supported_platforms") and sys.platform not in manifest["supported_platforms"]:
                     rejection = self.run_cli("install", worker, "--source", source,
                                              *self.required_install_arguments(), expect=1)
-                    self.assertIn("macOS only", rejection.stderr)
+                    self.assertIn("only; use the common release", rejection.stderr)
                     self.assertFalse((worker / ".ai-human").exists())
                     continue
                 if manifest["release_status"] == "LOCAL_BUILD_ONLY":

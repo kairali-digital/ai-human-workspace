@@ -18,8 +18,8 @@ import zipfile
 
 
 # Update all five candidate pins together after freezing a new product commit.
-CANDIDATE = "f01912701c92dd9eb8fc3d8678fb8d412df758a9"
-TREE = "cf48da13c7a62b80b763d69f545162be87ba0858"
+CANDIDATE = "699b7c16deb1768d2a07a2e9392e1b955d8be8ed"
+TREE = "caea36e28e2226a416c135e43562d19fd15c06be"
 RUNTIME = "0b270069b660728ac45a1194e7ceb4b4b05e301c966c65a1cc355b85ef60933b"
 EXPECTED_TEST_COUNT = 248
 EXPECTED_SUITE_SHA256 = "0e207f5ad82b140d7c79b8b023b2b2b8a47f35ccfe5abf3a035999351600f685"

@@ -54,6 +54,37 @@ def inventory(root):
     return result
 
 
+def verify_built_editions(source, original_records):
+    """Permit host-specific ZIP hashes only with unchanged edition identity."""
+    record_path = source / "portal/content/windows-edition-integrity.json"
+    records = json.loads(record_path.read_text(encoding="utf-8"))
+    if not isinstance(records, dict) or records.keys() != original_records.keys():
+        raise RuntimeError("built edition record set changed")
+    proof = {}
+    for name, expected in original_records.items():
+        if Path(name).name != name or not name.endswith(".zip"):
+            raise RuntimeError("invalid edition archive name")
+        record = records[name]
+        if not isinstance(record, dict) or set(record) != {"archive_sha256", "manifest_sha256", "repository"}:
+            raise RuntimeError("invalid built edition record")
+        if any(record[key] != expected[key] for key in ("manifest_sha256", "repository")):
+            raise RuntimeError("built edition manifest identity changed")
+        archive = source / "portal/public/downloads" / name
+        if sha256(archive) != record["archive_sha256"]:
+            raise RuntimeError("built edition archive digest mismatch")
+        with zipfile.ZipFile(archive) as bundle:
+            names = [member for member in bundle.namelist() if member.endswith("/workspace/release-manifest.json")]
+            if len(names) != 1:
+                raise RuntimeError("built edition must have one workspace manifest")
+            payload = bundle.read(names[0])
+        if hashlib.sha256(payload).hexdigest() != expected["manifest_sha256"]:
+            raise RuntimeError("built edition manifest bytes changed")
+        if json.loads(payload)["repository"] != expected["repository"]:
+            raise RuntimeError("built edition repository changed")
+        proof[name] = dict(record)
+    return proof
+
+
 def ids_sha256(ids):
     """Hash ordered UTF-8 IDs, each followed by exactly one LF."""
     return hashlib.sha256(("\n".join(ids) + "\n").encode("utf-8")).hexdigest()
@@ -286,16 +317,18 @@ def main():
                 raise RuntimeError("candidate must remain unreleased")
         if json.loads((source / "release-manifest.json").read_text(encoding="utf-8")).get("automatic_update_eligible") is not False:
             raise RuntimeError("candidate cannot enable automatic updates")
+        original_records = json.loads((source / "portal/content/windows-edition-integrity.json").read_text(encoding="utf-8"))
         original = inventory(source)
         if not args.prepare_only:
             run("pinned-prerequisites", [sys.executable, "-m", "pip", "install", "--require-hashes", "-r", "requirements.txt"], source)
         run("build-test-editions", [sys.executable, "scripts/build_editions.py", "."], source)
         run("build-test-proof", [sys.executable, "scripts/build_release.py", "."], source)
+        receipt["verified_built_editions"] = verify_built_editions(source, original_records)
         built = inventory(source)
         changes = sorted(name for name in set(original) | set(built) if original.get(name) != built.get(name))
         receipt["packaging_changed_paths"] = changes
         for name in changes:
-            if name != "release-proof.json" and not (
+            if name not in ("release-proof.json", "portal/content/windows-edition-integrity.json") and not (
                 name.startswith("portal/public/downloads/") and name.endswith((".zip", ".zip.sha256"))
             ):
                 raise RuntimeError("packaging unexpectedly changed " + name)

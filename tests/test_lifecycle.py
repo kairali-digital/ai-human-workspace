@@ -2259,7 +2259,7 @@ class LifecycleTests(unittest.TestCase):
                 AI_HUMAN.require_release_platform(manifest)
 
     def test_local_rollback_and_recovery_require_matching_edition_and_digest(self):
-        worker = self.base / "edition-worker"
+        worker = (self.base / "edition-worker").resolve()
         self.install(worker)
         newer = self.base / "new-release"
         shutil.copytree(self.release, newer)
@@ -2296,7 +2296,7 @@ class LifecycleTests(unittest.TestCase):
         self.run_cli("validate", worker)
 
     def test_applied_crash_reconstructs_update_and_rollback_receipts(self):
-        worker = self.base / "receipt-recovery-worker"
+        worker = (self.base / "receipt-recovery-worker").resolve()
         self.install(worker)
         newer = self.base / "receipt-recovery-next"
         shutil.copytree(self.release, newer)
@@ -2351,7 +2351,7 @@ class LifecycleTests(unittest.TestCase):
                 self.assertFalse(AI_HUMAN.transaction_file(worker).exists())
 
     def test_old_interrupted_journal_after_metadata_write_requires_independent_local_manifest(self):
-        worker = self.base / "old-journal-worker"
+        worker = (self.base / "old-journal-worker").resolve()
         self.install(worker)
         self.run_cli("validate", worker)
         target_root = self.base / "old-journal-next"

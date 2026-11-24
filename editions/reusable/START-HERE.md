@@ -1,4 +1,4 @@
-> Mac and Windows 2.5.1 engineering preview. Use the current released download for installation.
+> **2.5.1 engineering preview. Keep this copy for testing.** For installation, open the release website and choose Mac 2.5.0 or Windows 2.4.0.
 
 # Reusable AI-Human Edition — start here
 

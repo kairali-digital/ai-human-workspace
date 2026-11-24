@@ -765,6 +765,8 @@ def validate(root, candidate=False):
         if (manifest.get("schema") != "ai-human.workspace-release/platform-v3"
                 or manifest.get("supported_platforms") != ["darwin", "win32"]):
             failures.append("v2.5.1 requires the Mac and Windows platform manifest")
+        if not candidate:
+            failures.append("v2.5.1 is candidate-only pending native platform qualification")
     elif manifest.get("schema") != "ai-human.workspace-release/v1":
         failures.append("unsupported manifest schema")
     if manifest.get("repository") != REPOSITORY:

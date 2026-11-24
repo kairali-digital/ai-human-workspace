@@ -1,11 +1,10 @@
-> Mac and Windows 2.5.1 engineering preview. Use the current released download for installation.
+> **2.5.1 engineering preview. Keep this copy for testing.** For installation, open the release website and choose Mac 2.5.0 or Windows 2.4.0.
 
 # Kairali Employee Edition — start here
 
 This edition is only for Kairali employees and approved facilitators. It includes the
 shared workspace plus Kairali role prompts, homework workers and reference skill
-packages for separately approved manual adoption. v2.4 never installs or activates a
-skill.
+packages for separately approved manual adoption. The edition installer leaves skills inactive.
 
 ## Install in five visible steps
 

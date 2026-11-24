@@ -12166,7 +12166,7 @@ class NativeUpdateAdapter:
             raise ValueError("cannot verify the Windows task principal")
         return sid.casefold()
 
-    def install(self, definition_path):
+    def install(self, definition_path, expected_digest=None):
         if self.config["platform"] == "MACOS":
             require_supported_macos_update_build()
         if self.observed_timezone_id() != self.config["native_timezone_id"]:
@@ -12195,8 +12195,22 @@ class NativeUpdateAdapter:
             # schtasks imports Unicode XML as UTF-16. Keep the stored UTF-8
             # definition stable for existing schedule hashes and recovery.
             definition = Path(definition_path)
-            xml = ET.fromstring(definition.read_bytes())
-            payload = ET.tostring(xml, encoding="utf-16", xml_declaration=True)
+            raw = definition.read_bytes()
+            if expected_digest is None:
+                expected_digest = hashlib.sha256(
+                    render_windows_update_definition(self.worker, self.config)
+                ).hexdigest()
+            if hashlib.sha256(raw).hexdigest() != expected_digest:
+                raise ValueError("Windows task definition differs from the verified schedule")
+            header, separator, body = raw.partition(b"\n")
+            if header != b"<?xml version='1.0' encoding='utf-8'?>" or not separator:
+                raise ValueError("Windows task definition has an unsupported XML declaration")
+            try:
+                ET.fromstring(raw)
+                text = body.decode("utf-8")
+            except (ET.ParseError, UnicodeDecodeError) as error:
+                raise ValueError("Windows task definition is invalid XML") from error
+            payload = ("<?xml version='1.0' encoding='UTF-16'?>\n" + text).encode("utf-16")
             descriptor, staged = atomic_temp_file(definition)
             try:
                 with os.fdopen(descriptor, "wb") as stream:
@@ -12204,7 +12218,7 @@ class NativeUpdateAdapter:
                 result = subprocess.run(
                     ["schtasks.exe", "/Create", "/TN", self.external_id, "/XML",
                      str(staged), "/F"],
-                    text=True, capture_output=True, check=False, timeout=30,
+                    capture_output=True, check=False, timeout=30,
                 )
             finally:
                 Path(staged).unlink(missing_ok=True)
@@ -12228,8 +12242,8 @@ class NativeUpdateAdapter:
         if result.returncode != 0:
             raise ValueError("native update schedule pause failed")
 
-    def resume(self, definition_path):
-        self.install(definition_path)
+    def resume(self, definition_path, expected_digest=None):
+        self.install(definition_path, expected_digest)
         if self.config["platform"] == "WINDOWS":
             result = subprocess.run(
                 ["schtasks.exe", "/Change", "/TN", self.external_id, "/Enable"],
@@ -12350,8 +12364,8 @@ class NativeUpdateAdapter:
         definition_path = Path(definition_path)
         if not definition_path.is_file():
             raise ValueError("local Windows task definition is missing")
-        expected = sha256(definition_path)
         expected_content = definition_path.read_bytes()
+        expected = hashlib.sha256(expected_content).hexdigest()
         expected_semantics = windows_task_semantics(expected_content)
         actual_semantics = windows_task_semantics(result.stdout)
         enabled = actual_semantics["enabled"]
@@ -12397,7 +12411,7 @@ class WindowsUpdateCleanupAdapter(NativeUpdateAdapter):
 
     cleanup_only = True
 
-    def install(self, definition_path):
+    def install(self, definition_path, expected_digest=None):
         raise ValueError("unconfirmed Windows timezone permits cleanup only")
 
     def verify_cleanup_definition(self, definition_path, expected_sha256):
@@ -12458,7 +12472,7 @@ class MacOSUpdateCleanupAdapter(NativeUpdateAdapter):
 
     cleanup_only = True
 
-    def install(self, definition_path):
+    def install(self, definition_path, expected_digest=None):
         raise ValueError("unconfirmed macOS runtime permits cleanup only")
 
     def verify_cleanup_definition(self, definition_path, expected_sha256):
@@ -18234,7 +18248,7 @@ def recover_update_schedule_internal(worker):
                 old_config = paused
                 old_adapter = native_update_cleanup_adapter(worker, paused)
         else:
-            old_adapter.install(old_definition)
+            old_adapter.install(old_definition, old_native["definition_sha256"])
             if old_config["status"] == "PAUSED":
                 old_adapter.pause()
         observed = old_adapter.query(old_definition)
@@ -18455,7 +18469,7 @@ def update_schedule_configure(args):
             observed_status = "REMOVED"
             proof_status = "VERIFIED_REMOVED"
         else:
-            adapter.install(definition_path)
+            adapter.install(definition_path, hashlib.sha256(definition).hexdigest())
             if config["status"] == "PAUSED":
                 adapter.pause()
                 observed_status = "PAUSED"
@@ -18597,7 +18611,7 @@ def update_schedule_control(args):
         else:
             definition = render_update_schedule_definition(worker, updated)
             atomic_text(definition_path, definition.decode("utf-8"))
-            adapter.resume(definition_path)
+            adapter.resume(definition_path, hashlib.sha256(definition).hexdigest())
             observed_status = "ACTIVE"
             proof_status = "VERIFIED_ACTIVE"
         observed = (

@@ -121,7 +121,7 @@ class FakeNativeUpdateAdapter:
     def observed_timezone_id(self):
         return self.observed_timezone
 
-    def install(self, definition_path):
+    def install(self, definition_path, expected_digest=None):
         self.registry[self.external_id] = {
             "status": "ACTIVE",
             "definition_sha256": sha256(Path(definition_path)),
@@ -137,8 +137,8 @@ class FakeNativeUpdateAdapter:
             raise ValueError("fake native task is missing")
         self.registry[self.external_id]["status"] = "PAUSED"
 
-    def resume(self, definition_path):
-        self.install(definition_path)
+    def resume(self, definition_path, expected_digest=None):
+        self.install(definition_path, expected_digest)
 
     def remove(self):
         self.registry.pop(self.external_id, None)
@@ -10639,6 +10639,27 @@ class LifecycleTests(unittest.TestCase):
         definition = worker / ".ai-human/update-schedule/definitions/windows-test.xml"
         definition.write_bytes(xml_bytes)
         adapter = AI_HUMAN.NativeUpdateAdapter(worker, windows)
+        raw = xml_bytes.replace(b"</Description>", " · Définition</Description>".encode())
+        definition.write_bytes(raw)
+        staged_paths = []
+
+        def register(args, **kwargs):
+            staged = Path(args[args.index("/XML") + 1])
+            staged_paths.append(staged)
+            self.assertTrue(staged.read_bytes().startswith(b"\xff\xfe"))
+            self.assertEqual(staged.read_bytes().decode("utf-16"),
+                             raw.decode("utf-8").replace("encoding='utf-8'", "encoding='UTF-16'", 1))
+            return SimpleNamespace(returncode=0, stdout=b"", stderr=b"")
+
+        with mock.patch.object(adapter, "observed_timezone_id", return_value=windows["native_timezone_id"]):
+            with mock.patch.object(AI_HUMAN.subprocess, "run", side_effect=register) as create:
+                with self.assertRaisesRegex(ValueError, "differs from the verified schedule"):
+                    adapter.install(definition, hashlib.sha256(xml_bytes).hexdigest())
+                create.assert_not_called()
+                adapter.install(definition, sha256(definition))
+            self.assertEqual(definition.read_bytes(), raw)
+            self.assertFalse(staged_paths[0].exists())
+        definition.write_bytes(xml_bytes)
         active = SimpleNamespace(returncode=0, stdout=xml_text, stderr="")
         paused_root = AI_HUMAN.ET.fromstring(xml_text)
         namespace = {"t": "http://schemas.microsoft.com/windows/2004/02/mit/task"}

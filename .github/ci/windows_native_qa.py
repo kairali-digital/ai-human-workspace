@@ -15,7 +15,7 @@ def main():
         raise RuntimeError("Requires a disposable Windows Actions runner")
     source = Path(sys.argv[1]).resolve()
     commit = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=source, text=True).strip()
-    if commit != "6decbd2559a1d7627f7084b2c8b5dc34ce4109e6":
+    if commit != "17367141f9c03e41d02238ae481c10ee01fcf343":
         raise RuntimeError("Candidate differs from the approved Windows source")
     sys.path.insert(0, str(source / "tests"))
     import test_lifecycle as fixtures
@@ -35,7 +35,7 @@ def main():
                         "--timezone", "UTC")
         runner = worker / ".ai-human/bin/ai_human.py"
         runtime_hash = hashlib.sha256(runner.read_bytes()).hexdigest()
-        if runtime_hash != "c0fa566496889f08a30a749438e92cd4ca45e2826ab5d3b89aa0cc754a32f83c":
+        if runtime_hash != "711e456f32b590d82dbc46fd135eca3d41cff04dd6c694d5e122ed2fee7982f7":
             raise RuntimeError("Installed runtime digest differs")
         def cli(*args):
             return subprocess.run([sys.executable, "-I", str(runner), args[0],
@@ -72,7 +72,7 @@ try {
                   plain.returncode, repr(plain.stderr.strip()), flush=True)
 
         lookup_probe()
-        if not api.windows_task_missing(query()):
+        if not api.windows_task_missing(query(), task):
             raise RuntimeError("Could not establish task absence before testing")
         if subprocess.check_output(["tzutil", "/g"], text=True).strip() != "UTC":
             raise RuntimeError("Runner time zone is outside this test fixture")
@@ -81,6 +81,10 @@ try {
         cursor = worker / "MASTER_CURSOR.md"
         original = cursor.read_bytes()
         baseline = fixtures.state_hashes(worker)
+        automations = worker / "AUTOMATIONS.md"
+        original_register = automations.read_text(encoding="utf-8")
+        row_id = "SYSTEM-MONTHLY-UPDATE-001"
+        initial_row, = [r for r in api.parse_table_rows(automations) if r and r[0] == row_id]
         created_here = False
         try:
             # Observe the native registration diagnostic on this disposable runner.
@@ -139,15 +143,24 @@ try {
                 if final_query.returncode:
                     print("WINDOWS_QA final query diagnostic", final_query.returncode, repr(final_query.stderr),
                           repr(final_query.stdout), flush=True)
-                absent = api.windows_task_missing(final_query)
+                absent = api.windows_task_missing(final_query, task)
                 print("WINDOWS_QA final task absence " + str(absent), flush=True)
                 if not absent:
                     if created_here:
                         subprocess.run(["schtasks.exe", "/Delete", "/TN", task, "/F"],
                                        capture_output=True, check=True, timeout=15)
-                        print("WINDOWS_QA fixture teardown absence", api.windows_task_missing(query()), flush=True)
+                        print("WINDOWS_QA fixture teardown absence", api.windows_task_missing(query(), task), flush=True)
                     raise RuntimeError("Product task cleanup could not be verified")
         cli("validate")
+        config = api.update_schedule_config(worker)
+        native = api.native_update_schedule(worker, required=True, config=config)
+        if config["status"] != "REMOVED" or native["status"] != "VERIFIED_REMOVED":
+            raise RuntimeError("Managed schedule did not reach verified removal")
+        # The updater owns one status row. Preserve the starting register text,
+        # require its exact expected replacement, and hash every other state file.
+        row = api.update_automation_row(worker, config, native, last_run=initial_row[6])
+        expected_register = api.update_task_table(original_register, row_id, row)
+        baseline["AUTOMATIONS.md"] = hashlib.sha256(expected_register.encode("utf-8")).hexdigest()
         if fixtures.state_hashes(worker) != baseline:
             raise RuntimeError("Worker-owned state changed")
         print(json.dumps({"result": "PASS", "candidate": commit, "runtime": runtime_hash,

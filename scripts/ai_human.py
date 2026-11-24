@@ -11704,6 +11704,7 @@ def render_windows_update_definition(worker, config):
     ET.SubElement(settings, "{" + namespace + "}MultipleInstancesPolicy").text = "IgnoreNew"
     ET.SubElement(settings, "{" + namespace + "}StartWhenAvailable").text = "true"
     ET.SubElement(settings, "{" + namespace + "}RunOnlyIfNetworkAvailable").text = "true"
+    ET.SubElement(settings, "{" + namespace + "}UseUnifiedSchedulingEngine").text = "true"
     ET.SubElement(settings, "{" + namespace + "}Enabled").text = "true"
     ET.SubElement(settings, "{" + namespace + "}ExecutionTimeLimit").text = "PT30M"
     actions = ET.SubElement(task, "{" + namespace + "}Actions", {"Context": "Author"})
@@ -11714,7 +11715,7 @@ def render_windows_update_definition(worker, config):
     return ET.tostring(task, encoding="utf-8", xml_declaration=True)
 
 
-def windows_task_semantics(content):
+def windows_task_root(content):
     if isinstance(content, bytes):
         content = content.decode("utf-8")
     if not isinstance(content, str) or "<!DOCTYPE" in content.upper():
@@ -11727,6 +11728,23 @@ def windows_task_semantics(content):
     prefix = "{" + namespace + "}"
     if root.tag != prefix + "Task":
         raise ValueError("Windows task definition has the wrong root namespace")
+
+    # Task Scheduler omits these default-valued elements on export. Keep
+    # explicit values, duplicates, attributes and unknown nodes for comparison.
+    for path, tag, default in (
+        ("t:Triggers/t:CalendarTrigger", "Enabled", "true"),
+        ("t:Settings", "Enabled", "true"),
+        ("t:Principals/t:Principal", "RunLevel", "LeastPrivilege"),
+    ):
+        parent = root.find(path, {"t": namespace})
+        if parent is not None and parent.find(prefix + tag) is None:
+            ET.SubElement(parent, prefix + tag).text = default
+    return root
+
+
+def windows_task_semantics(content):
+    root = windows_task_root(content)
+    prefix = "{http://schemas.microsoft.com/windows/2004/02/mit/task}"
 
     def one(parent, tag, label):
         matches = parent.findall(prefix + tag)
@@ -11822,16 +11840,8 @@ def windows_task_semantics(content):
 
 
 def canonical_windows_task(content, normalize_enabled=False, drop_user_id=False):
-    if isinstance(content, bytes):
-        content = content.decode("utf-8")
-    if not isinstance(content, str) or "<!DOCTYPE" in content.upper():
-        raise ValueError("Windows task definition is not safe XML")
-    try:
-        root = ET.fromstring(content)
-    except ET.ParseError as error:
-        raise ValueError("Windows task definition is invalid XML") from error
-    namespace = "http://schemas.microsoft.com/windows/2004/02/mit/task"
-    prefix = "{" + namespace + "}"
+    root = windows_task_root(content)
+    prefix = "{http://schemas.microsoft.com/windows/2004/02/mit/task}"
     registration = root.find(prefix + "RegistrationInfo")
     if registration is not None:
         # Task Scheduler may add descriptive registration metadata. These fields do
@@ -11884,6 +11894,11 @@ def canonical_windows_task(content, normalize_enabled=False, drop_user_id=False)
         if principal is not None:
             for user in principal.findall(prefix + "UserId"):
                 principal.remove(user)
+    # The exporter reorders the named fields in these containers. Never
+    # reorder action lists, trigger lists or other executable sequences.
+    for section in ("Task", "Settings", "Principal", "CalendarTrigger", "ScheduleByWeek"):
+        for node in root.iter(prefix + section):
+            node[:] = sorted(node, key=lambda child: child.tag)
     serialized = ET.tostring(root, encoding="unicode")
     return ET.canonicalize(xml_data=serialized, strip_text=True)
 

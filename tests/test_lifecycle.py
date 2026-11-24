@@ -10677,6 +10677,28 @@ class LifecycleTests(unittest.TestCase):
         active = SimpleNamespace(returncode=0, stdout=xml_text, stderr="")
         paused_root = AI_HUMAN.ET.fromstring(xml_text)
         namespace = {"t": "http://schemas.microsoft.com/windows/2004/02/mit/task"}
+        exported = AI_HUMAN.ET.fromstring(xml_text)
+        for path, omitted in (
+            ("t:Settings", "Enabled"), ("t:Principals/t:Principal", "RunLevel"),
+            ("t:Triggers/t:CalendarTrigger", "Enabled"),
+        ):
+            parent = exported.find(path, namespace)
+            parent.remove(parent.find("t:" + omitted, namespace))
+            parent[:] = reversed(parent[:])
+        exported[:] = reversed(exported[:])
+        def check_export():
+            result = SimpleNamespace(returncode=0, stderr="",
+                                     stdout=AI_HUMAN.ET.tostring(exported, encoding="unicode"))
+            with mock.patch.object(AI_HUMAN.subprocess, "run", return_value=result):
+                return adapter.query(definition)
+        self.assertEqual(check_export(), {"status": "ACTIVE", "definition_sha256": sha256(definition)})
+        engine = exported.find("t:Settings/t:UseUnifiedSchedulingEngine", namespace)
+        engine.text = "false"
+        self.assertIsNone(check_export()["definition_sha256"])
+        engine.text = "true"
+        principal = exported.find("t:Principals/t:Principal", namespace)
+        AI_HUMAN.ET.SubElement(principal, "{" + namespace["t"] + "}RunLevel").text = "HighestAvailable"
+        self.assertIsNone(check_export()["definition_sha256"])
         paused_root.find("t:Settings/t:Enabled", namespace).text = "false"
         paused = SimpleNamespace(
             returncode=0,

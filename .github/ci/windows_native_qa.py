@@ -15,7 +15,7 @@ def main():
         raise RuntimeError("Requires a disposable Windows Actions runner")
     source = Path(sys.argv[1]).resolve()
     commit = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=source, text=True).strip()
-    if commit != "167617cf2a2356960940bf649e773c567eb464c3":
+    if commit != "668c53274f4abc474705c877d83c3ef3ca0a1246":
         raise RuntimeError("Candidate differs from the approved Windows source")
     sys.path.insert(0, str(source / "tests"))
     import test_lifecycle as fixtures
@@ -35,7 +35,7 @@ def main():
                         "--timezone", "UTC")
         runner = worker / ".ai-human/bin/ai_human.py"
         runtime_hash = hashlib.sha256(runner.read_bytes()).hexdigest()
-        if runtime_hash != "bb078703965779f5b97ba4f22cb43810da63919fc014ecc244a23a9ba129ce6b":
+        if runtime_hash != "28695c7a5dccd9f09b36491fd437b39d62129a9bf60b294d96acf0f465d84bb3":
             raise RuntimeError("Installed runtime digest differs")
         def cli(*args):
             return subprocess.run([sys.executable, "-I", str(runner), args[0],
@@ -106,7 +106,11 @@ def main():
                 if api.update_schedule_config(worker).get("status") in ("ENABLED", "PAUSED"):
                     cli("update-schedule-control", "REMOVE", "--approval-reference", "Disposable QA")
             finally:
-                absent = api.windows_task_missing(query())
+                final_query = query()
+                if final_query.returncode:
+                    print("WINDOWS_QA final query diagnostic", final_query.returncode, repr(final_query.stderr),
+                          repr(final_query.stdout), flush=True)
+                absent = api.windows_task_missing(final_query)
                 print("WINDOWS_QA final task absence " + str(absent), flush=True)
                 if not absent:
                     if created_here:

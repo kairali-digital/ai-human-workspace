@@ -18,7 +18,7 @@ jobs:
           path: harness
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: 13a546926eb47b2b9b9a0e4682c6b1a44a04d395
+          ref: 9d3a0350dd886337532525ef8f6d81b32f142d01
           persist-credentials: false
           path: candidate
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97

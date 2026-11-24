@@ -12192,11 +12192,22 @@ class NativeUpdateAdapter:
                 text=True, capture_output=True, check=False, timeout=15,
             )
         else:
-            result = subprocess.run(
-                ["schtasks.exe", "/Create", "/TN", self.external_id, "/XML",
-                 str(definition_path), "/F"],
-                text=True, capture_output=True, check=False, timeout=30,
-            )
+            # schtasks imports Unicode XML as UTF-16. Keep the stored UTF-8
+            # definition stable for existing schedule hashes and recovery.
+            definition = Path(definition_path)
+            xml = ET.fromstring(definition.read_bytes())
+            payload = ET.tostring(xml, encoding="utf-16", xml_declaration=True)
+            descriptor, staged = atomic_temp_file(definition)
+            try:
+                with os.fdopen(descriptor, "wb") as stream:
+                    stream.write(payload)
+                result = subprocess.run(
+                    ["schtasks.exe", "/Create", "/TN", self.external_id, "/XML",
+                     str(staged), "/F"],
+                    text=True, capture_output=True, check=False, timeout=30,
+                )
+            finally:
+                Path(staged).unlink(missing_ok=True)
         if result.returncode != 0:
             raise ValueError("native update schedule registration failed")
 
@@ -12747,6 +12758,12 @@ PLATFORM_RELEASE_SCHEMA = "ai-human.workspace-release/platform-v2"
 def require_release_platform(manifest):
     schema = manifest.get("schema")
     if schema == COMMON_RELEASE_SCHEMA and "supported_platforms" not in manifest:
+        return
+    if schema == "ai-human.workspace-release/platform-v3":
+        if manifest.get("supported_platforms") != ["darwin", "win32"]:
+            raise ValueError("unsupported Mac and Windows platform declaration")
+        if sys.platform not in ("darwin", "win32"):
+            raise ValueError("this edition is for macOS and Windows only; use the common release on this platform")
         return
     if schema != PLATFORM_RELEASE_SCHEMA or manifest.get("supported_platforms") not in (["darwin"], ["win32"]):
         raise ValueError("unsupported release manifest schema or platform declaration")

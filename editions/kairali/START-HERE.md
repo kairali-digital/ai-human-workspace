@@ -1,6 +1,4 @@
-> PRIVATE WINDOWS 2.5 QA CANDIDATE — DO NOT INSTALL OR DISTRIBUTE.
-> This is not a Windows release approval. Installation is blocked by LOCAL_BUILD_ONLY.
-> Stable Windows remains v2.4.0. The Mac release instructions below are retained for comparison, not Windows authorization.
+> Mac and Windows 2.5.1 engineering preview. Use the current released download for installation.
 
 # Kairali Employee Edition — start here
 
@@ -12,7 +10,7 @@ skill.
 ## Install in five visible steps
 
 1. On the website, find the **Kairali employee edition** and select the download labeled for your computer.
-   **DONE WHEN:** Downloads shows the ZIP for the version beside that button. During the Mac-only release, Mac uses v2.5.0 and Windows uses v2.4.0. If your download differs, return to the website and use the button for your computer.
+   **DONE WHEN:** Downloads shows the ZIP for the version beside that button. If your download differs, return to the website and use the button for your computer.
 2. Open Downloads. On Mac, double-click the ZIP. On Windows, right-click the ZIP,
    select **Extract All**, then select **Extract**.
    **DONE WHEN:** a folder named `KAIRALI-EMPLOYEE-EDITION` appears.
@@ -71,7 +69,7 @@ verified `SUSPENDED`.
 
 Open the existing employee worker in Codex, start a new chat and paste `CHECK FOR
 KAIRALI UPDATE`. Use the complete checked prompt in
-`workspace/packages/kairali/UPDATE-WORKFLOW.md`. The check changes nothing. Tell the helper whether you use Mac or Windows. For the Mac-only v2.5.0 release, give it the approved Mac release notice. Ask it to verify the signed tag, its exact commit and the approved checksum of the Kairali employee edition ZIP. Ask the helper to use the workspace folder inside that edition after checking it matches your worker’s repository. Ask the helper to read the ZIP and manifest checksums for your edition from portal/content/mac-edition-integrity.json at the exact signed commit in the approved notice. Have it verify the whole ZIP before opening or running its updater, then supply the approved manifest checksum when applying the update so it can make the worker recovery snapshot. Windows uses the common v2.4.0 release. If the helper confirms an eligible update and the worker is idle, say `UPDATE NOW`. It backs up, updates managed files and validates. A pre-v2 worker first completes
+`workspace/packages/kairali/UPDATE-WORKFLOW.md`. The check changes nothing. Tell the helper whether you use Mac or Windows. For v2.5.1 on either computer, give it the approved release notice. Ask it to verify the signed tag, its exact commit and the approved checksum of the Kairali employee edition ZIP. Ask the helper to use the workspace folder inside that edition after checking it matches your worker’s repository. Ask the helper to read the ZIP and manifest checksums for your edition from portal/content/v251-edition-integrity.json at the exact signed commit in the approved notice. Have it verify the whole ZIP before opening or running its updater, then supply the approved manifest checksum to the updater inside the verified ZIP when applying the update so it can make the worker recovery snapshot. If the helper confirms an eligible update and the worker is idle, say `UPDATE NOW`. It backs up, updates managed files and validates. A pre-v2 worker first completes
 the guided exact-scope Gate 0 migration.
 
 **DONE WHEN:** the installed version matches the approved version for your computer, validation is `PASS`, employee state

@@ -2189,9 +2189,7 @@ class LifecycleTests(unittest.TestCase):
         self.assertEqual(AI_HUMAN.install_metadata(worker)["installed_version"], TEST_UPGRADE_VERSION)
 
     def test_reusable_edition_refuses_remote_release_and_schedule_before_external_io(self):
-        platform = AI_HUMAN.read_json(ROOT / "release-manifest.json")["supported_platforms"][0]
-        platform_name = "windows" if platform == "win32" else "mac"
-        records = AI_HUMAN.read_json(ROOT / ("portal/content/" + platform_name + "-edition-integrity.json"))
+        records = AI_HUMAN.read_json(ROOT / "portal/content/v251-edition-integrity.json")
         archive_name, = [name for name in records if "REUSABLE" in name]
         archive = ROOT / "portal/public/downloads" / archive_name
         with zipfile.ZipFile(archive) as package:
@@ -2220,9 +2218,7 @@ class LifecycleTests(unittest.TestCase):
             network.assert_not_called()
 
     def test_platform_scoped_edition_integrity_and_host_selection(self):
-        platform = AI_HUMAN.read_json(ROOT / "release-manifest.json")["supported_platforms"][0]
-        platform_name = "windows" if platform == "win32" else "mac"
-        records = AI_HUMAN.read_json(ROOT / ("portal/content/" + platform_name + "-edition-integrity.json"))
+        records = AI_HUMAN.read_json(ROOT / "portal/content/v251-edition-integrity.json")
         self.assertEqual(len(records), 2)
         observed = set()
         for name, record in records.items():
@@ -2235,10 +2231,11 @@ class LifecycleTests(unittest.TestCase):
             manifest = json.loads(raw)
             self.assertEqual(manifest["repository"], record["repository"])
             observed.add(record["repository"])
-            self.assertEqual(manifest["schema"], "ai-human.workspace-release/platform-v2")
+            self.assertEqual(manifest["schema"], "ai-human.workspace-release/platform-v3")
+            self.assertEqual(manifest["supported_platforms"], ["darwin", "win32"])
             for host in ("darwin", "win32", "linux"):
                 with self.subTest(edition=name, host=host), mock.patch.object(sys, "platform", host):
-                    if host == platform:
+                    if host in ("darwin", "win32"):
                         AI_HUMAN.require_release_platform(manifest)
                     else:
                         with self.assertRaisesRegex(ValueError, "(?:macOS|Windows) only"):
@@ -2251,6 +2248,10 @@ class LifecycleTests(unittest.TestCase):
             with self.subTest(declaration=declaration), self.assertRaises(ValueError):
                 AI_HUMAN.require_release_platform({"schema": AI_HUMAN.PLATFORM_RELEASE_SCHEMA,
                                                   "supported_platforms": declaration})
+        for declaration in ([], ["darwin"], ["win32"], ["win32", "darwin"], ["darwin", "win32", "linux"]):
+            with self.subTest(declaration=declaration), self.assertRaises(ValueError):
+                AI_HUMAN.require_release_platform({"schema": "ai-human.workspace-release/platform-v3",
+                                                   "supported_platforms": declaration})
         for platform, label in (("darwin", "macOS"), ("win32", "Windows")):
             manifest = {"schema": AI_HUMAN.PLATFORM_RELEASE_SCHEMA, "supported_platforms": [platform]}
             with mock.patch.object(sys, "platform", platform):

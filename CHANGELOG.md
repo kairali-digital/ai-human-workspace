@@ -2,6 +2,10 @@
 
 All notable changes are recorded here in plain language.
 
+## [2.5.1] Local qualification candidate
+
+Both desktop platforms use the same package for a given edition. The Setup Helper can verify the archive and its embedded manifest against one edition record. Reusable workspaces continue to use a locally supplied source.
+
 ## [2.5.0] Mac release candidate
 
 - Add an adaptive work governor that can lower the effective action batch while

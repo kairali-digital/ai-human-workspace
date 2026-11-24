@@ -1,3 +1,5 @@
+> Choose the edition and operating system in your approved release notice.
+
 # AI-Human Workspace
 
 One public, versioned operating system for durable Codex or Claude workers across many
@@ -63,7 +65,7 @@ private improvement state or personal files.
 - Governed capability and fleet-update control plane:
   [`docs/GOVERNED-CAPABILITIES-AND-FLEET.md`](docs/GOVERNED-CAPABILITIES-AND-FLEET.md)
 
-During the Mac rollout, choose the v2.5.0 download for Mac and the common v2.4.0 download for Windows. Follow the release notice for your platform and verify its signed source and checksums. Ask Setup Helper to match the employee or reusable edition ZIP to your installed worker, check the ZIP against the approved hash, and use the updater inside that ZIP’s workspace folder. Configured stable Mac workers from v2.0.0 through v2.4.0 can use the managed update path, excluding held v2.0.1. Pre-v2 workers first complete the guided exact-scope Gate 0 migration. Release-level automatic update eligibility is off.
+Windows 2.5.1 uses a verified edition bootstrap. Follow the notice for your operating system. Ask Setup Helper to verify the signed commit, edition ZIP, repository and manifest checksum before it uses the updater in that ZIP. The worker keeps its state and receives a recovery snapshot. Current Mac downloads and historical Windows downloads stay available. Automatic enrollment requires a verified worker and supported operating system.
 
 The component catalog remains inspectable, and managed skill installation remains disabled.
 Neither Codex nor Claude currently supplies this runtime with a trusted pre-discovery

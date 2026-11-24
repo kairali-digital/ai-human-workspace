@@ -7,7 +7,7 @@
     "build": "npm run validate && next build",
     "start": "next start",
     "typecheck": "tsc --noEmit",
-    "validate": "node scripts/validate-portal.mjs",
+    "validate": "node scripts/validate-portal.mjs && node --experimental-strip-types scripts/validate-windows-route.mjs",
     "refresh-downloads": "node scripts/refresh-download-manifest.mjs"
   },
   "dependencies": {

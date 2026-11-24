@@ -12,7 +12,7 @@ login, account choice or permission one at a time.
 - Everyone else: click **Download the reusable edition**. It contains only the neutral
   workspace and generic helper. It contains no Kairali employee material.
 
-Within your edition, select the button labeled for your computer. During the Mac rollout the Mac button shows v2.5.0 and the Windows button shows v2.4.0. A package marked `LOCAL_BUILD_ONLY` is a test
+Within your edition, select the button labeled for your computer. Match the version beside the button to the approved notice for your computer. Windows 2.5.1 and Mac 2.5.0 use different ZIPs. A package marked `LOCAL_BUILD_ONLY` is a test
 candidate and must stop before real installation.
 
 ## Install in five visible steps
@@ -94,7 +94,7 @@ update is recorded and deferred instead.
 Open the existing worker in Codex, start a new chat and paste `CHECK FOR AI-HUMAN
 UPDATE`. The exact full prompt is in the Reusable Edition's `START-HERE.md`. The check
 is read-only. If a compatible update is available and no task is live, say `UPDATE NOW`
-at a safe checkpoint. Give the helper your platform’s release notice. On Mac, ask it to verify the signed v2.5.0 source commit and checksums before applying. Ask Setup Helper to match the employee or reusable edition ZIP to your installed worker, check the ZIP against the approved hash, and use the updater inside that ZIP’s workspace folder. On Windows, use v2.4.0. A
+at a safe checkpoint. Give the helper your platform’s release notice. On Mac, ask it to verify the signed v2.5.0 source commit and checksums before applying. Ask Setup Helper to match the employee or reusable edition ZIP to your installed worker, check the ZIP against the approved hash, and use the updater inside that ZIP’s workspace folder. On Windows, use the approved Windows 2.5.1 notice. If the worker is older than 2.4.0, ask Setup Helper to complete the checked update to 2.4.0 first. A
 pre-v2 worker first follows the guided exact-scope Gate 0 migration.
 
 **DONE WHEN:** the worker shows the approved version for your computer, validator `PASS`, the update receipt,

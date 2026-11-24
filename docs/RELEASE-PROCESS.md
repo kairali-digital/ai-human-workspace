@@ -52,3 +52,9 @@ from the shipped application graph.
 Only the repository owner or delegated maintainer publishes a release.
 
 For the Mac-only v2.5.0 release, verify that the common latest release is v2.4.0 before publication. Set GitHub’s make_latest field to the string false when creating the Mac release. Read back the version tag and the common latest endpoint. Both must show their intended versions before enabling the Mac download.
+
+## Windows 2.5.1 portal promotion
+
+Keep the legacy common feed on 2.4.0. Publish 2.5.1 by its named tag after the owner approves the signed packet. The portal checks the published tag commit, its owner signature, all six public asset digests, and the local Windows edition ZIP and sidecar digests. Supply the approved packet digest as the server-side build and runtime variable `WINDOWS_V251_RELEASE_PACKET_SHA256` when deploying. An absent or different digest keeps the Windows 2.4.0 download visible.
+
+Compute the digest from the **approved offline packet**. Start with the signed commit SHA on its own line. For each of the six release assets and the four edition ZIP/sidecar files, form a line with its exact basename, one space and its lowercase SHA-256. Sort those ten lines by ascending ASCII, append them after the commit, end every line with LF, and hash the UTF-8 bytes using SHA-256. The operator compares the readback against the owner-approved packet before switching the production portal.

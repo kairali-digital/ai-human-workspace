@@ -1,0 +1,37 @@
+{
+  "below_floor_regression": "PASS",
+  "ci": "102332cd987ede037fbd8e743c6a05c3f10891c1",
+  "editions": [
+    {
+      "archive": "AI-HUMAN-v251-REUSABLE-EDITION-PUBLIC-KIT.zip",
+      "candidate": "17367141f9c03e41d02238ae481c10ee01fcf343",
+      "platform": "win32",
+      "preserved": 23,
+      "restored_version": "2.4.0",
+      "sha256": "569539986771b06d7356fdadebb140c2cc96ce58506c07d906403a12d11c14f3",
+      "source_version": "2.4.0"
+    },
+    {
+      "archive": "KAIRALI-AI-HUMAN-v251-EMPLOYEE-EDITION-PUBLIC-KIT.zip",
+      "candidate": "17367141f9c03e41d02238ae481c10ee01fcf343",
+      "platform": "win32",
+      "preserved": 23,
+      "restored_version": "2.4.0",
+      "sha256": "fd6761924d9b8a10e668647233bbae633e93751f86344f0778170ad6591293ea",
+      "source_version": "2.4.0"
+    }
+  ],
+  "employee_desktop": false,
+  "log_sha256": "dd02e37671a4bed095a03d0bac3f8c294075ad30430e9d8b212c6bab8ab4ae0f",
+  "native": {
+    "candidate": "17367141f9c03e41d02238ae481c10ee01fcf343",
+    "cleanup": true,
+    "native_due": "LIVE_TASK",
+    "pause_resume": true,
+    "result": "PASS",
+    "runtime": "f82ab83acaf524df7190391685c6b0a8037b61ea7bdd40fdc2e4aa335cf391c3"
+  },
+  "platform": "GitHub-hosted Windows Server 2025",
+  "source_base": "17367141f9c03e41d02238ae481c10ee01fcf343",
+  "url": "https://github.com/kairali-digital/ai-human-workspace/actions/runs/45353971929"
+}

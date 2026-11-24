@@ -757,8 +757,26 @@ def validate(root, candidate=False):
         failures.append("core/VERSION does not match the manifest")
     if version == "2.5.0":
         if (manifest.get("schema") != "ai-human.workspace-release/platform-v2"
-                or manifest.get("supported_platforms") != ["darwin"]):
-            failures.append("v2.5.0 requires the Mac-only platform manifest")
+                or manifest.get("supported_platforms") not in (["darwin"], ["win32"])):
+            failures.append("v2.5.0 requires a single supported platform manifest")
+        if manifest.get("supported_platforms") == ["win32"] and not candidate:
+            failures.append("Windows v2.5.0 is candidate-only; public release is not qualified")
+    elif version == "2.5.1":
+        if (manifest.get("schema") != "ai-human.workspace-release/platform-v2"
+                or manifest.get("supported_platforms") != ["win32"]):
+            failures.append("v2.5.1 requires the Windows platform manifest")
+        if (manifest.get("compatibility") or {}).get("minimum_supported_version") != "2.4.0":
+            failures.append("v2.5.1 requires the qualified Windows 2.4.0 upgrade floor")
+        if not candidate:
+            # Bind the manual Windows distribution to its reviewed native scheduler proof.
+            evidence = root / "docs/releases/WINDOWS-QUALIFICATION-v2.5.1.json"
+            runtime = root / "scripts/ai_human.py"
+            if not evidence.is_file() or sha256(evidence) != "184f7cfad15fff8810e30e7157298f048e628b6422096ee0f826a9b512149cbf":
+                failures.append("v2.5.1 lacks the verified Windows qualification receipt")
+            elif not runtime.is_file() or sha256(runtime) != read_json(evidence)["native"]["runtime"]:
+                failures.append("v2.5.1 runtime differs from the qualified Windows source")
+            if manifest.get("automatic_update_eligible") is not False:
+                failures.append("v2.5.1 requires a verified local bootstrap for legacy workers")
     elif manifest.get("schema") != "ai-human.workspace-release/v1":
         failures.append("unsupported manifest schema")
     if manifest.get("repository") != REPOSITORY:

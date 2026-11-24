@@ -11704,6 +11704,7 @@ def render_windows_update_definition(worker, config):
     ET.SubElement(settings, "{" + namespace + "}MultipleInstancesPolicy").text = "IgnoreNew"
     ET.SubElement(settings, "{" + namespace + "}StartWhenAvailable").text = "true"
     ET.SubElement(settings, "{" + namespace + "}RunOnlyIfNetworkAvailable").text = "true"
+    ET.SubElement(settings, "{" + namespace + "}UseUnifiedSchedulingEngine").text = "true"
     ET.SubElement(settings, "{" + namespace + "}Enabled").text = "true"
     ET.SubElement(settings, "{" + namespace + "}ExecutionTimeLimit").text = "PT30M"
     actions = ET.SubElement(task, "{" + namespace + "}Actions", {"Context": "Author"})
@@ -11714,7 +11715,7 @@ def render_windows_update_definition(worker, config):
     return ET.tostring(task, encoding="utf-8", xml_declaration=True)
 
 
-def windows_task_semantics(content):
+def windows_task_root(content):
     if isinstance(content, bytes):
         content = content.decode("utf-8")
     if not isinstance(content, str) or "<!DOCTYPE" in content.upper():
@@ -11727,6 +11728,29 @@ def windows_task_semantics(content):
     prefix = "{" + namespace + "}"
     if root.tag != prefix + "Task":
         raise ValueError("Windows task definition has the wrong root namespace")
+
+    # These XML groups allow each child field at most once. Check before
+    # dropping optional metadata or materializing omitted default fields.
+    for group in ("Settings", "RegistrationInfo", "Principal", "CalendarTrigger", "ScheduleByWeek"):
+        for node in root.iter(prefix + group):
+            if len({child.tag for child in node}) != len(node):
+                raise ValueError("Windows task definition has duplicate fields in " + group)
+    # Task Scheduler omits these default-valued elements on export. Keep
+    # explicit values, duplicates, attributes and unknown nodes for comparison.
+    for path, tag, default in (
+        ("t:Triggers/t:CalendarTrigger", "Enabled", "true"),
+        ("t:Settings", "Enabled", "true"),
+        ("t:Principals/t:Principal", "RunLevel", "LeastPrivilege"),
+    ):
+        parent = root.find(path, {"t": namespace})
+        if parent is not None and parent.find(prefix + tag) is None:
+            ET.SubElement(parent, prefix + tag).text = default
+    return root
+
+
+def windows_task_semantics(content):
+    root = windows_task_root(content)
+    prefix = "{http://schemas.microsoft.com/windows/2004/02/mit/task}"
 
     def one(parent, tag, label):
         matches = parent.findall(prefix + tag)
@@ -11822,16 +11846,8 @@ def windows_task_semantics(content):
 
 
 def canonical_windows_task(content, normalize_enabled=False, drop_user_id=False):
-    if isinstance(content, bytes):
-        content = content.decode("utf-8")
-    if not isinstance(content, str) or "<!DOCTYPE" in content.upper():
-        raise ValueError("Windows task definition is not safe XML")
-    try:
-        root = ET.fromstring(content)
-    except ET.ParseError as error:
-        raise ValueError("Windows task definition is invalid XML") from error
-    namespace = "http://schemas.microsoft.com/windows/2004/02/mit/task"
-    prefix = "{" + namespace + "}"
+    root = windows_task_root(content)
+    prefix = "{http://schemas.microsoft.com/windows/2004/02/mit/task}"
     registration = root.find(prefix + "RegistrationInfo")
     if registration is not None:
         # Task Scheduler may add descriptive registration metadata. These fields do
@@ -11884,11 +11900,64 @@ def canonical_windows_task(content, normalize_enabled=False, drop_user_id=False)
         if principal is not None:
             for user in principal.findall(prefix + "UserId"):
                 principal.remove(user)
+    # The exporter reorders the named fields in these containers. Never
+    # reorder action lists, trigger lists or other executable sequences.
+    for section in ("Task", "Settings", "Principal", "CalendarTrigger", "ScheduleByWeek"):
+        for node in root.iter(prefix + section):
+            node[:] = sorted(node, key=lambda child: child.tag)
     serialized = ET.tostring(root, encoding="unicode")
     return ET.canonicalize(xml_data=serialized, strip_text=True)
 
 
-def windows_task_missing(result):
+def windows_system_powershell():
+    import ctypes
+
+    if os.name != "nt":
+        raise OSError("Windows PowerShell requires Windows")
+    buffer = ctypes.create_unicode_buffer(32768)
+    length = ctypes.windll.kernel32.GetSystemDirectoryW(buffer, len(buffer))
+    if not 0 < length < len(buffer):
+        raise OSError("cannot resolve the Windows system directory")
+    return Path(buffer.value) / "WindowsPowerShell" / "v1.0" / "powershell.exe"
+
+
+def windows_scheduler_confirms_absence(external_id):
+    """Confirm the task or its folder is missing through the local scheduler."""
+    if not isinstance(external_id, str) or not re.fullmatch(
+        r"\\AI-Human\\aihuman-update-[0-9a-f]{16}", external_id
+    ):
+        return False
+    # Do not treat a connection failure, inaccessible root or ambiguous path
+    # error as absence. Only FILE_NOT_FOUND on the scoped lookup qualifies.
+    lookup = r"""
+$ErrorActionPreference = 'Stop'
+$service = New-Object -ComObject 'Schedule.Service'
+$service.Connect()
+$root = $service.GetFolder('\')
+if ($root.Path -ne '\') { exit 1 }
+try {
+    $folder = $service.GetFolder('\AI-Human')
+    $task = $folder.GetTask($env:AIH_LOOKUP_LEAF)
+} catch {
+    if ($_.Exception.GetBaseException().HResult -eq -2147024894) {
+        Write-Output 'ABSENT'
+        exit 0
+    }
+}
+exit 1
+"""
+    try:
+        result = subprocess.run(
+            [str(windows_system_powershell()), "-NoLogo", "-NoProfile", "-NonInteractive", "-Command", lookup],
+            env={**os.environ, "AIH_LOOKUP_LEAF": external_id.rsplit("\\", 1)[1]},
+            capture_output=True, text=True, errors="replace", check=False, timeout=20,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return result.returncode == 0 and result.stdout.strip() == "ABSENT" and not result.stderr.strip()
+
+
+def windows_task_missing(result, external_id=None):
     if result.returncode == 0:
         return False
     # A failed query is not proof of absence. In particular, missing services,
@@ -11903,6 +11972,8 @@ def windows_task_missing(result):
     if len(lines) != 1:
         return False
     detail = lines[0].removeprefix("error:").strip().rstrip(".")
+    if detail == "the system cannot find the path specified":
+        return windows_scheduler_confirms_absence(external_id)
     return detail in {
         "the system cannot find the file specified",
         "the system cannot find the task specified",
@@ -12166,7 +12237,7 @@ class NativeUpdateAdapter:
             raise ValueError("cannot verify the Windows task principal")
         return sid.casefold()
 
-    def install(self, definition_path):
+    def install(self, definition_path, expected_digest=None):
         if self.config["platform"] == "MACOS":
             require_supported_macos_update_build()
         if self.observed_timezone_id() != self.config["native_timezone_id"]:
@@ -12192,11 +12263,36 @@ class NativeUpdateAdapter:
                 text=True, capture_output=True, check=False, timeout=15,
             )
         else:
-            result = subprocess.run(
-                ["schtasks.exe", "/Create", "/TN", self.external_id, "/XML",
-                 str(definition_path), "/F"],
-                text=True, capture_output=True, check=False, timeout=30,
-            )
+            # schtasks imports Unicode XML as UTF-16. Keep the stored UTF-8
+            # definition stable for existing schedule hashes and recovery.
+            definition = Path(definition_path)
+            raw = definition.read_bytes()
+            if expected_digest is None:
+                expected_digest = hashlib.sha256(
+                    render_windows_update_definition(self.worker, self.config)
+                ).hexdigest()
+            if hashlib.sha256(raw).hexdigest() != expected_digest:
+                raise ValueError("Windows task definition differs from the verified schedule")
+            header, separator, body = raw.partition(b"\n")
+            if header != b"<?xml version='1.0' encoding='utf-8'?>" or not separator:
+                raise ValueError("Windows task definition has an unsupported XML declaration")
+            try:
+                ET.fromstring(raw)
+                text = body.decode("utf-8")
+            except (ET.ParseError, UnicodeDecodeError) as error:
+                raise ValueError("Windows task definition is invalid XML") from error
+            payload = ("<?xml version='1.0' encoding='UTF-16'?>\n" + text).encode("utf-16")
+            descriptor, staged = atomic_temp_file(definition)
+            try:
+                with os.fdopen(descriptor, "wb") as stream:
+                    stream.write(payload)
+                result = subprocess.run(
+                    ["schtasks.exe", "/Create", "/TN", self.external_id, "/XML",
+                     str(staged), "/F"],
+                    capture_output=True, check=False, timeout=30,
+                )
+            finally:
+                Path(staged).unlink(missing_ok=True)
         if result.returncode != 0:
             raise ValueError("native update schedule registration failed")
 
@@ -12217,8 +12313,8 @@ class NativeUpdateAdapter:
         if result.returncode != 0:
             raise ValueError("native update schedule pause failed")
 
-    def resume(self, definition_path):
-        self.install(definition_path)
+    def resume(self, definition_path, expected_digest=None):
+        self.install(definition_path, expected_digest)
         if self.config["platform"] == "WINDOWS":
             result = subprocess.run(
                 ["schtasks.exe", "/Change", "/TN", self.external_id, "/Enable"],
@@ -12237,7 +12333,7 @@ class NativeUpdateAdapter:
             ["schtasks.exe", "/Delete", "/TN", self.external_id, "/F"],
             text=True, capture_output=True, check=False, timeout=15,
         )
-        if result.returncode != 0 and not windows_task_missing(result):
+        if result.returncode != 0 and not windows_task_missing(result, self.external_id):
             raise ValueError("native update schedule removal failed")
 
     def _macos_bootout(self):
@@ -12331,7 +12427,7 @@ class NativeUpdateAdapter:
             text=True, capture_output=True, check=False, timeout=15,
         )
         if result.returncode != 0:
-            if windows_task_missing(result):
+            if windows_task_missing(result, self.external_id):
                 if not raw_absence and self.config.get("status") == "PAUSED":
                     return {"status": "PAUSED", "definition_sha256": sha256(Path(definition_path))}
                 return {"status": "REMOVED", "definition_sha256": None}
@@ -12339,8 +12435,8 @@ class NativeUpdateAdapter:
         definition_path = Path(definition_path)
         if not definition_path.is_file():
             raise ValueError("local Windows task definition is missing")
-        expected = sha256(definition_path)
         expected_content = definition_path.read_bytes()
+        expected = hashlib.sha256(expected_content).hexdigest()
         expected_semantics = windows_task_semantics(expected_content)
         actual_semantics = windows_task_semantics(result.stdout)
         enabled = actual_semantics["enabled"]
@@ -12386,7 +12482,7 @@ class WindowsUpdateCleanupAdapter(NativeUpdateAdapter):
 
     cleanup_only = True
 
-    def install(self, definition_path):
+    def install(self, definition_path, expected_digest=None):
         raise ValueError("unconfirmed Windows timezone permits cleanup only")
 
     def verify_cleanup_definition(self, definition_path, expected_sha256):
@@ -12447,7 +12543,7 @@ class MacOSUpdateCleanupAdapter(NativeUpdateAdapter):
 
     cleanup_only = True
 
-    def install(self, definition_path):
+    def install(self, definition_path, expected_digest=None):
         raise ValueError("unconfirmed macOS runtime permits cleanup only")
 
     def verify_cleanup_definition(self, definition_path, expected_sha256):
@@ -12748,10 +12844,18 @@ def require_release_platform(manifest):
     schema = manifest.get("schema")
     if schema == COMMON_RELEASE_SCHEMA and "supported_platforms" not in manifest:
         return
-    if schema != PLATFORM_RELEASE_SCHEMA or manifest.get("supported_platforms") != ["darwin"]:
+    if schema == "ai-human.workspace-release/platform-v3":
+        if manifest.get("supported_platforms") != ["darwin", "win32"]:
+            raise ValueError("unsupported Mac and Windows platform declaration")
+        if sys.platform not in ("darwin", "win32"):
+            raise ValueError("this edition is for macOS and Windows only; use the common release on this platform")
+        return
+    if schema != PLATFORM_RELEASE_SCHEMA or manifest.get("supported_platforms") not in (["darwin"], ["win32"]):
         raise ValueError("unsupported release manifest schema or platform declaration")
-    if sys.platform != "darwin":
-        raise ValueError("this edition is for macOS only; use the common release on this platform")
+    supported = manifest["supported_platforms"][0]
+    if sys.platform != supported:
+        label = "macOS" if supported == "darwin" else "Windows"
+        raise ValueError("this edition is for " + label + " only; use the common release on this platform")
 
 
 def load_release(root):
@@ -16156,6 +16260,16 @@ def restore_backup(
             target.unlink()
 
 
+def require_supported_upgrade_source(manifest, installed_version):
+    if manifest.get("schema") not in (PLATFORM_RELEASE_SCHEMA, "ai-human.workspace-release/platform-v3"):
+        return
+    if version_tuple(manifest["version"]) <= version_tuple(installed_version):
+        return
+    minimum = (manifest.get("compatibility") or {}).get("minimum_supported_version", "")
+    if version_tuple(installed_version) < version_tuple(minimum):
+        raise ValueError("installed version is below the release upgrade floor; update to " + minimum + " first")
+
+
 def automatic_release_eligible(manifest, installed_version):
     if manifest.get("automatic_update_eligible") is not True:
         return False, "release is not marked eligible for automatic updates"
@@ -16334,6 +16448,7 @@ def apply_update(
             print("- local version: " + old_version)
             print("- release version: " + new_version)
         return {"status": "CURRENT", "from_version": old_version, "to_version": old_version}
+    require_supported_upgrade_source(manifest, old_version)
     if automatic:
         eligible, reason = automatic_release_eligible(manifest, old_version)
         if not eligible:
@@ -18215,7 +18330,7 @@ def recover_update_schedule_internal(worker):
                 old_config = paused
                 old_adapter = native_update_cleanup_adapter(worker, paused)
         else:
-            old_adapter.install(old_definition)
+            old_adapter.install(old_definition, old_native["definition_sha256"])
             if old_config["status"] == "PAUSED":
                 old_adapter.pause()
         observed = old_adapter.query(old_definition)
@@ -18436,7 +18551,7 @@ def update_schedule_configure(args):
             observed_status = "REMOVED"
             proof_status = "VERIFIED_REMOVED"
         else:
-            adapter.install(definition_path)
+            adapter.install(definition_path, hashlib.sha256(definition).hexdigest())
             if config["status"] == "PAUSED":
                 adapter.pause()
                 observed_status = "PAUSED"
@@ -18578,7 +18693,7 @@ def update_schedule_control(args):
         else:
             definition = render_update_schedule_definition(worker, updated)
             atomic_text(definition_path, definition.decode("utf-8"))
-            adapter.resume(definition_path)
+            adapter.resume(definition_path, hashlib.sha256(definition).hexdigest())
             observed_status = "ACTIVE"
             proof_status = "VERIFIED_ACTIVE"
         observed = (
@@ -20668,6 +20783,8 @@ def main():
                 repository = (args.repository if args.command == "fleet-update"
                               else install_metadata(safe_worker(args.worker))["repository"])
                 verify_lifecycle_source(root, manifest, repository, None, args)
+                if args.command == "update":
+                    require_supported_upgrade_source(manifest, install_metadata(safe_worker(args.worker))["installed_version"])
             elif args.source_manifest_sha256 is not None:
                 raise ValueError("--source-manifest-sha256 requires --source")
         operation = contextlib.nullcontext()

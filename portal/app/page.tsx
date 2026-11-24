@@ -2,7 +2,7 @@ import Image from "next/image";
 import { DownloadGroup } from "../components/download-group";
 import { downloadGroups } from "../content/site-data";
 import downloadManifest from "../content/download-manifest.json";
-import { commonVersion, macEditions, macVersion, platformReleases, releasePage, type Release } from "../content/platform-releases";
+import { commonVersion, macEditions, macVersion, windowsEditions, windowsVersion, platformReleases, releasePage, type Release } from "../content/platform-releases";
 
 function assetLink(release: Release | null, prefix: string) {
   const name = prefix + commonVersion + ".zip";
@@ -10,7 +10,10 @@ function assetLink(release: Release | null, prefix: string) {
 }
 
 export default async function Home() {
-  const { common: release, mac } = await platformReleases(downloadManifest.files);
+  const { common: release, mac, windows } = await platformReleases(downloadManifest.files);
+
+  const macLabel = mac?.tag_name ?? "v" + commonVersion;
+  const windowsLabel = windows?.tag_name ?? "v" + commonVersion;
 
   return (
     <main>
@@ -32,7 +35,7 @@ export default async function Home() {
 
       <section className="hero" id="start">
         <div className="hero-copy">
-          <p className="eyebrow">{mac ? "Mac v2.5.0 · Windows v2.4.0" : "Released v2.4.0"}</p>
+          <p className="eyebrow">Mac {macLabel} · Windows {windowsLabel}</p>
           <h1>Know your work. Save your time.</h1>
           <p className="hero-summary">Build source-backed personal work memory, a fixed-time Email EA and a reconciled Drive master index, with visible controls and proof.</p>
           <div className="hero-actions">
@@ -66,8 +69,8 @@ export default async function Home() {
           <strong>{mac?.tag_name ?? "v2.4.0"}</strong>
         </div>
         <div>
-          <span>Existing-worker update</span>
-          <strong>{mac ? "From v2.0.0 through v2.4.0 on Mac or v2.3.0 on Windows" : "Configured v2.0.0 through v2.3.0"}</strong>
+          <span>Windows download</span>
+          <strong>{windowsLabel}</strong>
         </div>
         <a href={releasePage(commonVersion)} target="_blank" rel="noreferrer">View source release</a>
         {!release ? <p className="release-fallback">The common release could not be verified live. The v2.4.0 downloads remain available.</p> : null}
@@ -85,14 +88,16 @@ export default async function Home() {
             <h3>Company edition.</h3>
             <p>Includes the Kairali Setup Helper, role prompts, Personal Work Memory + Daily Email EA, Drive Master Index, the human-only Saturday LinkedIn assistant and reference skill packages. v2.4 never activates a skill.</p>
             {mac && <p><a href={"/downloads/" + macEditions.employee} download>Mac v{macVersion} download</a></p>}
-            <a href="/downloads/KAIRALI-AI-HUMAN-v240-EMPLOYEE-EDITION-PUBLIC-KIT.zip" download>{mac ? "Windows v2.4.0 download" : "Mac and Windows v2.4.0 download"}</a>
+            {windows && !mac && <p><a href="/downloads/KAIRALI-AI-HUMAN-v240-EMPLOYEE-EDITION-PUBLIC-KIT.zip" download>Mac v2.4.0 download</a></p>}
+            <a href={windows ? "/downloads/" + windowsEditions.employee : "/downloads/KAIRALI-AI-HUMAN-v240-EMPLOYEE-EDITION-PUBLIC-KIT.zip"} download>{mac || windows ? "Windows " + windowsLabel + " download" : "Mac and Windows v2.4.0 download"}</a>
           </article>
           <article id="reusable-edition" className="path path-facilitator">
             <span>For everyone else</span>
             <h3>Reusable edition.</h3>
             <p>Contains only the company-neutral workspace, generic Setup Helper and reversible lifecycle controls. It is tested to contain no Kairali employee content.</p>
             {mac && <p><a href={"/downloads/" + macEditions.reusable} download>Mac v{macVersion} download</a></p>}
-            <a href="/downloads/AI-HUMAN-v240-REUSABLE-EDITION-PUBLIC-KIT.zip" download>{mac ? "Windows v2.4.0 download" : "Mac and Windows v2.4.0 download"}</a>
+            {windows && !mac && <p><a href="/downloads/AI-HUMAN-v240-REUSABLE-EDITION-PUBLIC-KIT.zip" download>Mac v2.4.0 download</a></p>}
+            <a href={windows ? "/downloads/" + windowsEditions.reusable : "/downloads/AI-HUMAN-v240-REUSABLE-EDITION-PUBLIC-KIT.zip"} download>{mac || windows ? "Windows " + windowsLabel + " download" : "Mac and Windows v2.4.0 download"}</a>
           </article>
         </div>
       </section>
@@ -270,7 +275,8 @@ export default async function Home() {
           <article>
             <span>4</span>
             <h3>Prove the exact worker.</h3>
-            {mac && <p>For Mac v2.5.0, ask the Setup Helper to verify the signed v2.5.0 tag, verify its exact commit and approved checksums, then open the matching edition ZIP from that commit. The helper updates from its workspace folder after matching the release repository to your installed worker. For an approved update, use the updater bundled inside that verified edition so it makes the worker recovery snapshot. Windows uses the common v2.4.0 release.</p>}
+            {mac && <p>For Mac v2.5.0, ask the Setup Helper to verify the signed v2.5.0 tag, verify its exact commit and approved checksums, then open the matching edition ZIP from that commit. The helper updates from its workspace folder after matching the release repository to your installed worker. For an approved update, use the updater bundled inside that verified edition so it makes the worker recovery snapshot.</p>}
+            {windows && <p>For Windows v{windowsVersion}, open the approved notice. Ask Setup Helper to verify the signed commit, your edition ZIP and its manifest, then use the updater inside the verified ZIP. Keep the recovery location and validation receipt.</p>}
             <p>A configured v2.0.0 through v2.3.0 worker moves to v2.4.0 with user-owned state preserved. A pre-v2 worker completes the guided Gate 0 migration first. Keep the version, validation receipt and preserved-state proof.</p>
           </article>
         </div>
@@ -279,7 +285,7 @@ export default async function Home() {
           <p><strong>Manual:</strong> the user approves the apply. GitHub Desktop Fetch/Pull synchronizes only the selected repository; it does not install this managed update.</p>
         </div>
         {mac && <p><a className="access-link" href="/downloads/KAIRALI-MAC-v250-UPDATE-WORKFLOW.md" download>Mac v2.5.0 employee update and recovery guide</a></p>}
-        <a className="access-link" href="/downloads/KAIRALI-MANAGED-UPDATE-WORKFLOW.md" download>{mac ? "Windows v2.4.0 employee update and recovery guide" : "Download the exact check prompt and recovery workflow"}</a>
+        <a className="access-link" href={windows ? "/downloads/KAIRALI-WINDOWS-v251-UPDATE-WORKFLOW.md" : "/downloads/KAIRALI-MANAGED-UPDATE-WORKFLOW.md"} download>Windows {windowsLabel} employee update and recovery guide</a>
       </section>
 
       <section className="access-boundary" id="access" aria-labelledby="access-heading">
@@ -335,6 +341,7 @@ export default async function Home() {
           <p>v2.4.0 is the common Mac and Windows release. Its exact source, checksums and release evidence are published together. Fetch/Pull updates a repository checkout, not an installed worker; configured v2.0.0 through v2.3.0 workers use the checked update path and pre-v2 workers use the guided migration. Interrupted managed updates stop ordinary work until the checked recovery path completes.</p>
         </div>
         <div className="technical-links">
+          {windows && <a href={releasePage(windowsVersion)} target="_blank" rel="noreferrer"><span>Windows {windowsLabel}</span><strong>Release files and checksums</strong></a>}
           {mac && <a href={releasePage(macVersion)} target="_blank" rel="noreferrer"><span>Mac v2.5.0</span><strong>Release files and checksums</strong></a>}
           <a href={assetLink(release, "ai-human-workspace-")} target="_blank" rel="noreferrer">
             <span>Workspace core</span>
@@ -374,7 +381,7 @@ export default async function Home() {
       </section>
 
       <footer>
-        <p>{mac ? "Mac v2.5.0 · Windows v2.4.0." : "Public v2.4.0."} Choose one edition, verify setup, and keep company Gate 0 profiles isolated.</p>
+        <p>Mac {macLabel} · Windows {windowsLabel}. Choose one edition, verify setup, and keep company Gate 0 profiles isolated.</p>
         <a href="#troubleshooting">Stuck? Start with troubleshooting.</a>
       </footer>
     </main>

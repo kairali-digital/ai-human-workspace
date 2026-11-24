@@ -2,6 +2,10 @@
 
 All notable changes are recorded here in plain language.
 
+## [2.5.1] Windows edition update
+
+Windows 2.5.1 is available in employee and reusable editions once its signed release is approved. Mac uses its separate release. The Setup Helper can verify the archive and its embedded manifest against one edition record. Reusable workspaces continue to use a locally supplied source.
+
 ## [2.5.0] Mac release candidate
 
 - Add an adaptive work governor that can lower the effective action batch while

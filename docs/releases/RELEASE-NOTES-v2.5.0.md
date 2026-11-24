@@ -1,3 +1,7 @@
+> PRIVATE WINDOWS 2.5 QA CANDIDATE — DO NOT INSTALL OR DISTRIBUTE.
+> This is not a Windows release approval. Installation is blocked by LOCAL_BUILD_ONLY.
+> Stable Windows remains v2.4.0. The Mac release instructions below are retained for comparison, not Windows authorization.
+
 # AI-Human Workspace v2.5.0 for Mac
 
 Mac users can use this version after the owner issues the matching release notice. Windows users should select v2.4.0. Existing workers need an idle checkpoint, a verified backup and the user's approval. Automatic updates are disabled for this release.

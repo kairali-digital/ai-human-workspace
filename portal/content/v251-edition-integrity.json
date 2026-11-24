@@ -1,0 +1,12 @@
+{
+  "AI-HUMAN-v251-REUSABLE-EDITION-PUBLIC-KIT.zip": {
+    "archive_sha256": "569539986771b06d7356fdadebb140c2cc96ce58506c07d906403a12d11c14f3",
+    "manifest_sha256": "1d8afa4fc96e45cb45256b0885aa55d1a68404034da09c1f4086e56ce46f780d",
+    "repository": "standalone-local/ai-human-workspace"
+  },
+  "KAIRALI-AI-HUMAN-v251-EMPLOYEE-EDITION-PUBLIC-KIT.zip": {
+    "archive_sha256": "fd6761924d9b8a10e668647233bbae633e93751f86344f0778170ad6591293ea",
+    "manifest_sha256": "79c4570f2f932737b326cba2fa37cfe826b06331c04374ee298ea756869eabd6",
+    "repository": "kairali-digital/ai-human-workspace"
+  }
+}

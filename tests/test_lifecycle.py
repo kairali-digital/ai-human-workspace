@@ -121,7 +121,9 @@ class FakeNativeUpdateAdapter:
     def observed_timezone_id(self):
         return self.observed_timezone
 
-    def install(self, definition_path):
+    def install(self, definition_path, expected_digest=None):
+        if sha256(Path(definition_path)) != expected_digest:
+            raise ValueError("fixture observed a registration digest mismatch")
         self.registry[self.external_id] = {
             "status": "ACTIVE",
             "definition_sha256": sha256(Path(definition_path)),
@@ -137,8 +139,8 @@ class FakeNativeUpdateAdapter:
             raise ValueError("fake native task is missing")
         self.registry[self.external_id]["status"] = "PAUSED"
 
-    def resume(self, definition_path):
-        self.install(definition_path)
+    def resume(self, definition_path, expected_digest=None):
+        self.install(definition_path, expected_digest)
 
     def remove(self):
         self.registry.pop(self.external_id, None)
@@ -1487,6 +1489,13 @@ class LifecycleTests(unittest.TestCase):
         manifest["schema"] = product["schema"]
         if "supported_platforms" in product:
             manifest["supported_platforms"] = product["supported_platforms"]
+        version = product["version"]
+        manifest["version"] = version
+        (release / "core/VERSION").write_text(version + "\n", encoding="utf-8")
+        components_path = release / "component-manifest.json"
+        components = AI_HUMAN.read_json(components_path)
+        components["version"] = version
+        AI_HUMAN.atomic_json(components_path, components)
         AI_HUMAN.atomic_json(manifest_path, manifest)
         result = subprocess.run(
             [sys.executable, str(ROOT / "scripts/build_release.py"), str(release)],
@@ -2187,7 +2196,7 @@ class LifecycleTests(unittest.TestCase):
         self.assertEqual(AI_HUMAN.install_metadata(worker)["installed_version"], TEST_UPGRADE_VERSION)
 
     def test_reusable_edition_refuses_remote_release_and_schedule_before_external_io(self):
-        records = AI_HUMAN.read_json(ROOT / "portal/content/mac-edition-integrity.json")
+        records = AI_HUMAN.read_json(ROOT / "portal/content/v251-edition-integrity.json")
         archive_name, = [name for name in records if "REUSABLE" in name]
         archive = ROOT / "portal/public/downloads" / archive_name
         with zipfile.ZipFile(archive) as package:
@@ -2216,7 +2225,7 @@ class LifecycleTests(unittest.TestCase):
             network.assert_not_called()
 
     def test_platform_scoped_edition_integrity_and_host_selection(self):
-        records = AI_HUMAN.read_json(ROOT / "portal/content/mac-edition-integrity.json")
+        records = AI_HUMAN.read_json(ROOT / "portal/content/v251-edition-integrity.json")
         self.assertEqual(len(records), 2)
         observed = set()
         for name, record in records.items():
@@ -2229,19 +2238,36 @@ class LifecycleTests(unittest.TestCase):
             manifest = json.loads(raw)
             self.assertEqual(manifest["repository"], record["repository"])
             observed.add(record["repository"])
-            self.assertEqual(manifest["schema"], "ai-human.workspace-release/platform-v2")
+            self.assertEqual(manifest["schema"], AI_HUMAN.PLATFORM_RELEASE_SCHEMA)
+            self.assertEqual(manifest["supported_platforms"], ["win32"])
             for host in ("darwin", "win32", "linux"):
                 with self.subTest(edition=name, host=host), mock.patch.object(sys, "platform", host):
-                    if host == "darwin":
+                    if host == "win32":
                         AI_HUMAN.require_release_platform(manifest)
                     else:
-                        with self.assertRaisesRegex(ValueError, "macOS only"):
+                        with self.assertRaisesRegex(ValueError, "(?:macOS|Windows) only"):
                             AI_HUMAN.require_release_platform(manifest)
                     AI_HUMAN.require_release_platform({"schema": "ai-human.workspace-release/v1"})
         self.assertEqual(observed, {"standalone-local/ai-human-workspace", "kairali-digital/ai-human-workspace"})
 
+    def test_platform_declaration_refuses_unknown_or_combined_hosts(self):
+        for declaration in ([], ["linux"], ["darwin", "win32"], "win32", None):
+            with self.subTest(declaration=declaration), self.assertRaises(ValueError):
+                AI_HUMAN.require_release_platform({"schema": AI_HUMAN.PLATFORM_RELEASE_SCHEMA,
+                                                  "supported_platforms": declaration})
+        for declaration in ([], ["darwin"], ["win32"], ["win32", "darwin"], ["darwin", "win32", "linux"]):
+            with self.subTest(declaration=declaration), self.assertRaises(ValueError):
+                AI_HUMAN.require_release_platform({"schema": "ai-human.workspace-release/platform-v3",
+                                                   "supported_platforms": declaration})
+        for platform, label in (("darwin", "macOS"), ("win32", "Windows")):
+            manifest = {"schema": AI_HUMAN.PLATFORM_RELEASE_SCHEMA, "supported_platforms": [platform]}
+            with mock.patch.object(sys, "platform", platform):
+                AI_HUMAN.require_release_platform(manifest)
+            with mock.patch.object(sys, "platform", "linux"), self.assertRaisesRegex(ValueError, label + " only"):
+                AI_HUMAN.require_release_platform(manifest)
+
     def test_local_rollback_and_recovery_require_matching_edition_and_digest(self):
-        worker = self.base / "edition-worker"
+        worker = (self.base / "edition-worker").resolve()
         self.install(worker)
         newer = self.base / "new-release"
         shutil.copytree(self.release, newer)
@@ -2278,7 +2304,7 @@ class LifecycleTests(unittest.TestCase):
         self.run_cli("validate", worker)
 
     def test_applied_crash_reconstructs_update_and_rollback_receipts(self):
-        worker = self.base / "receipt-recovery-worker"
+        worker = (self.base / "receipt-recovery-worker").resolve()
         self.install(worker)
         newer = self.base / "receipt-recovery-next"
         shutil.copytree(self.release, newer)
@@ -2333,7 +2359,7 @@ class LifecycleTests(unittest.TestCase):
                 self.assertFalse(AI_HUMAN.transaction_file(worker).exists())
 
     def test_old_interrupted_journal_after_metadata_write_requires_independent_local_manifest(self):
-        worker = self.base / "old-journal-worker"
+        worker = (self.base / "old-journal-worker").resolve()
         self.install(worker)
         self.run_cli("validate", worker)
         target_root = self.base / "old-journal-next"
@@ -6514,10 +6540,10 @@ class LifecycleTests(unittest.TestCase):
                 AI_HUMAN.safe_extract(archive, extracted)
                 source = extracted / edition_root / "workspace"
                 worker = self.base / worker_name
-                if sys.platform != "darwin" and manifest.get("supported_platforms") == ["darwin"]:
+                if manifest.get("supported_platforms") and sys.platform not in manifest["supported_platforms"]:
                     rejection = self.run_cli("install", worker, "--source", source,
                                              *self.required_install_arguments(), expect=1)
-                    self.assertIn("macOS only", rejection.stderr)
+                    self.assertIn("only; use the common release", rejection.stderr)
                     self.assertFalse((worker / ".ai-human").exists())
                     continue
                 if manifest["release_status"] == "LOCAL_BUILD_ONLY":
@@ -8341,6 +8367,32 @@ class LifecycleTests(unittest.TestCase):
             json.dumps(metadata, indent=2, sort_keys=True) + "\n", encoding="utf-8"
         )
         self.assertEqual(self.run_cli("validate", worker).returncode, 0)
+        # Exercise the platform release preflight and the required intermediate update.
+        target = self.release / "release-manifest.json"
+        product = AI_HUMAN.read_json(target)
+        if sys.platform in ("darwin", "win32"):
+            product.update(schema=AI_HUMAN.PLATFORM_RELEASE_SCHEMA, supported_platforms=[sys.platform])
+            product["compatibility"]["minimum_supported_version"] = "2.4.0"
+            AI_HUMAN.atomic_json(target, product)
+            before = AI_HUMAN.tree_proof(worker)
+            refused = self.run_cli("update", worker, "--source", self.release, "--source-manifest-sha256",
+                                   sha256(target), "--at-checkpoint", expect=1)
+            self.assertIn("update to 2.4.0 first", refused.stderr)
+            self.assertEqual(AI_HUMAN.tree_proof(worker), before)
+            with self.assertRaisesRegex(ValueError, "update to 2.4.0 first"):
+                AI_HUMAN.apply_update(worker, self.release, product, at_checkpoint=True)
+            self.assertEqual(AI_HUMAN.tree_proof(worker), before)
+        intermediate = self.base / "common-v240"
+        shutil.copytree(self.release, intermediate)
+        refresh_release(intermediate, "2.4.0")
+        path = intermediate / "release-manifest.json"
+        common = AI_HUMAN.read_json(path)
+        common.update(schema=AI_HUMAN.COMMON_RELEASE_SCHEMA)
+        common.pop("supported_platforms", None)
+        common["compatibility"]["minimum_supported_version"] = "2.0.0"
+        AI_HUMAN.atomic_json(path, common)
+        self.run_cli("update", worker, "--source", intermediate, "--source-manifest-sha256", sha256(path))
+        self.assertEqual(AI_HUMAN.install_metadata(worker)["installed_version"], "2.4.0")
         updated = self.run_cli("update", worker, "--source", self.release, "--source-manifest-sha256", sha256(self.release / "release-manifest.json"), "--at-checkpoint")
         self.assertIn("AI-HUMAN UPDATE: PASS", updated.stdout)
         self.assertEqual(self.run_cli("validate", worker).returncode, 0)
@@ -10620,9 +10672,58 @@ class LifecycleTests(unittest.TestCase):
         definition = worker / ".ai-human/update-schedule/definitions/windows-test.xml"
         definition.write_bytes(xml_bytes)
         adapter = AI_HUMAN.NativeUpdateAdapter(worker, windows)
+        raw = xml_bytes.replace(b"</Description>", " · Définition</Description>".encode())
+        definition.write_bytes(raw)
+        staged_paths = []
+
+        def register(args, **kwargs):
+            staged = Path(args[args.index("/XML") + 1])
+            staged_paths.append(staged)
+            self.assertTrue(staged.read_bytes().startswith(b"\xff\xfe"))
+            self.assertEqual(staged.read_bytes().decode("utf-16"),
+                             raw.decode("utf-8").replace("encoding='utf-8'", "encoding='UTF-16'", 1))
+            return SimpleNamespace(returncode=0, stdout=b"", stderr=b"")
+
+        with mock.patch.object(adapter, "observed_timezone_id", return_value=windows["native_timezone_id"]):
+            with mock.patch.object(AI_HUMAN.subprocess, "run", side_effect=register) as create:
+                with self.assertRaisesRegex(ValueError, "differs from the verified schedule"):
+                    adapter.install(definition, hashlib.sha256(xml_bytes).hexdigest())
+                create.assert_not_called()
+                adapter.install(definition, sha256(definition))
+            self.assertEqual(definition.read_bytes(), raw)
+            self.assertFalse(staged_paths[0].exists())
+        definition.write_bytes(xml_bytes)
         active = SimpleNamespace(returncode=0, stdout=xml_text, stderr="")
         paused_root = AI_HUMAN.ET.fromstring(xml_text)
         namespace = {"t": "http://schemas.microsoft.com/windows/2004/02/mit/task"}
+        exported = AI_HUMAN.ET.fromstring(xml_text)
+        for path, omitted in (
+            ("t:Settings", "Enabled"), ("t:Principals/t:Principal", "RunLevel"),
+            ("t:Triggers/t:CalendarTrigger", "Enabled"),
+        ):
+            parent = exported.find(path, namespace)
+            parent.remove(parent.find("t:" + omitted, namespace))
+            parent[:] = parent[::-1]
+        exported[:] = exported[::-1]
+        def check_export():
+            result = SimpleNamespace(returncode=0, stderr="",
+                                     stdout=AI_HUMAN.ET.tostring(exported, encoding="unicode"))
+            with mock.patch.object(AI_HUMAN.subprocess, "run", return_value=result):
+                return adapter.query(definition)
+        self.assertEqual(check_export(), {"status": "ACTIVE", "definition_sha256": sha256(definition)})
+        engine = exported.find("t:Settings/t:UseUnifiedSchedulingEngine", namespace)
+        settings = exported.find("t:Settings", namespace)
+        extra_engine = AI_HUMAN.ET.SubElement(settings, engine.tag)
+        extra_engine.text = "false"
+        with self.assertRaisesRegex(ValueError, "duplicate fields in Settings"):
+            check_export()
+        settings.remove(extra_engine)
+        engine.text = "false"
+        self.assertIsNone(check_export()["definition_sha256"])
+        engine.text = "true"
+        principal = exported.find("t:Principals/t:Principal", namespace)
+        AI_HUMAN.ET.SubElement(principal, "{" + namespace["t"] + "}RunLevel").text = "HighestAvailable"
+        self.assertIsNone(check_export()["definition_sha256"])
         paused_root.find("t:Settings/t:Enabled", namespace).text = "false"
         paused = SimpleNamespace(
             returncode=0,
@@ -10817,6 +10918,13 @@ class LifecycleTests(unittest.TestCase):
                 SimpleNamespace(
                     worker=str(worker), action="PAUSE", approval_reference="idempotent pause"
                 )
+            )
+            AI_HUMAN.update_schedule_control(
+                SimpleNamespace(worker=str(worker), action="RESUME", approval_reference="resume fixture")
+            )
+            self.assertEqual(next(iter(registry.values()))["status"], "ACTIVE")
+            AI_HUMAN.update_schedule_control(
+                SimpleNamespace(worker=str(worker), action="PAUSE", approval_reference="pause fixture")
             )
             paused_edit = self.schedule_args(
                 worker, command="update-schedule-edit", local_time="04:00"
@@ -11323,6 +11431,25 @@ class LifecycleTests(unittest.TestCase):
                 "status": "REMOVED", "definition_sha256": None,
             })
             adapter.remove()
+        task = r"\AI-Human\aihuman-update-0123456789abcdef"
+        path_error = SimpleNamespace(returncode=1, stdout="", stderr="ERROR: The system cannot find the path specified.")
+        with mock.patch.object(AI_HUMAN, "windows_system_powershell", return_value="test-powershell"):
+            for code, output, error, absent in (
+                (0, "ABSENT\n", "", True), (1, "ABSENT", "", False),
+                (0, "ABSENT", "denied", False), (0, "", "", False),
+            ):
+                probe = SimpleNamespace(returncode=code, stdout=output, stderr=error)
+                with self.subTest(code=code, output=output, error=error), mock.patch.object(
+                    AI_HUMAN.subprocess, "run", return_value=probe
+                ) as execute:
+                    self.assertEqual(AI_HUMAN.windows_task_missing(path_error, task), absent)
+                    self.assertEqual(execute.call_args.kwargs["env"]["AIH_LOOKUP_LEAF"], task.rsplit("\\", 1)[1])
+            with mock.patch.object(AI_HUMAN.subprocess, "run", side_effect=OSError("unavailable")):
+                self.assertFalse(AI_HUMAN.windows_task_missing(path_error, task))
+        with mock.patch.object(AI_HUMAN.subprocess, "run") as execute:
+            self.assertFalse(AI_HUMAN.windows_task_missing(path_error))
+            self.assertFalse(AI_HUMAN.windows_task_missing(path_error, r"\Other\job"))
+            execute.assert_not_called()
         for detail in (
             "Task Scheduler service not found",
             "The specified account does not exist",

@@ -1,15 +1,23 @@
+import { createHash } from "node:crypto";
+
 const repository = "kairali-digital/ai-human-workspace";
 const github = "https://github.com/" + repository;
 const api = "https://api.github.com/repos/" + repository;
 const publisher = "AbhilashKairali";
 
 export const commonVersion = "2.4.0";
+export const windowsVersion = "2.5.1";
 export const macVersion = "2.5.0";
 export const releasePage = (version: string) => github + "/releases/tag/v" + version;
 
 export const macEditions = {
   employee: "KAIRALI-AI-HUMAN-v250-EMPLOYEE-EDITION-PUBLIC-KIT.zip",
   reusable: "AI-HUMAN-v250-REUSABLE-EDITION-PUBLIC-KIT.zip",
+};
+
+export const windowsEditions = {
+  employee: "KAIRALI-AI-HUMAN-v251-EMPLOYEE-EDITION-PUBLIC-KIT.zip",
+  reusable: "AI-HUMAN-v251-REUSABLE-EDITION-PUBLIC-KIT.zip",
 };
 
 type Asset = { name: string; state: string; size: number; digest: string; browser_download_url: string };
@@ -47,13 +55,47 @@ async function readRelease(endpoint: string, version: string) {
   }
 }
 
-export async function platformReleases(files: ReadonlyArray<{ name: string }>) {
+type Download = { name: string; sha256: string };
+
+// The release packet is produced after signing. Keeping its digest outside the
+// source tree avoids making the release archive contain its own checksum.
+async function approvedWindowsRelease(files: ReadonlyArray<Download>) {
+  const approval = process.env.WINDOWS_V251_RELEASE_PACKET_SHA256;
+  if (!approval || !/^[a-f0-9]{64}$/.test(approval)) return null;
+  try {
+    const [release, response] = await Promise.all([
+      readRelease("/releases/tags/v" + windowsVersion, windowsVersion),
+      fetch(api + "/commits/v" + windowsVersion, {
+        headers: { Accept: "application/vnd.github+json" }, next: { revalidate: 300 },
+      }),
+    ]);
+    if (!release || !response.ok || release.assets.length !== 6) return null;
+    const commit = await response.json();
+    if (!/^[a-f0-9]{40}$/.test(commit.sha) || commit.author?.login !== publisher ||
+        commit.commit?.verification?.verified !== true || commit.commit.verification.reason !== "valid") return null;
+    const entries = release.assets.map(asset => asset.name + " " + asset.digest.slice(7));
+    for (const name of Object.values(windowsEditions)) {
+      for (const filename of [name, name + ".sha256"]) {
+        const matching = files.filter(file => file.name === filename);
+        if (matching.length !== 1 || !/^[a-f0-9]{64}$/.test(matching[0].sha256)) return null;
+        entries.push(filename + " " + matching[0].sha256);
+      }
+    }
+    const packet = [commit.sha, ...entries.sort()].join("\n") + "\n";
+    return createHash("sha256").update(packet).digest("hex") === approval ? release : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function platformReleases(files: ReadonlyArray<Download>) {
   const installed = new Set(files.map(file => file.name));
-  const bothEditionsPresent = Object.values(macEditions).every(name =>
+  const complete = (editions: typeof macEditions) => Object.values(editions).every(name =>
     installed.has(name) && installed.has(name + ".sha256"));
-  const [common, mac] = await Promise.all([
-    readRelease("/releases/latest", commonVersion),
-    bothEditionsPresent ? readRelease("/releases/tags/v" + macVersion, macVersion) : null,
+  const [common, mac, windows] = await Promise.all([
+    readRelease("/releases/tags/v" + commonVersion, commonVersion),
+    complete(macEditions) ? readRelease("/releases/tags/v" + macVersion, macVersion) : null,
+    complete(windowsEditions) ? approvedWindowsRelease(files) : null,
   ]);
-  return { common, mac: common && mac ? mac : null };
+  return { common, mac, windows };
 }

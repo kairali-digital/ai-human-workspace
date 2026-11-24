@@ -82,6 +82,16 @@
       "size": 112
     },
     {
+      "name": "AI-HUMAN-v251-REUSABLE-EDITION-PUBLIC-KIT.zip",
+      "sha256": "569539986771b06d7356fdadebb140c2cc96ce58506c07d906403a12d11c14f3",
+      "size": 268247
+    },
+    {
+      "name": "AI-HUMAN-v251-REUSABLE-EDITION-PUBLIC-KIT.zip.sha256",
+      "sha256": "0ac8f184b281a376e45241a171d40756f658226fdda798a6a3bdf6a6b1f6fec7",
+      "size": 112
+    },
+    {
       "name": "EMPLOYEE-SETUP-AND-PROOF-GUIDE-v7-PUBLIC-KIT.docx",
       "sha256": "71285bdb986099c9993c8b5acbd3a5b45792cf91ef1c992d6a17290939e0e31a",
       "size": 45710
@@ -192,6 +202,16 @@
       "size": 120
     },
     {
+      "name": "KAIRALI-AI-HUMAN-v251-EMPLOYEE-EDITION-PUBLIC-KIT.zip",
+      "sha256": "fd6761924d9b8a10e668647233bbae633e93751f86344f0778170ad6591293ea",
+      "size": 25593136
+    },
+    {
+      "name": "KAIRALI-AI-HUMAN-v251-EMPLOYEE-EDITION-PUBLIC-KIT.zip.sha256",
+      "sha256": "d916510e3d0254e8b72886d8c9a8201ba9dd00ab0b35542d69ae8ee808c23266",
+      "size": 120
+    },
+    {
       "name": "KAIRALI-AI-METHOD-ADVANCED-CLI-BONUS-v8-PUBLIC-KIT.pdf",
       "sha256": "9e74f051f1c70e3f703afc31d3daa136f7e98fc2c1167712097ab46d45f6c449",
       "size": 422260
@@ -230,6 +250,11 @@
       "name": "KAIRALI-MANAGED-UPDATE-WORKFLOW.md",
       "sha256": "8a33a9004c864a4673c47ca485b317a39625181e3c423f12655f3586ec4cbc47",
       "size": 4743
+    },
+    {
+      "name": "KAIRALI-WINDOWS-v251-UPDATE-WORKFLOW.md",
+      "sha256": "2bad25ed96e526b910c455c6991691fe1d3cef45d2cc822815fcbd7fd57d8d4a",
+      "size": 7712
     },
     {
       "name": "PRINT-CHECKLIST-v9-PUBLIC-KIT.docx",

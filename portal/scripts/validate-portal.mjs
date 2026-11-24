@@ -52,10 +52,9 @@ const macEditions = [
 ];
 if (macEditions.some(name => records.has(name) || records.has(name + ".sha256"))) {
   const macGuide = "KAIRALI-MAC-v250-UPDATE-WORKFLOW.md";
-  const authoritativeGuide = await readFile(path.join(repositoryRoot, "packages/kairali/UPDATE-WORKFLOW.md"));
-  const servedGuide = await readFile(path.join(downloads, macGuide)).catch(() => null);
-  if (!records.has(macGuide) || !servedGuide?.equals(authoritativeGuide)) {
-    issues.push("Mac update guide differs from the employee edition workflow");
+  // The Mac guide belongs to its immutable 2.5.0 release.
+  if (records.get(macGuide)?.sha256 !== "6b1c651f27beac3335b99e4a57a6871684f32e47c5e64caba971fbcd96c9de2a") {
+    issues.push("Mac 2.5.0 update guide differs from the released guide");
   }
   for (const name of macEditions) {
     const zip = records.get(name);
@@ -67,6 +66,22 @@ if (macEditions.some(name => records.has(name) || records.has(name + ".sha256"))
     const expected = zip.sha256 + "  " + name;
     const checksum = await readFile(path.join(downloads, sidecar), "utf8").catch(() => "");
     if (checksum.trimEnd() !== expected) issues.push(`Mac edition checksum differs: ${name}`);
+  }
+}
+
+const releaseManifest = JSON.parse(await readFile(path.join(repositoryRoot, "release-manifest.json"), "utf8"));
+if (releaseManifest.version === "2.5.1" && releaseManifest.release_status === "RELEASED") {
+  const guide = await readFile(path.join(repositoryRoot, "packages/kairali/UPDATE-WORKFLOW.md"));
+  if (records.get("KAIRALI-WINDOWS-v251-UPDATE-WORKFLOW.md")?.sha256 !== createHash("sha256").update(guide).digest("hex")) {
+    issues.push("Windows 2.5.1 update guide differs from the employee workflow");
+  }
+  const editions = JSON.parse(await readFile(path.join(root, "content/v251-edition-integrity.json"), "utf8"));
+  for (const name of ["KAIRALI-AI-HUMAN-v251-EMPLOYEE-EDITION-PUBLIC-KIT.zip", "AI-HUMAN-v251-REUSABLE-EDITION-PUBLIC-KIT.zip"]) {
+    const checksum = await readFile(path.join(downloads, name + ".sha256"), "utf8").catch(() => "");
+    if (!editions[name] || records.get(name)?.sha256 !== editions[name].archive_sha256 ||
+        checksum.trimEnd() !== editions[name].archive_sha256 + "  " + name) {
+      issues.push("Windows 2.5.1 edition or checksum differs: " + name);
+    }
   }
 }
 

@@ -136,6 +136,7 @@ def write_archive(path, root_name, files):
     with zipfile.ZipFile(path, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=9) as archive:
         for relative in sorted(files):
             info = zipfile.ZipInfo(root_name + "/" + relative, date_time=ZIP_TIME)
+            info.create_system = 3  # Fixed Unix ZIP metadata on both build hosts.
             info.compress_type = zipfile.ZIP_DEFLATED
             info.external_attr = 0o100644 << 16
             archive.writestr(info, files[relative])
@@ -187,9 +188,12 @@ def main():
     if VERSION == "2.5.0" and RELEASE_STATUS == "RELEASED":
         guide = ROOT / "packages/kairali/UPDATE-WORKFLOW.md"
         (DOWNLOADS / "KAIRALI-MAC-v250-UPDATE-WORKFLOW.md").write_bytes(file_bytes(guide))
+    if VERSION == "2.5.1" and RELEASE_STATUS == "RELEASED":
+        guide = ROOT / "packages/kairali/UPDATE-WORKFLOW.md"
+        (DOWNLOADS / "KAIRALI-WINDOWS-v251-UPDATE-WORKFLOW.md").write_bytes(file_bytes(guide))
     reusable = build_reusable()
     kairali = build_kairali()
-    if VERSION == "2.5.0":
+    if VERSION in ("2.5.0", "2.5.1"):
         editions = {}
         for name, prefix, archive_hash in (
             (REUSABLE_NAME, REUSABLE_ROOT, reusable),
@@ -202,7 +206,10 @@ def main():
                 "manifest_sha256": digest(manifest),
                 "repository": json.loads(manifest)["repository"],
             }
-        record = ROOT / "portal/content/mac-edition-integrity.json"
+        platform_name = "windows" if read_json(ROOT / "release-manifest.json").get("supported_platforms") == ["win32"] else "mac"
+        if VERSION == "2.5.1":
+            platform_name = "v251"
+        record = ROOT / ("portal/content/" + platform_name + "-edition-integrity.json")
         record.write_text(json.dumps(editions, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
     all_names = {

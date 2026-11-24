@@ -49,8 +49,7 @@ Only after that proof may the managed v2 update run.
 
 ## Post-migration automatic path
 
-This local candidate adds a second path without removing the manual one. It is not
-active on any employee worker yet.
+The first move to 2.5.1 uses the verified edition at a safe checkpoint. Later releases can use the scheduled path on a separately enrolled and verified worker.
 
 1. Each configured worker checks once on the first calendar day at 10:00 AM in its
    confirmed local time zone.
@@ -74,7 +73,7 @@ local proof to employee use.
 CHECK FOR KAIRALI UPDATE
 
 Read .ai-human/VERSION, .ai-human/system/SESSION-START.md and the installed component receipts for this project.
-Check my platform and the approved release from kairali-digital/ai-human-workspace. During the Mac-only v2.5.0 rollout, Windows uses the common v2.4.0 release. For Mac, check the owner-approved Mac release notice against the signed v2.5.0 tag, its exact commit and approved hashes. From the verified commit select the Kairali employee edition ZIP, compare its SHA-256 with the approved release notice and use its extracted workspace folder. Verify its repository matches the installed worker before applying. Ask the helper to read the ZIP and manifest checksums for your edition from portal/content/mac-edition-integrity.json at the exact signed commit in the approved notice. Have it verify the whole ZIP before opening or running its updater, then supply the approved manifest checksum when applying the update so it can make the worker recovery snapshot. If the notice or proof is missing, keep the existing worker and tell me what is missing.
+Check my platform and the approved release from kairali-digital/ai-human-workspace. On Mac, use the Mac release guide from the website. If my Windows worker is older than 2.4.0, first use the signed Windows 2.4.0 update workflow and verify its receipt. For Windows v2.5.1, check the owner-approved release notice against the signed v2.5.1 tag, its exact commit and approved hashes. From the verified commit select the Kairali employee edition ZIP, compare its SHA-256 with the approved release notice and use its extracted workspace folder. Verify its repository matches the installed worker before applying. Ask the helper to read the ZIP and manifest checksums for your edition from portal/content/v251-edition-integrity.json at the exact signed commit in the approved notice. Have it verify the whole ZIP before opening or running its updater, then supply the approved manifest checksum to the updater inside the verified ZIP when applying the update so it can make the worker recovery snapshot. If the notice or proof is missing, keep the existing worker and tell me what is missing.
 Do not change any file yet.
 
 Tell me:

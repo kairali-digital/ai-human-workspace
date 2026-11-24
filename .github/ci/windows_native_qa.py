@@ -14,7 +14,7 @@ def main():
         raise RuntimeError("Requires a disposable Windows Actions runner")
     source = Path(sys.argv[1]).resolve()
     commit = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=source, text=True).strip()
-    if commit != "699b7c16deb1768d2a07a2e9392e1b955d8be8ed":
+    if commit != "13a546926eb47b2b9b9a0e4682c6b1a44a04d395":
         raise RuntimeError("Candidate differs from the approved Windows source")
     sys.path.insert(0, str(source / "tests"))
     import test_lifecycle as fixtures
@@ -34,7 +34,7 @@ def main():
                         "--timezone", "UTC")
         runner = worker / ".ai-human/bin/ai_human.py"
         runtime_hash = hashlib.sha256(runner.read_bytes()).hexdigest()
-        if runtime_hash != "0b270069b660728ac45a1194e7ceb4b4b05e301c966c65a1cc355b85ef60933b":
+        if runtime_hash != "b625f2d09b1cd1a0682e72f4c27f4f556ebcba431662a6e643d19f2257a09516":
             raise RuntimeError("Installed runtime digest differs")
         def cli(*args):
             return subprocess.run([sys.executable, "-I", str(runner), args[0],

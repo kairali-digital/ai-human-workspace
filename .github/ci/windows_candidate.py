@@ -18,9 +18,9 @@ import zipfile
 
 
 # Update all five candidate pins together after freezing a new product commit.
-CANDIDATE = "699b7c16deb1768d2a07a2e9392e1b955d8be8ed"
-TREE = "caea36e28e2226a416c135e43562d19fd15c06be"
-RUNTIME = "0b270069b660728ac45a1194e7ceb4b4b05e301c966c65a1cc355b85ef60933b"
+CANDIDATE = "13a546926eb47b2b9b9a0e4682c6b1a44a04d395"
+TREE = "c8f9da638f7cf05814b4efde3d181abdc9042122"
+RUNTIME = "b625f2d09b1cd1a0682e72f4c27f4f556ebcba431662a6e643d19f2257a09516"
 EXPECTED_TEST_COUNT = 248
 EXPECTED_SUITE_SHA256 = "0e207f5ad82b140d7c79b8b023b2b2b8a47f35ccfe5abf3a035999351600f685"
 SHARD_COUNT = 4
@@ -56,7 +56,7 @@ def inventory(root):
 
 def verify_built_editions(source, original_records):
     """Permit host-specific ZIP hashes only with unchanged edition identity."""
-    record_path = source / "portal/content/windows-edition-integrity.json"
+    record_path = source / "portal/content/v251-edition-integrity.json"
     records = json.loads(record_path.read_text(encoding="utf-8"))
     if not isinstance(records, dict) or records.keys() != original_records.keys():
         raise RuntimeError("built edition record set changed")
@@ -317,7 +317,7 @@ def main():
                 raise RuntimeError("candidate must remain unreleased")
         if json.loads((source / "release-manifest.json").read_text(encoding="utf-8")).get("automatic_update_eligible") is not False:
             raise RuntimeError("candidate cannot enable automatic updates")
-        original_records = json.loads((source / "portal/content/windows-edition-integrity.json").read_text(encoding="utf-8"))
+        original_records = json.loads((source / "portal/content/v251-edition-integrity.json").read_text(encoding="utf-8"))
         original = inventory(source)
         if not args.prepare_only:
             run("pinned-prerequisites", [sys.executable, "-m", "pip", "install", "--require-hashes", "-r", "requirements.txt"], source)
@@ -328,7 +328,7 @@ def main():
         changes = sorted(name for name in set(original) | set(built) if original.get(name) != built.get(name))
         receipt["packaging_changed_paths"] = changes
         for name in changes:
-            if name not in ("release-proof.json", "portal/content/windows-edition-integrity.json") and not (
+            if name not in ("release-proof.json", "portal/content/v251-edition-integrity.json") and not (
                 name.startswith("portal/public/downloads/") and name.endswith((".zip", ".zip.sha256"))
             ):
                 raise RuntimeError("packaging unexpectedly changed " + name)

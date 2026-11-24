@@ -10684,8 +10684,8 @@ class LifecycleTests(unittest.TestCase):
         ):
             parent = exported.find(path, namespace)
             parent.remove(parent.find("t:" + omitted, namespace))
-            parent[:] = reversed(parent[:])
-        exported[:] = reversed(exported[:])
+            parent[:] = parent[::-1]
+        exported[:] = exported[::-1]
         def check_export():
             result = SimpleNamespace(returncode=0, stderr="",
                                      stdout=AI_HUMAN.ET.tostring(exported, encoding="unicode"))
@@ -10693,6 +10693,12 @@ class LifecycleTests(unittest.TestCase):
                 return adapter.query(definition)
         self.assertEqual(check_export(), {"status": "ACTIVE", "definition_sha256": sha256(definition)})
         engine = exported.find("t:Settings/t:UseUnifiedSchedulingEngine", namespace)
+        settings = exported.find("t:Settings", namespace)
+        extra_engine = AI_HUMAN.ET.SubElement(settings, engine.tag)
+        extra_engine.text = "false"
+        with self.assertRaisesRegex(ValueError, "duplicate fields in Settings"):
+            check_export()
+        settings.remove(extra_engine)
         engine.text = "false"
         self.assertIsNone(check_export()["definition_sha256"])
         engine.text = "true"

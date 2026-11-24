@@ -11729,6 +11729,12 @@ def windows_task_root(content):
     if root.tag != prefix + "Task":
         raise ValueError("Windows task definition has the wrong root namespace")
 
+    # These XML groups allow each child field at most once. Check before
+    # dropping optional metadata or materializing omitted default fields.
+    for group in ("Settings", "RegistrationInfo", "Principal", "CalendarTrigger", "ScheduleByWeek"):
+        for node in root.iter(prefix + group):
+            if len({child.tag for child in node}) != len(node):
+                raise ValueError("Windows task definition has duplicate fields in " + group)
     # Task Scheduler omits these default-valued elements on export. Keep
     # explicit values, duplicates, attributes and unknown nodes for comparison.
     for path, tag, default in (

@@ -122,6 +122,8 @@ class FakeNativeUpdateAdapter:
         return self.observed_timezone
 
     def install(self, definition_path, expected_digest=None):
+        if sha256(Path(definition_path)) != expected_digest:
+            raise ValueError("fixture observed a registration digest mismatch")
         self.registry[self.external_id] = {
             "status": "ACTIVE",
             "definition_sha256": sha256(Path(definition_path)),
@@ -1489,6 +1491,18 @@ class LifecycleTests(unittest.TestCase):
             manifest["supported_platforms"] = (["darwin"] if manifest.get("release_status") == "RELEASED"
                                                and product["supported_platforms"] == ["win32"]
                                                else product["supported_platforms"])
+        # An unqualified preview cannot provide a successful public-lane baseline.
+        # Use the shipped Mac version in the disposable public workflow fixture.
+        version = product["version"]
+        if version == "2.5.1" and manifest["release_status"] == "RELEASED":
+            version = "2.5.0"
+            manifest.update(schema="ai-human.workspace-release/platform-v2", supported_platforms=["darwin"])
+        manifest["version"] = version
+        (release / "core/VERSION").write_text(version + "\n", encoding="utf-8")
+        components_path = release / "component-manifest.json"
+        components = AI_HUMAN.read_json(components_path)
+        components["version"] = version
+        AI_HUMAN.atomic_json(components_path, components)
         AI_HUMAN.atomic_json(manifest_path, manifest)
         result = subprocess.run(
             [sys.executable, str(ROOT / "scripts/build_release.py"), str(release)],
@@ -10857,6 +10871,13 @@ class LifecycleTests(unittest.TestCase):
                 SimpleNamespace(
                     worker=str(worker), action="PAUSE", approval_reference="idempotent pause"
                 )
+            )
+            AI_HUMAN.update_schedule_control(
+                SimpleNamespace(worker=str(worker), action="RESUME", approval_reference="resume fixture")
+            )
+            self.assertEqual(next(iter(registry.values()))["status"], "ACTIVE")
+            AI_HUMAN.update_schedule_control(
+                SimpleNamespace(worker=str(worker), action="PAUSE", approval_reference="pause fixture")
             )
             paused_edit = self.schedule_args(
                 worker, command="update-schedule-edit", local_time="04:00"

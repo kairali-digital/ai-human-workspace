@@ -7,6 +7,7 @@ from pathlib import Path
 import subprocess
 import sys
 import time
+import xml.etree.ElementTree as ET
 
 
 def main():
@@ -53,12 +54,24 @@ def main():
         cursor = worker / "MASTER_CURSOR.md"
         original = cursor.read_bytes()
         baseline = fixtures.state_hashes(worker)
+        created_here = False
         try:
             # Observe the native registration diagnostic on this disposable runner.
             # The wrapper only logs a failing command and returns its original result.
             real_run = subprocess.run
             def observed_run(argv, *args, **kwargs):
+                nonlocal created_here
                 result = real_run(argv, *args, **kwargs)
+                if argv[:2] == ["schtasks.exe", "/Create"] and result.returncode == 0:
+                    created_here = True
+                    exported = query()
+                    if exported.returncode == 0:
+                        root = ET.fromstring(exported.stdout)
+                        for node in root.iter():
+                            tag = node.tag.split("}")[-1]
+                            if tag in {"UserId", "Author", "Command", "Arguments", "URI", "Description"}:
+                                node.text = "REDACTED"
+                        print("WINDOWS_QA exported task:", ET.tostring(root, encoding="unicode"), flush=True)
                 if result.returncode and argv[:2] == ["schtasks.exe", "/Create"]:
                     print("WINDOWS_QA schtasks register:", result.returncode, result.stderr, flush=True)
                 return result
@@ -96,7 +109,11 @@ def main():
                 absent = api.windows_task_missing(query())
                 print("WINDOWS_QA final task absence " + str(absent), flush=True)
                 if not absent:
-                    raise RuntimeError("Task cleanup could not be verified")
+                    if created_here:
+                        subprocess.run(["schtasks.exe", "/Delete", "/TN", task, "/F"],
+                                       capture_output=True, check=True, timeout=15)
+                        print("WINDOWS_QA fixture teardown absence", api.windows_task_missing(query()), flush=True)
+                    raise RuntimeError("Product task cleanup could not be verified")
         cli("validate")
         if fixtures.state_hashes(worker) != baseline:
             raise RuntimeError("Worker-owned state changed")

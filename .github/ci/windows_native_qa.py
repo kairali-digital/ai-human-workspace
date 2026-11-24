@@ -45,6 +45,33 @@ def main():
         def query():
             return subprocess.run(["schtasks", "/Query", "/TN", task, "/XML"],
                                   capture_output=True, text=True, timeout=15)
+        def lookup_probe():
+            # Read-only controls on the concrete disposable SDK task and its folder.
+            script = r"""
+$ErrorActionPreference = 'Stop'
+$service = New-Object -ComObject 'Schedule.Service'
+$service.Connect()
+$root = $service.GetFolder('\')
+if ($root.Path -ne '\') { throw 'Unexpected root folder' }
+try {
+    $folder = $service.GetFolder('\AI-Human')
+    Write-Output 'folder=present'
+    $registered = $folder.GetTask($env:AIH_QA_LEAF)
+    Write-Output ('task=present;state=' + $registered.State)
+} catch {
+    Write-Output ('lookup_hresult=' + $_.Exception.GetBaseException().HResult)
+}
+"""
+            leaf = task.rsplit("\\", 1)[-1]
+            probe = subprocess.run(["powershell.exe", "-NoLogo", "-NoProfile", "-NonInteractive",
+                                    "-Command", script], env={**os.environ, "AIH_QA_LEAF": leaf},
+                                   capture_output=True, text=True, timeout=20, check=True)
+            plain = subprocess.run(["schtasks.exe", "/Query", "/TN", task, "/FO", "CSV", "/NH"],
+                                   capture_output=True, text=True, timeout=15)
+            print("WINDOWS_QA independent lookup", repr(probe.stdout.strip()), "plain query",
+                  plain.returncode, repr(plain.stderr.strip()), flush=True)
+
+        lookup_probe()
         if not api.windows_task_missing(query()):
             raise RuntimeError("Could not establish task absence before testing")
         if subprocess.check_output(["tzutil", "/g"], text=True).strip() != "UTC":
@@ -83,6 +110,7 @@ def main():
                     rollout_lane="GENERAL", max_retry_attempts=1))
             cli("update-schedule-show", "--verify-native")
             print("WINDOWS_QA registration and native definition verified", flush=True)
+            lookup_probe()
             api.atomic_text(cursor, "# QA\n\n## LIVE TASK\nTask ID: `NATIVE-QA`\nSynthetic busy worker.\n")
             if not api.live_task(worker):
                 raise RuntimeError("Synthetic live task missing")
@@ -106,6 +134,7 @@ def main():
                 if api.update_schedule_config(worker).get("status") in ("ENABLED", "PAUSED"):
                     cli("update-schedule-control", "REMOVE", "--approval-reference", "Disposable QA")
             finally:
+                lookup_probe()
                 final_query = query()
                 if final_query.returncode:
                     print("WINDOWS_QA final query diagnostic", final_query.returncode, repr(final_query.stderr),

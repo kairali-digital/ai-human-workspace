@@ -54,11 +54,20 @@ def main():
         original = cursor.read_bytes()
         baseline = fixtures.state_hashes(worker)
         try:
-            cli("update-schedule-configure", "--platform", "WINDOWS", "--cadence", "WEEKLY",
-                "--weekday", due.strftime("%A").upper(), "--local-time", due.strftime("%H:%M"),
-                "--timezone", "UTC", "--native-timezone-id", "UTC",
-                "--confirm-native-timezone-matches-iana", "--rollout-lane", "GENERAL",
-                "--approval-reference", "Disposable Windows QA", "--max-retry-attempts", "1")
+            # Observe the native registration diagnostic on this disposable runner.
+            # The wrapper only logs a failing command and returns its original result.
+            real_run = subprocess.run
+            def observed_run(argv, *args, **kwargs):
+                result = real_run(argv, *args, **kwargs)
+                if result.returncode and argv[:2] == ["schtasks.exe", "/Create"]:
+                    print("WINDOWS_QA schtasks register:", result.returncode, result.stderr, flush=True)
+                return result
+            from unittest.mock import patch
+            with patch.object(subprocess, "run", observed_run):
+                api.update_schedule_configure(fixture.schedule_args(
+                    worker, platform="WINDOWS", cadence="WEEKLY", weekday=due.strftime("%A").upper(),
+                    local_time=due.strftime("%H:%M"), timezone="UTC", native_timezone_id="UTC",
+                    rollout_lane="GENERAL", max_retry_attempts=1))
             cli("update-schedule-show", "--verify-native")
             print("WINDOWS_QA registration and native definition verified", flush=True)
             api.atomic_text(cursor, "# QA\n\n## LIVE TASK\nTask ID: `NATIVE-QA`\nSynthetic busy worker.\n")

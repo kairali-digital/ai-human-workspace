@@ -11412,6 +11412,25 @@ class LifecycleTests(unittest.TestCase):
                 "status": "REMOVED", "definition_sha256": None,
             })
             adapter.remove()
+        task = r"\AI-Human\aihuman-update-0123456789abcdef"
+        path_error = SimpleNamespace(returncode=1, stdout="", stderr="ERROR: The system cannot find the path specified.")
+        with mock.patch.object(AI_HUMAN, "windows_system_powershell", return_value="test-powershell"):
+            for code, output, error, absent in (
+                (0, "ABSENT\n", "", True), (1, "ABSENT", "", False),
+                (0, "ABSENT", "denied", False), (0, "", "", False),
+            ):
+                probe = SimpleNamespace(returncode=code, stdout=output, stderr=error)
+                with self.subTest(code=code, output=output, error=error), mock.patch.object(
+                    AI_HUMAN.subprocess, "run", return_value=probe
+                ) as execute:
+                    self.assertEqual(AI_HUMAN.windows_task_missing(path_error, task), absent)
+                    self.assertEqual(execute.call_args.kwargs["env"]["AIH_LOOKUP_LEAF"], task.rsplit("\\", 1)[1])
+            with mock.patch.object(AI_HUMAN.subprocess, "run", side_effect=OSError("unavailable")):
+                self.assertFalse(AI_HUMAN.windows_task_missing(path_error, task))
+        with mock.patch.object(AI_HUMAN.subprocess, "run") as execute:
+            self.assertFalse(AI_HUMAN.windows_task_missing(path_error))
+            self.assertFalse(AI_HUMAN.windows_task_missing(path_error, r"\Other\job"))
+            execute.assert_not_called()
         for detail in (
             "Task Scheduler service not found",
             "The specified account does not exist",

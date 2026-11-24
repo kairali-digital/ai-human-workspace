@@ -11909,7 +11909,55 @@ def canonical_windows_task(content, normalize_enabled=False, drop_user_id=False)
     return ET.canonicalize(xml_data=serialized, strip_text=True)
 
 
-def windows_task_missing(result):
+def windows_system_powershell():
+    import ctypes
+
+    if os.name != "nt":
+        raise OSError("Windows PowerShell requires Windows")
+    buffer = ctypes.create_unicode_buffer(32768)
+    length = ctypes.windll.kernel32.GetSystemDirectoryW(buffer, len(buffer))
+    if not 0 < length < len(buffer):
+        raise OSError("cannot resolve the Windows system directory")
+    return Path(buffer.value) / "WindowsPowerShell" / "v1.0" / "powershell.exe"
+
+
+def windows_scheduler_confirms_absence(external_id):
+    """Confirm the task or its folder is missing through the local scheduler."""
+    if not isinstance(external_id, str) or not re.fullmatch(
+        r"\\AI-Human\\aihuman-update-[0-9a-f]{16}", external_id
+    ):
+        return False
+    # Do not treat a connection failure, inaccessible root or ambiguous path
+    # error as absence. Only FILE_NOT_FOUND on the scoped lookup qualifies.
+    lookup = r"""
+$ErrorActionPreference = 'Stop'
+$service = New-Object -ComObject 'Schedule.Service'
+$service.Connect()
+$root = $service.GetFolder('\')
+if ($root.Path -ne '\') { exit 1 }
+try {
+    $folder = $service.GetFolder('\AI-Human')
+    $task = $folder.GetTask($env:AIH_LOOKUP_LEAF)
+} catch {
+    if ($_.Exception.GetBaseException().HResult -eq -2147024894) {
+        Write-Output 'ABSENT'
+        exit 0
+    }
+}
+exit 1
+"""
+    try:
+        result = subprocess.run(
+            [str(windows_system_powershell()), "-NoLogo", "-NoProfile", "-NonInteractive", "-Command", lookup],
+            env={**os.environ, "AIH_LOOKUP_LEAF": external_id.rsplit("\\", 1)[1]},
+            capture_output=True, text=True, errors="replace", check=False, timeout=20,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return result.returncode == 0 and result.stdout.strip() == "ABSENT" and not result.stderr.strip()
+
+
+def windows_task_missing(result, external_id=None):
     if result.returncode == 0:
         return False
     # A failed query is not proof of absence. In particular, missing services,
@@ -11924,6 +11972,8 @@ def windows_task_missing(result):
     if len(lines) != 1:
         return False
     detail = lines[0].removeprefix("error:").strip().rstrip(".")
+    if detail == "the system cannot find the path specified":
+        return windows_scheduler_confirms_absence(external_id)
     return detail in {
         "the system cannot find the file specified",
         "the system cannot find the task specified",
@@ -12283,7 +12333,7 @@ class NativeUpdateAdapter:
             ["schtasks.exe", "/Delete", "/TN", self.external_id, "/F"],
             text=True, capture_output=True, check=False, timeout=15,
         )
-        if result.returncode != 0 and not windows_task_missing(result):
+        if result.returncode != 0 and not windows_task_missing(result, self.external_id):
             raise ValueError("native update schedule removal failed")
 
     def _macos_bootout(self):
@@ -12377,7 +12427,7 @@ class NativeUpdateAdapter:
             text=True, capture_output=True, check=False, timeout=15,
         )
         if result.returncode != 0:
-            if windows_task_missing(result):
+            if windows_task_missing(result, self.external_id):
                 if not raw_absence and self.config.get("status") == "PAUSED":
                     return {"status": "PAUSED", "definition_sha256": sha256(Path(definition_path))}
                 return {"status": "REMOVED", "definition_sha256": None}

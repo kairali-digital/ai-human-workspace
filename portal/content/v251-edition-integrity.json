@@ -1,12 +1,12 @@
 {
   "AI-HUMAN-v251-REUSABLE-EDITION-LOCAL-CANDIDATE.zip": {
-    "archive_sha256": "f7c49846768b6d0592631c41d005ac19ff0886d1312e8e47513998ca6e4e999b",
-    "manifest_sha256": "f16edd87e644b69f5b5fd21b9f5261e8062b439e523223b69fd838cc5368bff3",
+    "archive_sha256": "2d465d4689a80b02f9fb6f50e5341fc19667ea09faa6b4c2d1cba4133ae7f1d8",
+    "manifest_sha256": "543eb78b39b8073b9550d2beeb793019d85d4bb53f39983f72cc47435026b94e",
     "repository": "standalone-local/ai-human-workspace"
   },
   "KAIRALI-AI-HUMAN-v251-EMPLOYEE-EDITION-LOCAL-CANDIDATE.zip": {
-    "archive_sha256": "a04ba127906d84505df4a79f5bba481d7e7652e45d0e1a5a98c9332ef0c51db5",
-    "manifest_sha256": "6abf257c3432b4e4864467e754418f7bfd15d779c9469efefe416da09ebe73c3",
+    "archive_sha256": "2e3ec1ca7ba826caac1d5fb5cca6ba660628ccfb5ca152291c58b56450ba1e34",
+    "manifest_sha256": "f93c17376e27352d07a3eef45be64dbbeeb01dd07641232a724131b18cb00ce0",
     "repository": "kairali-digital/ai-human-workspace"
   }
 }

@@ -1,0 +1,150 @@
+diff --git a/editions/kairali/START-HERE.md b/editions/kairali/START-HERE.md
+index 3f7b1cb..c2eb311 100644
+--- a/editions/kairali/START-HERE.md
++++ b/editions/kairali/START-HERE.md
+@@ -1,4 +1,4 @@
+-> **2.5.1 engineering preview. Keep this copy for testing.** For installation, open the release website and choose Mac 2.5.0 or Windows 2.4.0.
++> **Windows 2.5.1.** On Mac, return to the release website and choose the Mac download. On Windows, open the approved release notice and ask Setup Helper to verify this edition. If you already have a worker older than 2.4.0, ask Setup Helper to update it to the approved Windows 2.4.0 release first and show its validation receipt.
+ 
+ # Kairali Employee Edition — start here
+ 
+@@ -68,7 +68,7 @@ verified `SUSPENDED`.
+ 
+ Open the existing employee worker in Codex, start a new chat and paste `CHECK FOR
+ KAIRALI UPDATE`. Use the complete checked prompt in
+-`workspace/packages/kairali/UPDATE-WORKFLOW.md`. The check changes nothing. Tell the helper whether you use Mac or Windows. For v2.5.1 on either computer, give it the approved release notice. Ask it to verify the signed tag, its exact commit and the approved checksum of the Kairali employee edition ZIP. Ask the helper to use the workspace folder inside that edition after checking it matches your worker’s repository. Ask the helper to read the ZIP and manifest checksums for your edition from portal/content/v251-edition-integrity.json at the exact signed commit in the approved notice. Have it verify the whole ZIP before opening or running its updater, then supply the approved manifest checksum to the updater inside the verified ZIP when applying the update so it can make the worker recovery snapshot. If the helper confirms an eligible update and the worker is idle, say `UPDATE NOW`. It backs up, updates managed files and validates. A pre-v2 worker first completes
++`workspace/packages/kairali/UPDATE-WORKFLOW.md`. The check changes nothing. Tell the helper whether you use Mac or Windows. For Windows v2.5.1, give it the approved release notice. Ask it to verify the signed tag, its exact commit and the approved checksum of the Kairali employee edition ZIP. Ask the helper to use the workspace folder inside that edition after checking it matches your worker’s repository. Ask the helper to read the ZIP and manifest checksums for your edition from portal/content/v251-edition-integrity.json at the exact signed commit in the approved notice. Have it verify the whole ZIP before opening or running its updater, then supply the approved manifest checksum to the updater inside the verified ZIP when applying the update so it can make the worker recovery snapshot. If the helper confirms an eligible update and the worker is idle, say `UPDATE NOW`. It backs up, updates managed files and validates. A pre-v2 worker first completes
+ the guided exact-scope Gate 0 migration.
+ 
+ **DONE WHEN:** the installed version matches the approved version for your computer, validation is `PASS`, employee state
+diff --git a/editions/reusable/START-HERE.md b/editions/reusable/START-HERE.md
+index 6330818..5f7289d 100644
+--- a/editions/reusable/START-HERE.md
++++ b/editions/reusable/START-HERE.md
+@@ -1,4 +1,4 @@
+-> **2.5.1 engineering preview. Keep this copy for testing.** For installation, open the release website and choose Mac 2.5.0 or Windows 2.4.0.
++> **Windows 2.5.1.** On Mac, return to the release website and choose the Mac download. On Windows, open the approved release notice and ask Setup Helper to verify this edition. If you already have a worker older than 2.4.0, ask Setup Helper to update it to the approved Windows 2.4.0 release first and show its validation receipt.
+ 
+ # Reusable AI-Human Edition — start here
+ 
+@@ -67,7 +67,7 @@ Open the existing working folder in Codex, start a new chat and paste this exact
+ CHECK FOR AI-HUMAN UPDATE
+ 
+ Read .ai-human/VERSION and .ai-human/system/SESSION-START.md in this project.
+-Check my computer and this worker's approved release source. If I have an approved v2.5.1 release notice, verify its signed tag and exact commit. From that commit select the reusable edition ZIP and verify its approved SHA-256. Use the workspace folder in that ZIP only when its release manifest matches my installed worker’s repository. Preserve that repository setting. Ask the helper to read the ZIP and manifest checksums for your edition from portal/content/v251-edition-integrity.json at the exact signed commit in the approved notice. Have it verify the whole ZIP before opening or running its updater, then supply the approved manifest checksum to the updater inside the verified ZIP when applying the update so it can make the worker recovery snapshot. This reusable edition updates only from a verified local folder. It does not contact a release service or register an automatic update schedule. If no release source is configured, ask me for the approved source before continuing.
++Check my computer and this worker's approved release source. If I am using Windows and have an approved Windows v2.5.1 release notice, verify its signed tag and exact commit. From that commit select the reusable edition ZIP and verify its approved SHA-256. Use the workspace folder in that ZIP only when its release manifest matches my installed worker’s repository. Preserve that repository setting. Ask the helper to read the ZIP and manifest checksums for your edition from portal/content/v251-edition-integrity.json at the exact signed commit in the approved notice. Have it verify the whole ZIP before opening or running its updater, then supply the approved manifest checksum to the updater inside the verified ZIP when applying the update so it can make the worker recovery snapshot. This reusable edition updates only from a verified local folder. It does not contact a release service or register an automatic update schedule. If no release source is configured, ask me for the approved source before continuing.
+ Do not change any file yet.
+ 
+ Tell me my installed version, the latest approved version, the plain-language changes, whether a live task means the update must wait, exactly which managed files may change and which company/user files stay preserved.
+diff --git a/packages/kairali/UPDATE-WORKFLOW.md b/packages/kairali/UPDATE-WORKFLOW.md
+index 3441078..4b94205 100644
+--- a/packages/kairali/UPDATE-WORKFLOW.md
++++ b/packages/kairali/UPDATE-WORKFLOW.md
+@@ -49,8 +49,7 @@ Only after that proof may the managed v2 update run.
+ 
+ ## Post-migration automatic path
+ 
+-This local candidate adds a second path without removing the manual one. It is not
+-active on any employee worker yet.
++The first move to 2.5.1 uses the verified edition at a safe checkpoint. Later releases can use the scheduled path on a separately enrolled and verified worker.
+ 
+ 1. Each configured worker checks once on the first calendar day at 10:00 AM in its
+    confirmed local time zone.
+@@ -74,7 +73,7 @@ local proof to employee use.
+ CHECK FOR KAIRALI UPDATE
+ 
+ Read .ai-human/VERSION, .ai-human/system/SESSION-START.md and the installed component receipts for this project.
+-Check my platform and the approved release from kairali-digital/ai-human-workspace. For Mac or Windows v2.5.1, check the owner-approved release notice against the signed v2.5.1 tag, its exact commit and approved hashes. From the verified commit select the Kairali employee edition ZIP, compare its SHA-256 with the approved release notice and use its extracted workspace folder. Verify its repository matches the installed worker before applying. Ask the helper to read the ZIP and manifest checksums for your edition from portal/content/v251-edition-integrity.json at the exact signed commit in the approved notice. Have it verify the whole ZIP before opening or running its updater, then supply the approved manifest checksum to the updater inside the verified ZIP when applying the update so it can make the worker recovery snapshot. If the notice or proof is missing, keep the existing worker and tell me what is missing.
++Check my platform and the approved release from kairali-digital/ai-human-workspace. On Mac, use the Mac release guide from the website. If my Windows worker is older than 2.4.0, first use the signed Windows 2.4.0 update workflow and verify its receipt. For Windows v2.5.1, check the owner-approved release notice against the signed v2.5.1 tag, its exact commit and approved hashes. From the verified commit select the Kairali employee edition ZIP, compare its SHA-256 with the approved release notice and use its extracted workspace folder. Verify its repository matches the installed worker before applying. Ask the helper to read the ZIP and manifest checksums for your edition from portal/content/v251-edition-integrity.json at the exact signed commit in the approved notice. Have it verify the whole ZIP before opening or running its updater, then supply the approved manifest checksum to the updater inside the verified ZIP when applying the update so it can make the worker recovery snapshot. If the notice or proof is missing, keep the existing worker and tell me what is missing.
+ Do not change any file yet.
+ 
+ Tell me:
+diff --git a/scripts/ai_human.py b/scripts/ai_human.py
+index fe7f275..abcc6d6 100644
+--- a/scripts/ai_human.py
++++ b/scripts/ai_human.py
+@@ -16260,6 +16260,16 @@ def restore_backup(
+             target.unlink()
+ 
+ 
++def require_supported_upgrade_source(manifest, installed_version):
++    if manifest.get("schema") not in (PLATFORM_RELEASE_SCHEMA, "ai-human.workspace-release/platform-v3"):
++        return
++    if version_tuple(manifest["version"]) <= version_tuple(installed_version):
++        return
++    minimum = (manifest.get("compatibility") or {}).get("minimum_supported_version", "")
++    if version_tuple(installed_version) < version_tuple(minimum):
++        raise ValueError("installed version is below the release upgrade floor; update to " + minimum + " first")
++
++
+ def automatic_release_eligible(manifest, installed_version):
+     if manifest.get("automatic_update_eligible") is not True:
+         return False, "release is not marked eligible for automatic updates"
+@@ -16438,6 +16448,7 @@ def apply_update(
+             print("- local version: " + old_version)
+             print("- release version: " + new_version)
+         return {"status": "CURRENT", "from_version": old_version, "to_version": old_version}
++    require_supported_upgrade_source(manifest, old_version)
+     if automatic:
+         eligible, reason = automatic_release_eligible(manifest, old_version)
+         if not eligible:
+@@ -20772,6 +20783,8 @@ def main():
+                 repository = (args.repository if args.command == "fleet-update"
+                               else install_metadata(safe_worker(args.worker))["repository"])
+                 verify_lifecycle_source(root, manifest, repository, None, args)
++                if args.command == "update":
++                    require_supported_upgrade_source(manifest, install_metadata(safe_worker(args.worker))["installed_version"])
+             elif args.source_manifest_sha256 is not None:
+                 raise ValueError("--source-manifest-sha256 requires --source")
+         operation = contextlib.nullcontext()
+diff --git a/scripts/build_editions.py b/scripts/build_editions.py
+index 8d3c487..88923a6 100644
+--- a/scripts/build_editions.py
++++ b/scripts/build_editions.py
+@@ -188,6 +188,9 @@ def main():
+     if VERSION == "2.5.0" and RELEASE_STATUS == "RELEASED":
+         guide = ROOT / "packages/kairali/UPDATE-WORKFLOW.md"
+         (DOWNLOADS / "KAIRALI-MAC-v250-UPDATE-WORKFLOW.md").write_bytes(file_bytes(guide))
++    if VERSION == "2.5.1" and RELEASE_STATUS == "RELEASED":
++        guide = ROOT / "packages/kairali/UPDATE-WORKFLOW.md"
++        (DOWNLOADS / "KAIRALI-WINDOWS-v251-UPDATE-WORKFLOW.md").write_bytes(file_bytes(guide))
+     reusable = build_reusable()
+     kairali = build_kairali()
+     if VERSION in ("2.5.0", "2.5.1"):
+diff --git a/tests/test_lifecycle.py b/tests/test_lifecycle.py
+index 8d1f4dd..378ed5e 100644
+--- a/tests/test_lifecycle.py
++++ b/tests/test_lifecycle.py
+@@ -8367,6 +8367,32 @@ class LifecycleTests(unittest.TestCase):
+             json.dumps(metadata, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+         )
+         self.assertEqual(self.run_cli("validate", worker).returncode, 0)
++        # Exercise the platform release preflight and the required intermediate update.
++        target = self.release / "release-manifest.json"
++        product = AI_HUMAN.read_json(target)
++        if sys.platform in ("darwin", "win32"):
++            product.update(schema=AI_HUMAN.PLATFORM_RELEASE_SCHEMA, supported_platforms=[sys.platform])
++            product["compatibility"]["minimum_supported_version"] = "2.4.0"
++            AI_HUMAN.atomic_json(target, product)
++            before = AI_HUMAN.tree_proof(worker)
++            refused = self.run_cli("update", worker, "--source", self.release, "--source-manifest-sha256",
++                                   sha256(target), "--at-checkpoint", expect=1)
++            self.assertIn("update to 2.4.0 first", refused.stderr)
++            self.assertEqual(AI_HUMAN.tree_proof(worker), before)
++            with self.assertRaisesRegex(ValueError, "update to 2.4.0 first"):
++                AI_HUMAN.apply_update(worker, self.release, product, at_checkpoint=True)
++            self.assertEqual(AI_HUMAN.tree_proof(worker), before)
++        intermediate = self.base / "common-v240"
++        shutil.copytree(self.release, intermediate)
++        refresh_release(intermediate, "2.4.0")
++        path = intermediate / "release-manifest.json"
++        common = AI_HUMAN.read_json(path)
++        common.update(schema=AI_HUMAN.COMMON_RELEASE_SCHEMA)
++        common.pop("supported_platforms", None)
++        common["compatibility"]["minimum_supported_version"] = "2.0.0"
++        AI_HUMAN.atomic_json(path, common)
++        self.run_cli("update", worker, "--source", intermediate, "--source-manifest-sha256", sha256(path))
++        self.assertEqual(AI_HUMAN.install_metadata(worker)["installed_version"], "2.4.0")
+         updated = self.run_cli("update", worker, "--source", self.release, "--source-manifest-sha256", sha256(self.release / "release-manifest.json"), "--at-checkpoint")
+         self.assertIn("AI-HUMAN UPDATE: PASS", updated.stdout)
+         self.assertEqual(self.run_cli("validate", worker).returncode, 0)

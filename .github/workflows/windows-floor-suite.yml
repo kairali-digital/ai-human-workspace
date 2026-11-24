@@ -1,0 +1,39 @@
+name: Windows corrected runtime regression suite
+on:
+  push:
+    branches: [agent/windows-actions-v250]
+    paths:
+      - .github/workflows/windows-floor-suite.yml
+      - .github/ci/windows_floor.patch
+      - .github/ci/windows_floor_suite.py
+permissions:
+  contents: read
+jobs:
+  windows:
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3]
+    runs-on: windows-2025
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          path: harness
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: 17367141f9c03e41d02238ae481c10ee01fcf343
+          persist-credentials: false
+          path: candidate
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.11'
+      - name: Run every regression shard on disposable engineering fixtures
+        shell: powershell
+        env:
+          PYTHONUTF8: '1'
+        run: |
+          python -m pip install --require-hashes -r candidate/requirements.txt
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -B harness/.github/ci/windows_floor_suite.py candidate ${{ matrix.shard }}
